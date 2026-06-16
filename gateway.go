@@ -48,7 +48,7 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
 	// customID carries the conversation id so a click routes its component
-	// interaction back to the originating bridge.
+	// interaction back to the originating conversation.
 	_, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out)
 	return err
 }

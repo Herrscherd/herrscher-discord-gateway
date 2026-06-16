@@ -64,7 +64,7 @@ func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) erro
 }
 
 // Platform adapts the dctl client to the neutral channel ports
-// contracts.ChannelReader and contracts.MenuRouter (the bridge's read/
+// contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct{ c *dctl.Client }
 
