@@ -92,5 +92,5 @@ func Commands() []map[string]any {
 
 // RegisterCommands registers the Discord gateway's slash commands for the sole guild.
 func RegisterCommands(ctx context.Context, c *dctl.Client) error {
-	return c.RegisterCommands(ctx, Commands())
+	return c.Interactions().RegisterCommands(ctx, Commands())
 }

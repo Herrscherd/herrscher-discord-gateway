@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,9 @@ import (
 )
 
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
+
+// errDisabled is returned when Run is started without a bot token configured.
+var errDisabled = errors.New("discord: gateway disabled (no bot token)")
 
 // intentGuilds is the only intent we need (interactions don't require message intents).
 const intentGuilds = 1 << 0
@@ -54,7 +58,7 @@ func (s *CommandSource) Commands() <-chan contracts.InboundCommand { return s.ou
 // drops. On connection loss it returns an error; the caller reconnects.
 func (s *CommandSource) Run(ctx context.Context) error {
 	if !s.c.Enabled() {
-		return dctl.ErrDisabled
+		return errDisabled
 	}
 	conn, _, err := websocket.Dial(ctx, gatewayURL, nil)
 	if err != nil {
@@ -189,7 +193,7 @@ func (s *CommandSource) mapInbound(in dctl.Interaction) contracts.InboundCommand
 				CustomID: customID,
 			},
 		},
-		Responder: &responder{c: s.c, appID: s.appID, id: in.ID, token: in.Token},
+		Responder: &responder{c: s.c, appID: s.appID, id: in.ID, token: in.Token.Reveal()},
 	}
 }
 

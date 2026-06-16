@@ -30,12 +30,12 @@ func init() {
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
 	token := cfg.Get("token")
 	c := dctl.New(token, cfg.Get("channel"))
-	appID, err := c.AppID(ctx)
+	appID, err := c.Interactions().AppID(ctx)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
 	return contracts.GatewaySet{
-		Gateway:   NewGateway(c),
+		Gateway:   NewGateway(discordClient{c}),
 		Source:    NewCommandSource(c, token, appID),
 		Reader:    NewPlatform(c),
 		Admin:     NewChannelAdmin(c),

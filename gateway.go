@@ -53,6 +53,26 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	return err
 }
 
+// discordClient adapts *dctl.Client's sub-clients to the narrow client seam the
+// Gateway needs (and that tests fake).
+type discordClient struct{ c *dctl.Client }
+
+func (d discordClient) Send(ctx context.Context, channelID, content string) (*dctl.Message, error) {
+	return d.c.Messages().Send(ctx, channelID, content)
+}
+
+func (d discordClient) Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error) {
+	return d.c.Messages().Reply(ctx, channelID, replyTo, content)
+}
+
+func (d discordClient) React(ctx context.Context, channelID, messageID, emoji string) error {
+	return d.c.Reactions().Add(ctx, channelID, messageID, emoji)
+}
+
+func (d discordClient) SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error) {
+	return d.c.Components().SendSelectMenu(ctx, channelID, replyTo, content, customID, options)
+}
+
 func msgID(m *dctl.Message) contracts.MessageID {
 	if m == nil {
 		return ""
