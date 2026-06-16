@@ -3,8 +3,8 @@ package discord
 import (
 	"context"
 
-	"github.com/Akayashuu/dctl"
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/dctl"
+	"github.com/Herrscherd/herrscher-contracts"
 )
 
 // client is the subset of *dctl.Client the adapter needs (injected for tests).

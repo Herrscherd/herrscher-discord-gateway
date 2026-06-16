@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Akayashuu/dctl"
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/dctl"
+	"github.com/Herrscherd/herrscher-contracts"
 	"github.com/coder/websocket"
 )
 

@@ -3,8 +3,8 @@ package discord
 import (
 	"context"
 
-	"github.com/Akayashuu/dctl"
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/dctl"
+	"github.com/Herrscherd/herrscher-contracts"
 )
 
 // init self-registers the Discord gateway into the global plugin registry. A

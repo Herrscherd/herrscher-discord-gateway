@@ -15,8 +15,8 @@ importing anything Discord-specific.
 
 ```
 require (
-    github.com/Akayashuu/dctl                  // low-level Discord REST/WS client
-    github.com/Akayashuu/herrscher-contracts   // the ports it satisfies
+    github.com/Herrscherd/dctl                  // low-level Discord REST/WS client
+    github.com/Herrscherd/herrscher-contracts   // the ports it satisfies
     github.com/coder/websocket                 // gateway websocket transport
 )
 ```

@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/Akayashuu/dctl"
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/dctl"
+	"github.com/Herrscherd/herrscher-contracts"
 )
 
 // Discord channel-type ints (GUILD_CATEGORY is 4; dctl exports ChannelForum=15).

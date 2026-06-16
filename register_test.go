@@ -3,7 +3,7 @@ package discord
 import (
 	"testing"
 
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts"
 )
 
 func TestSelfRegisteredAsGateway(t *testing.T) {

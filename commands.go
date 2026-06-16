@@ -3,7 +3,7 @@ package discord
 import (
 	"context"
 
-	"github.com/Akayashuu/dctl"
+	"github.com/Herrscherd/dctl"
 )
 
 // Commands is the declarative slash-command set for the Discord gateway.

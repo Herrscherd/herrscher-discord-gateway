@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Akayashuu/dctl"
-	"github.com/Akayashuu/herrscher-contracts"
+	"github.com/Herrscherd/dctl"
+	"github.com/Herrscherd/herrscher-contracts"
 )
 
 type fakeClient struct {
