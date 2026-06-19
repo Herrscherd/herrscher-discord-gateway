@@ -55,6 +55,12 @@ func (s *slash) start() {
 // themselves) and autocomplete interactions through the autocomplete dispatcher.
 func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 	if ix.Type == dctl.InteractionAutocomplete {
+		// Gate autocomplete too: an unallowed user must not be able to enumerate
+		// session names (the suggestions would otherwise leak the topology).
+		if !s.allow.Allowed(ix.Member.User.ID) {
+			_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil)
+			return
+		}
 		choices, err := s.reg.DispatchAutocomplete(ctx, ix)
 		if err != nil {
 			return
@@ -270,8 +276,8 @@ func lastOf(path []string) string {
 
 // --- command catalog (old dctl catalog, minus workspace, plus set home/source) ---
 
-// commandPerms gates every operator command to members with Manage Server by
-// default; the allow store is the finer per-user gate once populated.
+// Every command gates to members with Manage Server by default (Perms); the
+// allow store is the finer per-user gate once populated.
 func commandSet() *dctl.Command {
 	return dctl.NewCommand("set", "configure the daemon").
 		Perms(dctl.PermManageGuild).

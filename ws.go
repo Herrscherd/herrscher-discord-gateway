@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Herrscherd/dctl"
@@ -37,8 +38,9 @@ type ws struct {
 	token  string
 	handle func(context.Context, dctl.Interaction)
 
-	mu  sync.Mutex // serializes writes (only one Write may be in flight)
-	seq struct {
+	mu    sync.Mutex // serializes writes (only one Write may be in flight)
+	acked atomic.Bool
+	seq   struct {
 		sync.Mutex
 		n int
 	}
@@ -103,6 +105,10 @@ func (w *ws) session(ctx context.Context) error {
 		return fmt.Errorf("identify: %w", err)
 	}
 
+	// A fresh connection starts "acked" so the first heartbeat is allowed; each
+	// heartbeat then requires the previous one to have been ACKed (see
+	// sendHeartbeat), which is how a half-dead connection is detected.
+	w.acked.Store(true)
 	hbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go w.heartbeatLoop(hbCtx, c, time.Duration(h.HeartbeatInterval)*time.Millisecond)
@@ -121,13 +127,15 @@ func (w *ws) session(ctx context.Context) error {
 				w.onDispatch(ctx, p.D)
 			}
 		case opHeartbeat:
-			if err := w.sendHeartbeat(ctx, c); err != nil {
+			// An explicit server request to beat now; honor it without the
+			// missed-ACK check (that gate belongs to the periodic loop).
+			if err := w.writeHeartbeat(ctx, c); err != nil {
 				return err
 			}
 		case opReconnect, opInvalidSession:
 			return fmt.Errorf("server asked to reconnect (op %d)", p.Op)
 		case opHeartbeatACK:
-			// nothing to do
+			w.acked.Store(true)
 		}
 	}
 }
@@ -168,13 +176,25 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 			return
 		case <-t.C:
 			if err := w.sendHeartbeat(ctx, c); err != nil {
+				// Close so the blocked read loop unblocks and session() returns,
+				// triggering a reconnect (a zombie connection is otherwise invisible).
+				c.Close(websocket.StatusInternalError, "heartbeat")
 				return
 			}
 		}
 	}
 }
 
+// sendHeartbeat is the periodic beat: it first checks the previous beat was
+// ACKed (else the connection is a zombie and it errors to force a reconnect).
 func (w *ws) sendHeartbeat(ctx context.Context, c *websocket.Conn) error {
+	if !w.acked.Swap(false) {
+		return fmt.Errorf("heartbeat not acknowledged")
+	}
+	return w.writeHeartbeat(ctx, c)
+}
+
+func (w *ws) writeHeartbeat(ctx context.Context, c *websocket.Conn) error {
 	w.seq.Lock()
 	n := w.seq.n
 	w.seq.Unlock()
