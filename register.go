@@ -2,6 +2,8 @@ package discord
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 
 	"github.com/Herrscherd/dctl"
 	"github.com/Herrscherd/herrscher-contracts"
@@ -29,11 +31,30 @@ func init() {
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
-	c := dctl.New(cfg.Get("token"), cfg.Get("channel"))
+	token := cfg.Get("token")
+	c := dctl.New(token, cfg.Get("channel"))
+	gw := NewGateway(discordClient{c})
+	// The slash surface lives entirely in the plugin: it builds its own dctl
+	// command catalog + allow store and only crosses the boundary through the
+	// neutral SessionControl seam bound later (BindSessionControl).
+	gw.slash = newSlash(ctx, c.Interactions(), token, newAllowStore(allowStorePath()))
 	return contracts.GatewaySet{
-		Gateway: NewGateway(discordClient{c}),
+		Gateway: gw,
 		Reader:  NewPlatform(c),
 		Admin:   NewChannelAdmin(c),
 		Prober:  NewProber(c),
 	}, nil
+}
+
+// allowStorePath is where the gateway persists its permission store. It sits
+// beside the daemon state (DCTL_STATE_DIR) so it shares the instance's data dir,
+// falling back to ~/.config/dctl.
+func allowStorePath() string {
+	dir := os.Getenv("DCTL_STATE_DIR")
+	if dir == "" {
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".config", "dctl")
+	}
+	_ = os.MkdirAll(dir, 0o700)
+	return filepath.Join(dir, "discord-allow.json")
 }

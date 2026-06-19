@@ -15,10 +15,32 @@ type client interface {
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
 }
 
-// Gateway adapts the Discord REST client to contracts.Gateway.
-type Gateway struct{ c client }
+var (
+	_ contracts.Gateway                = (*Gateway)(nil)
+	_ contracts.SessionControlReceiver = (*Gateway)(nil)
+)
+
+// Gateway adapts the Discord REST client to contracts.Gateway. When built from
+// real config it also carries a slash runtime, so it drives the Discord slash
+// command surface and implements contracts.SessionControlReceiver.
+type Gateway struct {
+	c     client
+	slash *slash
+}
 
 func NewGateway(c client) *Gateway { return &Gateway{c: c} }
+
+// BindSessionControl receives the daemon's runtime session controller and starts
+// the slash command surface (sync + websocket loop). It satisfies
+// contracts.SessionControlReceiver. Gateways built without a slash runtime (e.g.
+// in tests) ignore the binding.
+func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
+	if g.slash == nil {
+		return
+	}
+	g.slash.ctrl = ctrl
+	go g.slash.start()
+}
 
 func (g *Gateway) Manifest() contracts.Manifest {
 	return contracts.Manifest{
