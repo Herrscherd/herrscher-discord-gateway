@@ -92,6 +92,18 @@ func (s *sink) handle(e contracts.Event) {
 		if s.pv != nil {
 			s.pv.reset()
 		}
+	case "abandoned":
+		// The turn ended without a reply (backend/bridge dropped, or the daemon
+		// is shutting down). Clear the ⏳ ACK so the message no longer reads as
+		// pending and drop the live view so the next turn starts fresh. The
+		// partial progress message stays as the last honest state of the turn —
+		// the host left the choice of presentation to us. Force a final flush
+		// first so lines coalesced inside the throttle window are not lost.
+		if s.pv != nil {
+			s.pv.flush(true)
+			s.pv = nil
+		}
+		s.clearAck(ch)
 	case "reply":
 		if !e.Done {
 			return

@@ -89,6 +89,36 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	}
 }
 
+// TestSinkAbandonedClearsAck proves an abandoned turn (no reply) clears the ⏳
+// ACK and posts no final reply: the host's abstract "abandoned" signal is
+// rendered by dropping the pending marker, not by a misleading ✅ summary.
+func TestSinkAbandonedClearsAck(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newTestSink(f)
+	s.noteUser("u1")
+	s.handle(contracts.Event{T: "human"})
+	// First status flushes immediately (lastEdit zero); the second is coalesced
+	// inside the throttle window and stays unflushed until abandon forces it.
+	s.handle(contracts.Event{T: "status", Text: "Read x"})
+	s.handle(contracts.Event{T: "status", Text: "Edit y"})
+	s.handle(contracts.Event{T: "abandoned"})
+
+	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+		t.Fatalf("unreacted = %v, want one %q on abandon", f.unreacted, ackEmoji)
+	}
+	if len(f.posts) != 0 {
+		t.Fatalf("posts = %v, want none on abandon", f.posts)
+	}
+	last := f.upserts[len(f.upserts)-1]
+	if strings.HasPrefix(last, "✅") {
+		t.Fatalf("abandoned status = %q, want no ✅ summary", last)
+	}
+	// The forced final flush preserves the coalesced line as the last honest state.
+	if !strings.Contains(last, "Edit · y") {
+		t.Fatalf("abandoned status = %q, want it to include the coalesced line", last)
+	}
+}
+
 func TestSinkChunksLongReply(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)

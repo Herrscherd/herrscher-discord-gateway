@@ -49,6 +49,8 @@ in Discord-specific presentation. The render sink (`sink.go` + `progress.go`):
   removed when the turn ends;
 - on a mid-turn backend **reset** (crash + retry) discards the partial render in
   place and keeps rendering the retried turn — no misleading failure summary;
+- on an **abandoned** turn (the host's abstract "ended without a reply" signal)
+  clears the ⏳ ACK and drops the live view, posting no misleading summary;
 - posts the final reply chunked at Discord's 2000-character limit (rune-safe) and
   collapses the progress message to a ✅ summary with action counts and cost.
 
