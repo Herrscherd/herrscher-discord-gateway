@@ -54,7 +54,11 @@ func (s *sink) noteUser(id string) {
 	s.mu.Unlock()
 }
 
-// handle renders one live turn event onto Discord.
+// handle renders one live turn event onto Discord. It holds s.mu for the whole
+// turn render on purpose: mono-channel means one turn at a time, so blocking
+// REST I/O (React, UpsertStatusMessage, Post, Unreact) runs under the lock.
+// This briefly serializes the poll goroutine's noteUser behind render I/O,
+// which is acceptable and intentional for this single-in-flight-turn design.
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,19 +129,31 @@ func splitTool(s string) (tool, detail string) {
 	return s, ""
 }
 
-// chunkText splits s into pieces no longer than max, preferring newline breaks.
+// chunkText splits s into pieces of at most max runes, preferring a newline
+// break within the limit. It counts and slices in rune space so multibyte
+// runes (accents, "…") are never split into invalid UTF-8 and the 2000-rune
+// limit is measured in characters, not bytes.
 func chunkText(s string, max int) []string {
 	var out []string
-	for len(s) > max {
+	r := []rune(s)
+	for len(r) > max {
 		cut := max
-		if nl := strings.LastIndexByte(s[:max], '\n'); nl > max/2 {
-			cut = nl
+		// Prefer the last newline within the limit, but only past the
+		// halfway point so a stray early newline does not yield tiny chunks.
+		for i := max - 1; i > max/2; i-- {
+			if r[i] == '\n' {
+				cut = i
+				break
+			}
 		}
-		out = append(out, s[:cut])
-		s = strings.TrimPrefix(s[cut:], "\n")
+		out = append(out, string(r[:cut]))
+		r = r[cut:]
+		if len(r) > 0 && r[0] == '\n' {
+			r = r[1:]
+		}
 	}
-	if s != "" {
-		out = append(out, s)
+	if len(r) > 0 {
+		out = append(out, string(r))
 	}
 	return out
 }

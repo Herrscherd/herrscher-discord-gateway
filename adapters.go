@@ -142,6 +142,8 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 	return out, nil
 }
 
+// Read returns recent channel messages and records the id of the last non-bot
+// message so the next turn's ACK reaction lands on it.
 func (p *Platform) Read(ctx context.Context, channelID string, limit int, after string) ([]contracts.Message, error) {
 	raws, err := p.readImpl(ctx, channelID, limit, after)
 	if err != nil {

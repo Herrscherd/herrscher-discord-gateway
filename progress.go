@@ -43,13 +43,6 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 	case "result":
 		p.cost = ev.Cost
 		return
-	case "reset":
-		p.lines = nil
-		p.order = nil
-		p.cost = 0
-		p.actions = 0
-		p.counts = map[string]int{}
-		return
 	case "text":
 		if p.level != "full" {
 			return
