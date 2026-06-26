@@ -54,11 +54,11 @@ func (s *sink) noteUser(id string) {
 	s.mu.Unlock()
 }
 
-// handle renders one live turn event onto Discord. It holds s.mu for the whole
-// turn render on purpose: mono-channel means one turn at a time, so blocking
-// REST I/O (React, UpsertStatusMessage, Post, Unreact) runs under the lock.
-// This briefly serializes the poll goroutine's noteUser behind render I/O,
-// which is acceptable and intentional for this single-in-flight-turn design.
+// handle renders one live turn event onto Discord. It holds s.mu across the
+// event's blocking REST I/O (React, UpsertStatusMessage, Post, Unreact) on
+// purpose: mono-channel means one turn at a time, so the poll goroutine's
+// noteUser briefly serializes behind a single event's render, which is
+// acceptable and intentional for this single-in-flight-turn design.
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -85,11 +85,13 @@ func (s *sink) handle(e contracts.Event) {
 			s.pv.add(contracts.BackendEvent{Kind: "text", Detail: e.Text})
 		}
 	case "reset":
+		// A backend crash+retry discards the partial turn, but the SAME turn
+		// continues (the prompt is resent). Drop the partial render in place and
+		// keep the ⏳ ACK so the retried turn keeps updating the live message,
+		// rather than stranding it on a misleading summary and going dark.
 		if s.pv != nil {
-			s.pv.finish(true)
-			s.pv = nil
+			s.pv.reset()
 		}
-		s.clearAck(ch)
 	case "reply":
 		if !e.Done {
 			return
@@ -103,7 +105,7 @@ func (s *sink) handle(e contracts.Event) {
 			if e.Cost > 0 {
 				s.pv.add(contracts.BackendEvent{Kind: "result", Cost: e.Cost})
 			}
-			s.pv.finish(false)
+			s.pv.finish()
 			s.pv = nil
 		}
 		s.clearAck(ch)

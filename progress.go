@@ -82,16 +82,33 @@ func (p *progressView) flush(force bool) {
 	p.dirty = false
 }
 
-func (p *progressView) finish(failed bool) {
+func (p *progressView) finish() {
 	if len(p.lines) == 0 {
 		if p.msgID != "" && p.post != nil {
-			_, _ = p.post(p.msgID, p.summary(failed))
+			_, _ = p.post(p.msgID, p.summary())
 		}
 		return
 	}
 	if p.post != nil {
-		_, _ = p.post(p.msgID, p.summary(failed))
+		_, _ = p.post(p.msgID, p.summary())
 	}
+}
+
+// reset discards the current turn's accumulated activity after a backend
+// crash+retry, keeping the same live message and elapsed clock so the retried
+// turn keeps rendering in place. The turn is not over, so it must NOT collapse
+// to a summary (that is what the old finish-on-reset path got wrong).
+func (p *progressView) reset() {
+	p.lines = nil
+	p.counts = map[string]int{}
+	p.order = nil
+	p.cost = 0
+	p.actions = 0
+	if p.msgID == "" {
+		return // nothing shown yet; let the retried turn create the message
+	}
+	p.dirty = true
+	p.flush(true)
 }
 
 func (p *progressView) render() string {
@@ -106,11 +123,8 @@ func (p *progressView) render() string {
 	return b.String()
 }
 
-func (p *progressView) summary(failed bool) string {
+func (p *progressView) summary() string {
 	icon := "✅"
-	if failed {
-		icon = "⚠️"
-	}
 	parts := make([]string, 0, len(p.order))
 	for _, name := range p.order {
 		if n := p.counts[name]; n > 1 {

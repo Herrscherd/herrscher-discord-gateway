@@ -100,14 +100,39 @@ func TestSinkChunksLongReply(t *testing.T) {
 	}
 }
 
-func TestSinkResetCollapsesProgress(t *testing.T) {
+// TestSinkResetDiscardsAndContinues proves a mid-turn reset (backend
+// crash+retry) discards the partial render in place — keeping the ⏳ ACK and
+// the same live message — and that the retried turn keeps rendering, ending on
+// the normal ✅ summary rather than a misleading ⚠️.
+func TestSinkResetDiscardsAndContinues(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
+	s.noteUser("u1")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "reset"})
+
+	// Reset must not collapse to a summary and must not remove the ⏳ ACK.
+	afterReset := f.upserts[len(f.upserts)-1]
+	if strings.HasPrefix(afterReset, "✅") || strings.HasPrefix(afterReset, "⚠️") {
+		t.Fatalf("reset status = %q, want in-progress (no summary)", afterReset)
+	}
+	if len(f.unreacted) != 0 {
+		t.Fatalf("unreacted = %v, want ACK kept during retry", f.unreacted)
+	}
+
+	// The retried turn keeps rendering and completes normally.
+	s.handle(contracts.Event{T: "status", Text: "Edit y"})
+	s.handle(contracts.Event{T: "reply", Text: "done", Done: true, Cost: 0.01})
+
 	last := f.upserts[len(f.upserts)-1]
-	if !strings.HasPrefix(last, "⚠️") {
-		t.Fatalf("reset status = %q, want ⚠️ summary", last)
+	if !strings.HasPrefix(last, "✅") {
+		t.Fatalf("final status = %q, want ✅ summary", last)
+	}
+	if strings.Contains(last, "2 action") {
+		t.Fatalf("final status = %q, want only post-reset action counted", last)
+	}
+	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+		t.Fatalf("unreacted = %v, want one %q at turn end", f.unreacted, ackEmoji)
 	}
 }

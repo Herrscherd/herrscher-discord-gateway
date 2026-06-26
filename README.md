@@ -24,7 +24,7 @@ require (
 
 | Constructor | Satisfies | Role |
 |-------------|-----------|------|
-| `NewGateway(c)` | `contracts.Gateway` | post / reply / react / menu, plus `Manifest()`; also drives the slash surface |
+| `NewGateway(c)` | `contracts.Gateway`, `contracts.EventSink` | post / reply / react / menu, plus `Manifest()`; also drives the slash surface and renders the live turn stream itself (see below) |
 | `NewPlatform(c)` | `contracts.ChannelReader` | read history, ensure channels, upsert the status message |
 | `NewChannelAdmin(c)` | `contracts.ChannelAdmin` | create-under / forum-post / archive / send / kind |
 | `NewProber(c)` | `contracts.Prober` | cheap `/users/@me` round-trip for health latency |
@@ -32,6 +32,27 @@ require (
 The host wraps the Gateway in `contracts.Degrade(...)` so the core can always call the
 richest method; degradation also forwards `BindSessionControl` so the slash surface is
 reached even through the wrapper.
+
+---
+
+## Rendering is plugin-side (`EventSink`)
+
+The Gateway implements `contracts.EventSink`, so it receives the raw turn-event
+stream and draws Discord itself — the host stays gateway-agnostic and never bakes
+in Discord-specific presentation. The render sink (`sink.go` + `progress.go`):
+
+- opens a single live-updating **progress message** per turn (`UpsertStatusMessage`),
+  capped at 15 lines and throttled to one edit / 1.5 s to respect rate limits;
+- maps tool activity to Unicode emojis (📖 ✏️ 🔎 🤖 🌐 📝 🔧) and assistant prose to 💭 lines;
+- **acknowledges** a received turn with a ⏳ reaction on the triggering user
+  message (the id is recovered locally from `Read`, since `Event` carries none),
+  removed when the turn ends;
+- on a mid-turn backend **reset** (crash + retry) discards the partial render in
+  place and keeps rendering the retried turn — no misleading failure summary;
+- posts the final reply chunked at Discord's 2000-character limit (rune-safe) and
+  collapses the progress message to a ✅ summary with action counts and cost.
+
+Mono-channel by design: one bot, one default channel, one in-flight turn at a time.
 
 ---
 
