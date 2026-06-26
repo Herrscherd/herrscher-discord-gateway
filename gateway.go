@@ -18,14 +18,17 @@ type client interface {
 var (
 	_ contracts.Gateway                = (*Gateway)(nil)
 	_ contracts.SessionControlReceiver = (*Gateway)(nil)
+	_ contracts.EventSink              = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
-// real config it also carries a slash runtime, so it drives the Discord slash
-// command surface and implements contracts.SessionControlReceiver.
+// real config it also carries a slash runtime and a rendering sink, so it drives
+// the slash surface (SessionControlReceiver) and renders the live turn stream
+// (EventSink).
 type Gateway struct {
 	c     client
 	slash *slash
+	sink  *sink
 }
 
 func NewGateway(c client) *Gateway { return &Gateway{c: c} }
@@ -48,6 +51,16 @@ func (g *Gateway) Manifest() contracts.Manifest {
 		Category:     contracts.CategoryGateway,
 		Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 	}
+}
+
+// Emit renders one live turn event onto Discord. It satisfies
+// contracts.EventSink; a Gateway built without a sink (e.g. in some tests)
+// drops events rather than panicking.
+func (g *Gateway) Emit(e contracts.Event) {
+	if g.sink == nil {
+		return
+	}
+	g.sink.handle(e)
 }
 
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {

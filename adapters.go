@@ -66,9 +66,24 @@ func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) erro
 // Platform adapts the dctl client to the neutral channel ports
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
-type Platform struct{ c *dctl.Client }
+type Platform struct {
+	c        *dctl.Client
+	sink     *sink
+	readImpl func(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error)
+}
 
-func NewPlatform(c *dctl.Client) *Platform { return &Platform{c: c} }
+// rawMsg is the minimal shape Read needs to track the last user message.
+type rawMsg struct {
+	id  string
+	bot bool
+	msg contracts.Message
+}
+
+func NewPlatform(c *dctl.Client) *Platform {
+	p := &Platform{c: c}
+	p.readImpl = p.readDctl
+	return p
+}
 
 func (p *Platform) Enabled() bool          { return p.c.Enabled() }
 func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
@@ -92,12 +107,14 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 	return contracts.Channel{ID: ch.ID, Name: ch.Name}, nil
 }
 
-func (p *Platform) Read(ctx context.Context, channelID string, limit int, after string) ([]contracts.Message, error) {
+// readDctl is the production read seam: it pulls messages via dctl and adapts
+// them to rawMsg (carrying the fully-mapped contracts.Message).
+func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error) {
 	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]contracts.Message, 0, len(msgs))
+	out := make([]rawMsg, 0, len(msgs))
 	for _, m := range msgs {
 		atts := make([]contracts.Attachment, 0, len(m.Attachments))
 		for _, a := range m.Attachments {
@@ -108,15 +125,36 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 				Size:        a.Size,
 			})
 		}
-		out = append(out, contracts.Message{
-			ID:          m.ID,
-			ChannelID:   m.ChannelID,
-			Content:     m.Content,
-			AuthorID:    m.Author.ID,
-			AuthorName:  m.Author.Username,
-			AuthorBot:   m.Author.Bot,
-			Attachments: atts,
+		out = append(out, rawMsg{
+			id:  m.ID,
+			bot: m.Author.Bot,
+			msg: contracts.Message{
+				ID:          m.ID,
+				ChannelID:   m.ChannelID,
+				Content:     m.Content,
+				AuthorID:    m.Author.ID,
+				AuthorName:  m.Author.Username,
+				AuthorBot:   m.Author.Bot,
+				Attachments: atts,
+			},
 		})
+	}
+	return out, nil
+}
+
+// Read returns recent channel messages and records the id of the last non-bot
+// message so the next turn's ACK reaction lands on it.
+func (p *Platform) Read(ctx context.Context, channelID string, limit int, after string) ([]contracts.Message, error) {
+	raws, err := p.readImpl(ctx, channelID, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]contracts.Message, 0, len(raws))
+	for _, r := range raws {
+		out = append(out, r.msg)
+		if !r.bot && p.sink != nil {
+			p.sink.noteUser(r.id) // newest non-bot id wins (messages are oldest→newest)
+		}
 	}
 	return out, nil
 }
@@ -143,6 +181,28 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	}
 	return contracts.MessageID(m.ID), nil
 }
+
+// renderAdapter exposes the exact renderClient surface the sink needs, backed by
+// the dctl client. DefaultChannel/UpsertStatusMessage/Unreact reuse Platform's
+// logic; Post/React go straight to dctl.
+type renderAdapter struct{ p *Platform }
+
+func (r renderAdapter) DefaultChannel() string { return r.p.DefaultChannel() }
+func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
+	return r.p.UpsertStatusMessage(ctx, ch, id, content)
+}
+func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error {
+	return r.p.Unreact(ctx, ch, id, emoji)
+}
+func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
+	_, err := r.p.c.Messages().Send(ctx, ch, content)
+	return err
+}
+func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
+	return r.p.c.Reactions().Add(ctx, ch, id, emoji)
+}
+
+var _ renderClient = (*renderAdapter)(nil)
 
 // Prober adapts a cheap REST round-trip (/users/@me) to contracts.Prober.
 type Prober struct{ c *dctl.Client }
