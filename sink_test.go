@@ -4,9 +4,31 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
+
+// TestChunkTextRuneSafe proves chunkText never splits a multibyte rune and
+// counts the limit in runes, not bytes (French text uses accented runes).
+func TestChunkTextRuneSafe(t *testing.T) {
+	// "…" is a 3-byte rune the app renders; a byte cut at 2000 (not a
+	// multiple of 3) lands mid-rune, producing invalid UTF-8.
+	input := strings.Repeat("…", gatewayMaxLen+10)
+	parts := chunkText(input, gatewayMaxLen)
+	for i, part := range parts {
+		if !utf8.ValidString(part) {
+			t.Fatalf("part %d is not valid UTF-8: %q", i, part)
+		}
+		if n := utf8.RuneCountInString(part); n > gatewayMaxLen {
+			t.Fatalf("part %d has %d runes, want <= %d", i, n, gatewayMaxLen)
+		}
+	}
+	if got := strings.Join(parts, ""); got != input {
+		t.Fatalf("rejoined chunks lost runes: got %d runes, want %d",
+			utf8.RuneCountInString(got), utf8.RuneCountInString(input))
+	}
+}
 
 type fakeRender struct {
 	channel   string
