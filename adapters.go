@@ -180,6 +180,28 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	return contracts.MessageID(m.ID), nil
 }
 
+// renderAdapter exposes the exact renderClient surface the sink needs, backed by
+// the dctl client. DefaultChannel/UpsertStatusMessage/Unreact reuse Platform's
+// logic; Post/React go straight to dctl.
+type renderAdapter struct{ p *Platform }
+
+func (r renderAdapter) DefaultChannel() string { return r.p.DefaultChannel() }
+func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
+	return r.p.UpsertStatusMessage(ctx, ch, id, content)
+}
+func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error {
+	return r.p.Unreact(ctx, ch, id, emoji)
+}
+func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
+	_, err := r.p.c.Messages().Send(ctx, ch, content)
+	return err
+}
+func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
+	return r.p.c.Reactions().Add(ctx, ch, id, emoji)
+}
+
+var _ renderClient = (*renderAdapter)(nil)
+
 // Prober adapts a cheap REST round-trip (/users/@me) to contracts.Prober.
 type Prober struct{ c *dctl.Client }
 

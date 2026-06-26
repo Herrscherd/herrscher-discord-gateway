@@ -25,3 +25,7 @@ func TestPlatformReadNotesLastUserToSink(t *testing.T) {
 		t.Fatalf("lastUser = %q, want 3", s.lastUser)
 	}
 }
+
+func TestPlatformSatisfiesRenderClientViaAdapter(t *testing.T) {
+	var _ renderClient = (*renderAdapter)(nil)
+}
