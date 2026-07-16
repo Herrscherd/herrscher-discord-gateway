@@ -75,12 +75,19 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 
 // --- command handlers ---
 
+// routeAndDispatch is the plain path shared by `set` and `service` (and the
+// non-allow tail of `session`): gate, resolve the command path, hand the neutral
+// argv to the core seam.
+func (s *slash) routeAndDispatch(ctx context.Context, ix dctl.Interaction) {
+	path, leaves := route(ix.Data)
+	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
+}
+
 func (s *slash) handleSet(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
 	if !s.gate(ctx, ix) {
 		return dctl.Response{}, nil
 	}
-	path, leaves := route(ix.Data)
-	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
+	s.routeAndDispatch(ctx, ix)
 	return dctl.Response{}, nil
 }
 
@@ -88,8 +95,7 @@ func (s *slash) handleService(ctx context.Context, ix dctl.Interaction) (dctl.Re
 	if !s.gate(ctx, ix) {
 		return dctl.Response{}, nil
 	}
-	path, leaves := route(ix.Data)
-	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
+	s.routeAndDispatch(ctx, ix)
 	return dctl.Response{}, nil
 }
 
@@ -97,24 +103,22 @@ func (s *slash) handleSession(ctx context.Context, ix dctl.Interaction) (dctl.Re
 	if !s.gate(ctx, ix) {
 		return dctl.Response{}, nil
 	}
-	path, leaves := route(ix.Data)
+	path, _ := route(ix.Data)
 	// `/session allow …` is gateway-local policy, not a core command.
 	if len(path) >= 3 && path[1] == "allow" {
 		name, _ := ix.Data.Opt("name")
 		user, _ := ix.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			_ = s.allow.AddSession(name, user)
-			s.respond(ctx, ix, fmt.Sprintf("added <@%s> to session %q", user, name))
+			s.respond(ctx, ix, saveNote(s.allow.AddSession(name, user), fmt.Sprintf("added <@%s> to session %q", user, name)))
 		case "remove":
-			_ = s.allow.RemoveSession(name, user)
-			s.respond(ctx, ix, fmt.Sprintf("removed <@%s> from session %q", user, name))
+			s.respond(ctx, ix, saveNote(s.allow.RemoveSession(name, user), fmt.Sprintf("removed <@%s> from session %q", user, name)))
 		case "list":
 			s.respond(ctx, ix, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
 		}
 		return dctl.Response{}, nil
 	}
-	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
+	s.routeAndDispatch(ctx, ix)
 	return dctl.Response{}, nil
 }
 
@@ -126,11 +130,9 @@ func (s *slash) handleAllow(ctx context.Context, ix dctl.Interaction) (dctl.Resp
 	user, _ := ix.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		_ = s.allow.AddGlobal(user)
-		s.respond(ctx, ix, fmt.Sprintf("allowed <@%s> to run commands", user))
+		s.respond(ctx, ix, saveNote(s.allow.AddGlobal(user), fmt.Sprintf("allowed <@%s> to run commands", user)))
 	case "remove":
-		_ = s.allow.RemoveGlobal(user)
-		s.respond(ctx, ix, fmt.Sprintf("removed <@%s>", user))
+		s.respond(ctx, ix, saveNote(s.allow.RemoveGlobal(user), fmt.Sprintf("removed <@%s>", user)))
 	case "list":
 		s.respond(ctx, ix, listUsers("command allowlist", s.allow.ListGlobal()))
 	}
@@ -204,16 +206,35 @@ func (s *slash) respond(ctx context.Context, ix dctl.Interaction, content string
 	_ = s.ix.Respond(ctx, ix.ID, ix.Token.Reveal(), dctl.Response{Content: content, Ephemeral: true})
 }
 
-// route walks the option tree, following sub-command groups (type 2) and
-// sub-commands (type 1), and returns the resolved command path (top-level name
-// plus the group/sub names) together with the leaf options of the deepest sub.
+// Discord application-command option types (subset we branch on), mirroring the
+// named gateway opcodes in ws.go rather than trusting bare-int comments.
+const (
+	optSubCommand      = 1
+	optSubCommandGroup = 2
+	optBoolean         = 5
+)
+
+// saveNote returns the success message, or that message annotated with a
+// not-persisted warning (and logs the cause) when the allow-store write failed —
+// so the operator is not told a change stuck when it was lost.
+func saveNote(err error, ok string) string {
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: allow store save failed: %v\n", err)
+		return ok + " (warning: not saved, will be lost on restart)"
+	}
+	return ok
+}
+
+// route walks the option tree, following sub-command groups and sub-commands, and
+// returns the resolved command path (top-level name plus the group/sub names)
+// together with the leaf options of the deepest sub.
 func route(d dctl.InteractionData) (path []string, leaves []dctl.InteractionOption) {
 	path = []string{d.Name}
 	opts := d.Options
 	for {
 		var next *dctl.InteractionOption
 		for i := range opts {
-			if opts[i].Type == 1 || opts[i].Type == 2 { // SUB_COMMAND | SUB_COMMAND_GROUP
+			if opts[i].Type == optSubCommand || opts[i].Type == optSubCommandGroup {
 				next = &opts[i]
 				break
 			}
@@ -232,7 +253,7 @@ func route(d dctl.InteractionData) (path []string, leaves []dctl.InteractionOpti
 func flagsFrom(leaves []dctl.InteractionOption) []string {
 	var out []string
 	for _, o := range leaves {
-		if o.Type == 5 { // BOOLEAN
+		if o.Type == optBoolean {
 			if b, _ := o.Value.(bool); b {
 				out = append(out, "--"+o.Name)
 			}

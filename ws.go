@@ -29,6 +29,10 @@ const (
 	opHeartbeatACK      = 11
 	readLimit           = 1 << 20
 	maxReconnectBackoff = 30 * time.Second
+	// maxInFlight bounds concurrent interaction handlers so a burst of
+	// INTERACTION_CREATE dispatches cannot spawn arbitrarily many goroutines /
+	// in-flight REST calls; the read loop back-pressures once it is saturated.
+	maxInFlight = 64
 )
 
 // ws is the Discord Gateway websocket client. It connects, identifies, keeps the
@@ -44,6 +48,7 @@ type ws struct {
 		sync.Mutex
 		n int
 	}
+	sem chan struct{} // bounds concurrent interaction handlers (maxInFlight)
 }
 
 type gwPayload struct {
@@ -54,7 +59,7 @@ type gwPayload struct {
 }
 
 func newWS(token string, handle func(context.Context, dctl.Interaction)) *ws {
-	return &ws{token: token, handle: handle}
+	return &ws{token: token, handle: handle, sem: make(chan struct{}, maxInFlight)}
 }
 
 // run is the supervised connect loop: it keeps a session up, reconnecting with
@@ -62,7 +67,11 @@ func newWS(token string, handle func(context.Context, dctl.Interaction)) *ws {
 func (w *ws) run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		if err := w.session(ctx); err != nil && ctx.Err() == nil {
+		// connected resets the backoff once a session is actually established, so a
+		// long-lived connection that later drops reconnects at the base delay
+		// instead of the last ramped-up value.
+		connected := func() { backoff = time.Second }
+		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
 			fmt.Fprintf(os.Stderr, "discord gateway: %v; reconnecting in %s\n", err, backoff)
 			select {
 			case <-ctx.Done():
@@ -72,14 +81,13 @@ func (w *ws) run(ctx context.Context) {
 			if backoff *= 2; backoff > maxReconnectBackoff {
 				backoff = maxReconnectBackoff
 			}
-			continue
 		}
-		backoff = time.Second
 	}
 }
 
 // session runs one connection: dial, HELLO, IDENTIFY, then read until error.
-func (w *ws) session(ctx context.Context) error {
+// connected is invoked once the connection is established (after IDENTIFY).
+func (w *ws) session(ctx context.Context, connected func()) error {
 	c, _, err := websocket.Dial(ctx, gatewayURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
@@ -104,6 +112,7 @@ func (w *ws) session(ctx context.Context) error {
 	if err := w.identify(ctx, c); err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
+	connected()
 
 	// A fresh connection starts "acked" so the first heartbeat is allowed; each
 	// heartbeat then requires the previous one to have been ACKed (see
@@ -146,20 +155,46 @@ func (w *ws) onDispatch(ctx context.Context, d json.RawMessage) {
 		fmt.Fprintf(os.Stderr, "discord gateway: bad interaction: %v\n", err)
 		return
 	}
-	go w.handle(ctx, ix)
+	select {
+	case w.sem <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	go func() {
+		defer func() { <-w.sem }()
+		w.handle(ctx, ix)
+	}()
+}
+
+type identifyProps struct {
+	OS      string `json:"os"`
+	Browser string `json:"browser"`
+	Device  string `json:"device"`
+}
+
+type identifyData struct {
+	Token      string        `json:"token"`
+	Intents    int           `json:"intents"`
+	Properties identifyProps `json:"properties"`
+}
+
+type identifyMsg struct {
+	Op int          `json:"op"`
+	D  identifyData `json:"d"`
+}
+
+type heartbeatMsg struct {
+	Op int  `json:"op"`
+	D  *int `json:"d"`
 }
 
 func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
-	return w.write(ctx, c, map[string]any{
-		"op": opIdentify,
-		"d": map[string]any{
-			"token":   w.token,
-			"intents": 0,
-			"properties": map[string]any{
-				"os":      "linux",
-				"browser": "herrscher",
-				"device":  "herrscher",
-			},
+	return w.write(ctx, c, identifyMsg{
+		Op: opIdentify,
+		D: identifyData{
+			Token:      w.token,
+			Intents:    0,
+			Properties: identifyProps{OS: "linux", Browser: "herrscher", Device: "herrscher"},
 		},
 	})
 }
@@ -198,11 +233,11 @@ func (w *ws) writeHeartbeat(ctx context.Context, c *websocket.Conn) error {
 	w.seq.Lock()
 	n := w.seq.n
 	w.seq.Unlock()
-	var d any
+	var d *int
 	if n > 0 {
-		d = n
+		d = &n
 	}
-	return w.write(ctx, c, map[string]any{"op": opHeartbeat, "d": d})
+	return w.write(ctx, c, heartbeatMsg{Op: opHeartbeat, D: d})
 }
 
 func (w *ws) setSeq(n int) {
