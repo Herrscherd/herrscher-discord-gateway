@@ -25,8 +25,8 @@ require (
 | Constructor | Satisfies | Role |
 |-------------|-----------|------|
 | `NewGateway(c)` | `contracts.Gateway`, `contracts.EventSink` | post / reply / react / menu, plus `Manifest()`; also drives the slash surface and renders the live turn stream itself (see below) |
-| `NewPlatform(c)` | `contracts.ChannelReader` | read history, ensure channels, upsert the status message |
-| `NewChannelAdmin(c)` | `contracts.ChannelAdmin` | create-under / forum-post / archive / send / kind |
+| `NewPlatform(c)` | `contracts.ChannelReader`, `contracts.MenuRouter` | read history, ensure channels, upsert the status message, route select menus |
+| `NewChannelAdmin(c)` | `contracts.ChannelAdmin` | create-under / forum-post / archive / send / kind / channel-ref (`<#id>`) |
 | `NewProber(c)` | `contracts.Prober` | cheap `/users/@me` round-trip for health latency |
 
 The host wraps the Gateway in `contracts.Degrade(...)` so the core can always call the
@@ -121,7 +121,9 @@ func ParseChoiceCustomID(id string) (string, bool)   // extract the conv id
 | File | Contents |
 |------|----------|
 | `register.go` | `init()` self-registration + `NewGatewaySet` factory + allow-store path |
-| `gateway.go` | `Gateway` adapter, `Manifest`, `BindSessionControl` |
+| `gateway.go` | `Gateway` adapter, `Manifest`, `BindSessionControl`, `Emit` (EventSink) |
+| `sink.go` | `EventSink` render sink: ⏳ ACK reaction, live progress message, chunked final reply |
+| `progress.go` | progress-view accumulation, edit throttling, ✅ summary |
 | `slash.go` | slash catalog, interaction→argv translation, allow-list handlers, autocomplete |
 | `ws.go` | Discord Gateway v10 websocket client (identify / heartbeat / reconnect) |
 | `allow.go` | plugin-local permission store (global + per-session) |

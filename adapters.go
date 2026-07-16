@@ -11,7 +11,7 @@ import (
 // Discord channel-type ints (GUILD_CATEGORY is 4; dctl exports ChannelForum=15).
 const channelCategory = 4
 
-// ChannelAdmin adapts the dctl client to serve.ChannelAdmin: session channel
+// ChannelAdmin adapts the dctl client to contracts.ChannelAdmin: session channel
 // creation/archival and posting.
 type ChannelAdmin struct{ c *dctl.Client }
 
