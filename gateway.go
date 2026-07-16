@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Herrscherd/dctl"
 	"github.com/Herrscherd/herrscher-contracts"
@@ -65,16 +66,25 @@ func (g *Gateway) Emit(e contracts.Event) {
 
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
 	m, err := g.c.Send(ctx, conv.ID, text)
-	return msgID(m), err
+	if err != nil {
+		return msgID(m), fmt.Errorf("discord post: %w", err)
+	}
+	return msgID(m), nil
 }
 
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
 	m, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
-	return msgID(m), err
+	if err != nil {
+		return msgID(m), fmt.Errorf("discord reply: %w", err)
+	}
+	return msgID(m), nil
 }
 
 func (g *Gateway) React(ctx context.Context, conv contracts.Conversation, msg contracts.MessageID, emoji string) error {
-	return g.c.React(ctx, conv.ID, string(msg), emoji)
+	if err := g.c.React(ctx, conv.ID, string(msg), emoji); err != nil {
+		return fmt.Errorf("discord react: %w", err)
+	}
+	return nil
 }
 
 func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, prompt string, opts []contracts.Choice) error {
@@ -84,8 +94,10 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	}
 	// customID carries the conversation id so a click routes its component
 	// interaction back to the originating conversation.
-	_, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out)
-	return err
+	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out); err != nil {
+		return fmt.Errorf("discord menu: %w", err)
+	}
+	return nil
 }
 
 // discordClient adapts *dctl.Client's sub-clients to the narrow client seam the

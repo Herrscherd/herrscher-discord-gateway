@@ -25,6 +25,7 @@ type progressView struct {
 	start    time.Time
 	now      func() time.Time
 	lines    []string
+	elided   bool // older lines were dropped past maxLines (render shows a leading "…")
 	counts   map[string]int
 	order    []string
 	cost     float64
@@ -61,6 +62,12 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		p.lines = append(p.lines, line)
 	default:
 		return
+	}
+	// Only the last maxLines are ever rendered; drop the tail past that so the
+	// slice does not retain every line for the whole turn.
+	if len(p.lines) > maxLines {
+		p.lines = append(p.lines[:0], p.lines[len(p.lines)-maxLines:]...)
+		p.elided = true
 	}
 	p.dirty = true
 	p.flush(false)
@@ -100,6 +107,7 @@ func (p *progressView) finish() {
 // to a summary (that is what the old finish-on-reset path got wrong).
 func (p *progressView) reset() {
 	p.lines = nil
+	p.elided = false
 	p.counts = map[string]int{}
 	p.order = nil
 	p.cost = 0
@@ -112,14 +120,12 @@ func (p *progressView) reset() {
 }
 
 func (p *progressView) render() string {
-	lines := p.lines
 	var b strings.Builder
 	b.WriteString("⏳ en cours…\n")
-	if len(lines) > maxLines {
+	if p.elided {
 		b.WriteString("…\n")
-		lines = lines[len(lines)-maxLines:]
 	}
-	b.WriteString(strings.Join(lines, "\n"))
+	b.WriteString(strings.Join(p.lines, "\n"))
 	return b.String()
 }
 

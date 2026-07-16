@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/Herrscherd/dctl"
@@ -20,7 +21,7 @@ func NewChannelAdmin(c *dctl.Client) *ChannelAdmin { return &ChannelAdmin{c: c} 
 func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 	t, err := a.c.Channels().Type(ctx, id)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("discord channel type: %w", err)
 	}
 	switch t {
 	case channelCategory:
@@ -35,7 +36,7 @@ func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (string, error) {
 	ch, err := a.c.Channels().CreateUnder(ctx, parentID, name)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("discord create channel: %w", err)
 	}
 	if ch == nil {
 		return "", nil
@@ -46,7 +47,7 @@ func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (
 func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content string) (string, error) {
 	ch, err := a.c.Threads().ForumPost(ctx, forumID, name, content)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("discord forum post: %w", err)
 	}
 	if ch == nil {
 		return "", nil
@@ -55,12 +56,17 @@ func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content str
 }
 
 func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
-	return a.c.Channels().Archive(ctx, id)
+	if err := a.c.Channels().Archive(ctx, id); err != nil {
+		return fmt.Errorf("discord archive channel: %w", err)
+	}
+	return nil
 }
 
 func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) error {
-	_, err := a.c.Messages().Send(ctx, channelID, content)
-	return err
+	if _, err := a.c.Messages().Send(ctx, channelID, content); err != nil {
+		return fmt.Errorf("discord send: %w", err)
+	}
+	return nil
 }
 
 // ChannelRef renders a Discord channel id as channel-mention markup so operator
@@ -103,7 +109,7 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 	}
 	ch, err := ensure()
 	if err != nil {
-		return contracts.Channel{}, err
+		return contracts.Channel{}, fmt.Errorf("discord ensure channel: %w", err)
 	}
 	if ch == nil {
 		return contracts.Channel{}, nil
@@ -116,7 +122,7 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error) {
 	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("discord read: %w", err)
 	}
 	out := make([]rawMsg, 0, len(msgs))
 	for _, m := range msgs {
@@ -164,11 +170,18 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 }
 
 func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji string) error {
-	return p.c.Reactions().Remove(ctx, channelID, messageID, emoji)
+	if err := p.c.Reactions().Remove(ctx, channelID, messageID, emoji); err != nil {
+		return fmt.Errorf("discord unreact: %w", err)
+	}
+	return nil
 }
 
 func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error) {
-	return p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
+	id, err := p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
+	if err != nil {
+		return id, fmt.Errorf("discord status message: %w", err)
+	}
+	return id, nil
 }
 
 func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, route string, opts []contracts.Choice) (contracts.MessageID, error) {
@@ -178,7 +191,7 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	}
 	m, err := p.c.Components().SendSelectMenu(ctx, channelID, replyTo, prompt, ChoiceCustomID(route), out)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("discord menu: %w", err)
 	}
 	if m == nil {
 		return "", nil
@@ -199,11 +212,16 @@ func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error 
 	return r.p.Unreact(ctx, ch, id, emoji)
 }
 func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
-	_, err := r.p.c.Messages().Send(ctx, ch, content)
-	return err
+	if _, err := r.p.c.Messages().Send(ctx, ch, content); err != nil {
+		return fmt.Errorf("discord post: %w", err)
+	}
+	return nil
 }
 func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
-	return r.p.c.Reactions().Add(ctx, ch, id, emoji)
+	if err := r.p.c.Reactions().Add(ctx, ch, id, emoji); err != nil {
+		return fmt.Errorf("discord react: %w", err)
+	}
+	return nil
 }
 
 var _ renderClient = (*renderAdapter)(nil)
@@ -216,7 +234,10 @@ func NewProber(c *dctl.Client) *Prober { return &Prober{c: c} }
 func (p *Prober) Probe(ctx context.Context) (int64, error) {
 	start := time.Now()
 	_, err := p.c.Interactions().AppID(ctx)
-	return time.Since(start).Milliseconds(), err
+	if err != nil {
+		return time.Since(start).Milliseconds(), fmt.Errorf("discord probe: %w", err)
+	}
+	return time.Since(start).Milliseconds(), nil
 }
 
 // Compile-time proof the Discord adapters satisfy the neutral channel ports.
