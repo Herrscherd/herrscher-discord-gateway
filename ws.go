@@ -72,6 +72,13 @@ func (w *ws) run(ctx context.Context) {
 		// instead of the last ramped-up value.
 		connected := func() { backoff = time.Second }
 		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
+			if code, ok := permanentClose(err); ok {
+				// Reconnecting cannot succeed (bad token, bad intents, unsupported
+				// API version); stop the loop instead of respamming a doomed
+				// IDENTIFY every backoff. The operator must fix DISCORD_TOKEN/intents.
+				fmt.Fprintf(os.Stderr, "discord gateway: fatal: %v (close %d); not reconnecting — check the bot token and intents\n", err, code)
+				return
+			}
 			fmt.Fprintf(os.Stderr, "discord gateway: %v; reconnecting in %s\n", err, backoff)
 			select {
 			case <-ctx.Done():
@@ -83,6 +90,21 @@ func (w *ws) run(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// permanentClose reports whether err is a Discord gateway close for a condition
+// that reconnecting cannot resolve, returning the close code. These are the
+// non-recoverable v10 codes: 4004 authentication failed (invalid token), 4010
+// invalid shard, 4011 sharding required, 4012 invalid API version, 4013 invalid
+// intent(s), 4014 disallowed intent(s). errors.As (via CloseStatus) unwraps, so
+// a wrapped close is still recognized.
+func permanentClose(err error) (websocket.StatusCode, bool) {
+	code := websocket.CloseStatus(err)
+	switch code {
+	case 4004, 4010, 4011, 4012, 4013, 4014:
+		return code, true
+	}
+	return code, false
 }
 
 // session runs one connection: dial, HELLO, IDENTIFY, then read until error.
