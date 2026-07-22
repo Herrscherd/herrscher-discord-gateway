@@ -99,8 +99,11 @@ override, so treat the allow list as the real policy and populate it.
 regardless of intents, so it identifies with `intents=0` and only acts on
 `INTERACTION_CREATE`. It heartbeats on the server-supplied interval, tracks heartbeat
 ACKs to detect a half-dead connection (forcing a reconnect when a beat goes unACKed),
-and reconnects with exponential backoff until the daemon context is cancelled. It runs
-once the host binds the session controller (`BindSessionControl`).
+and reconnects with exponential backoff until the daemon context is cancelled. A
+non-recoverable close (4004 bad token, 4010–4014 bad shard/API/intents) is treated as
+fatal: the loop stops and logs once rather than respamming a doomed IDENTIFY — fix the
+token/intents and restart. It runs once the host binds the session controller
+(`BindSessionControl`).
 
 ---
 
