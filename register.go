@@ -18,6 +18,7 @@ func init() {
 		Manifest: contracts.Manifest{
 			Kind:         "discord",
 			Category:     contracts.CategoryGateway,
+			Status:       contracts.StatusLive,
 			Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
