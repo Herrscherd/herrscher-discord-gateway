@@ -1,147 +1,57 @@
 # herrscher-discord-gateway
 
-**The Discord channel edge.** This module teaches the Herrscher platform to speak
-Discord. It is a **pure plugin** — no `main`, no composition root. It adapts the
-low-level [`dctl`](https://github.com/Herrscherd/dctl) Discord client to the
-[`herrscher-contracts`](https://github.com/Herrscherd/herrscher-contracts) ports, and
-self-registers into the global plugin registry from its `init()` (xcaddy pattern), so
-the host enables Discord with a blank import + rebuild — no wiring.
+**The Discord channel edge.** Adapts the [`dctl`](https://github.com/Herrscherd/dctl)
+Discord REST client to the Herrscher gateway ports and self-registers from `init()`,
+so a host enables Discord with a blank import and a rebuild. It is a pure plugin —
+no `main`, no composition root — and it is a *smart* gateway: it implements
+`EventSink` and renders the live turn stream itself, so the core never learns
+anything Discord-specific.
 
-```
-require (
-    github.com/Herrscherd/dctl                 // Discord REST client + slash builders
-    github.com/Herrscherd/herrscher-contracts  // the ports it satisfies
-    github.com/coder/websocket                 // gateway websocket transport
-)
-```
+## Role · Category · Ports · Config · Status · Repo
 
----
+| Aspect | Value |
+|--------|-------|
+| **Role** | Receives Discord slash interactions, posts replies, and renders turn progress in-channel |
+| **Category** | Gateway (inbound edge) |
+| **Ports implemented** | `Gateway`, `EventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `channel` / `DISCORD_CHANNEL_ID` (default channel id), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Status** | live |
+| **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
-## What it provides
-
-`NewGatewaySet` (the registered factory) builds, from runtime config (`token`,
-`channel`), every platform surface the daemon binds into a `contracts.GatewaySet`:
-
-| Constructor | Satisfies | Role |
-|-------------|-----------|------|
-| `NewGateway(c)` | `contracts.Gateway`, `contracts.EventSink` | post / reply / react / menu, plus `Manifest()`; also drives the slash surface and renders the live turn stream itself (see below) |
-| `NewPlatform(c)` | `contracts.ChannelReader`, `contracts.MenuRouter` | read history, ensure channels, upsert the status message, route select menus |
-| `NewChannelAdmin(c)` | `contracts.ChannelAdmin` | create-under / forum-post / archive / send / kind / channel-ref (`<#id>`) |
-| `NewProber(c)` | `contracts.Prober` | cheap `/users/@me` round-trip for health latency |
-
-The host wraps the Gateway in `contracts.Degrade(...)` so the core can always call the
-richest method; degradation also forwards `BindSessionControl` so the slash surface is
-reached even through the wrapper.
-
----
-
-## Rendering is plugin-side (`EventSink`)
-
-The Gateway implements `contracts.EventSink`, so it receives the raw turn-event
-stream and draws Discord itself — the host stays gateway-agnostic and never bakes
-in Discord-specific presentation. The render sink (`sink.go` + `progress.go`):
-
-- opens a single live-updating **progress message** per turn (`UpsertStatusMessage`),
-  capped at 15 lines and throttled to one edit / 1.5 s to respect rate limits;
-- maps tool activity to Unicode emojis (📖 ✏️ 🔎 🤖 🌐 📝 🔧) and assistant prose to 💭 lines;
-- **acknowledges** a received turn with a ⏳ reaction on the triggering user
-  message (the id is recovered locally from `Read`, since `Event` carries none),
-  removed when the turn ends;
-- on a mid-turn backend **reset** (crash + retry) discards the partial render in
-  place and keeps rendering the retried turn — no misleading failure summary;
-- on an **abandoned** turn (the host's abstract "ended without a reply" signal)
-  clears the ⏳ ACK and drops the live view, posting no misleading summary;
-- posts the final reply chunked at Discord's 2000-character limit (rune-safe) and
-  collapses the progress message to a ✅ summary with action counts and cost.
-
-Mono-channel by design: one bot, one default channel, one in-flight turn at a time.
-
----
-
-## The slash surface (entirely plugin-side)
-
-All slash handling lives here — the core never learns the Discord command surface.
-`slash.go` declares the command catalog with the `dctl` builders, `ws.go` receives the
-interactions, and the plugin translates each one into either:
-
-- a **neutral argv** dispatched through `contracts.SessionControl.Dispatch` (the seam
-  the host binds via `BindSessionControl`), for the commands the core owns; or
-- a mutation of the **plugin-local allow store** (`allow.go`), for the permission
-  lists the core never sees.
-
-| Command | Subcommands / options | Goes to |
-|---------|-----------------------|---------|
-| `/set` | `home <channel>`, `source <path>` | core (argv) |
-| `/session` | `create [name] [cmd] [shared] [backend: stream\|oneshot] [project] [clone]`, `close [name] [force]`, `list`, `who [name]` | core (argv) |
-| `/session allow` | `add <name> <user>`, `remove <name> <user>`, `list <name>` | allow store |
-| `/service` | `restart`, `update [no_pull]` | core (argv) |
-| `/allow` | `add <user>`, `remove <user>`, `list` | allow store |
-
-Session-name options (`close`/`who`/`session allow …`) autocomplete from
-`SessionControl.Sessions()`.
-
-### Permissions
-
-Two gates stack. Each command is published with `default_member_permissions =
-Manage Server`, so Discord only shows it to server managers. The plugin-local allow
-store (`/allow`) is the finer per-user gate: an **empty** global list allows everyone
-who can see the command (so the first operator can bootstrap), and once populated only
-listed users may run commands or autocomplete. The store persists as JSON
-(`discord-allow.json`, mode 0600) beside the daemon state (`DCTL_STATE_DIR`, else
-`~/.config/dctl`). `default_member_permissions` is a UI default a guild admin can
-override, so treat the allow list as the real policy and populate it.
-
----
-
-## The gateway websocket
-
-`ws.go` is a Discord Gateway v10 client. Interactions are delivered over the gateway
-regardless of intents, so it identifies with `intents=0` and only acts on
-`INTERACTION_CREATE`. It heartbeats on the server-supplied interval, tracks heartbeat
-ACKs to detect a half-dead connection (forcing a reconnect when a beat goes unACKed),
-and reconnects with exponential backoff until the daemon context is cancelled. A
-non-recoverable close (4004 bad token, 4010–4014 bad shard/API/intents) is treated as
-fatal: the loop stops and logs once rather than respamming a doomed IDENTIFY — fix the
-token/intents and restart. It runs once the host binds the session controller
-(`BindSessionControl`).
-
----
-
-## Select-menu choice routing
-
-When the core posts a select menu, the `custom_id` carries the **conversation id**, so
-a click routes back to the right conversation. `choice.go` provides the codec:
-
-```go
-func ChoiceCustomID(conv string) string             // prefix + conv id
-func ParseChoiceCustomID(id string) (string, bool)   // extract the conv id
-```
-
----
-
-## Layout
-
-| File | Contents |
-|------|----------|
-| `register.go` | `init()` self-registration + `NewGatewaySet` factory + allow-store path |
-| `gateway.go` | `Gateway` adapter, `Manifest`, `BindSessionControl`, `Emit` (EventSink) |
-| `sink.go` | `EventSink` render sink: ⏳ ACK reaction, live progress message, chunked final reply |
-| `progress.go` | progress-view accumulation, edit throttling, ✅ summary |
-| `slash.go` | slash catalog, interaction→argv translation, allow-list handlers, autocomplete |
-| `ws.go` | Discord Gateway v10 websocket client (identify / heartbeat / reconnect) |
-| `allow.go` | plugin-local permission store (global + per-session) |
-| `adapters.go` | `ChannelAdmin`, `Platform`, `Prober` |
-| `choice.go` | select-menu `custom_id` codec |
-
----
-
-## Build & test
+## Install
 
 ```bash
-go build ./...
-go vet ./...
-go test ./...
+herrscher plugin add github.com/Herrscherd/herrscher-discord-gateway
 ```
 
-Go 1.25. Depends on `dctl`, `herrscher-contracts`, and `coder/websocket`. Pure plugin —
-no binary. The host is the only thing that constructs these adapters (blank import).
+## Rendering happens here, not in the core
+
+The Gateway receives the raw turn-event stream and draws Discord itself: one
+live-updating progress message per turn (capped at 15 lines, one edit per 1.5 s),
+a ⏳ ACK reaction on the triggering message, and a final reply chunked at Discord's
+2000-rune limit and collapsed to a ✅ summary. A mid-turn backend reset discards the
+partial render and keeps going; an abandoned turn clears the ACK silently.
+Mono-channel by design: one bot, one default channel, one in-flight turn.
+
+## The slash surface
+
+`/set`, `/session`, `/service` and `/allow` are declared and parsed here. Commands the
+core owns become neutral argv through `SessionControl.Dispatch`; `/allow` and
+`/session allow` mutate a plugin-local store the core never sees
+(`discord-allow.json`, mode 0600, under `DCTL_STATE_DIR`). Two gates stack: Discord's
+`default_member_permissions = Manage Server`, plus that store — empty means everyone
+who can see the command (so the first operator can bootstrap), populated means
+listed users only. Treat the store as the real policy; the Discord default is
+overridable by a guild admin.
+
+## Reconnection
+
+The gateway websocket reconnects with exponential backoff until the daemon context
+is cancelled. A non-recoverable close is treated as **fatal**: 4004 (bad token) and
+4010–4014 (bad shard / API version / intents) stop the loop and log once rather than
+respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
+
+## Further reading
+
+- [Herrscher docs](https://github.com/Herrscherd/herrscher-docs) — `plugins/gateway`
+- [contracts](https://github.com/Herrscherd/herrscher-contracts) — port signatures
