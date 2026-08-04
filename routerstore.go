@@ -30,8 +30,11 @@ func newBindStore(path string) *bindStore {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently resolve to a wrong session: report
 			// it and start empty, which only costs one extra question.
+			// Both maps go, not just the bindings: a half-decoded Threads would
+			// leave a channel marked as a thread the gateway opened, and there a
+			// plain message needs no @mention to make the bot act.
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store %s is corrupt, ignoring: %v\n", path, err)
-			s.Channels = map[string]string{}
+			s.Channels, s.Threads = map[string]string{}, map[string]bool{}
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
@@ -83,9 +86,10 @@ func (s *bindStore) BindThread(channel, session string) error {
 	})
 }
 
+// Unbind drops the session a conversation was bound to. The thread flag stays:
+// it says what the conversation *is*, not what is running in it, and a private
+// thread the gateway opened stays private and two-membered after its session
+// dies. Clearing it would make the thread demand an @mention again.
 func (s *bindStore) Unbind(channel string) error {
-	return s.persist(func() {
-		delete(s.Channels, channel)
-		delete(s.Threads, channel)
-	})
+	return s.persist(func() { delete(s.Channels, channel) })
 }

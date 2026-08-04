@@ -144,6 +144,23 @@ func TestUnknownComponentIsDropped(t *testing.T) {
 	}
 }
 
+// The bot follows its owner into DMs, where Discord carries the caller under
+// `user` rather than `member.user`. Reading the wrong one made a populated
+// allowlist deny the owner in his own DM.
+func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
+	allow := newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
+	if err := allow.AddGlobal("owner1"); err != nil {
+		t.Fatal(err)
+	}
+	s := &slash{ctx: context.Background(), allow: allow}
+	if !s.gate(context.Background(), dctl.Interaction{User: dctl.Author{ID: "owner1"}}) {
+		t.Fatal("the owner was denied in a DM")
+	}
+	if !s.gate(context.Background(), dctl.Interaction{Member: dctl.Member{User: dctl.Author{ID: "owner1"}}}) {
+		t.Fatal("the owner was denied in a guild")
+	}
+}
+
 func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	if err := binds.Bind("c1", "ch-c1"); err != nil {

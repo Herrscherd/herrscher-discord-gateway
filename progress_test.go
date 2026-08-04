@@ -1,9 +1,11 @@
 package discord
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
@@ -20,6 +22,30 @@ func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 
 	if !strings.Contains(last, "📖 Read") || !strings.Contains(last, "envfile.go") {
 		t.Fatalf("progress body = %q, want emoji+tool+detail", last)
+	}
+}
+
+// Fifteen lines carrying 120 runes of detail each run past Discord's 2000-rune
+// message limit. Discord rejects an oversized edit and flush swallows the error,
+// so the live message would freeze for the rest of the turn.
+func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
+	var last string
+	pv := newProgressView(func(id, content string) (string, error) {
+		last = content
+		return "m1", nil
+	}, levelFull, time.Unix(0, 0))
+
+	for i := 0; i < maxLines*2; i++ {
+		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Bash",
+			Detail: strconv.Itoa(i) + strings.Repeat("x", 200)})
+	}
+	pv.flush(true)
+
+	if n := utf8.RuneCountInString(last); n > gatewayMaxLen {
+		t.Fatalf("progress body = %d runes, want <= %d", n, gatewayMaxLen)
+	}
+	if !strings.HasPrefix(last, "⏳ en cours…\n…\n") {
+		t.Fatalf("progress body = %q…, want the dropped lines marked elided", last[:40])
 	}
 }
 

@@ -108,7 +108,7 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 	if ix.Type == dctl.InteractionAutocomplete {
 		// Gate autocomplete too: an unallowed user must not be able to enumerate
 		// session names (the suggestions would otherwise leak the topology).
-		if !s.allow.Allowed(ix.Member.User.ID) {
+		if !s.allow.Allowed(ix.UserID()) {
 			_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil)
 			return
 		}
@@ -207,8 +207,11 @@ func (s *slash) autoSession(ctx context.Context, ix dctl.Interaction) ([]dctl.Au
 // --- helpers ---
 
 // gate enforces the global command allowlist, replying ephemerally when denied.
+// The caller id comes from UserID(), not member.user: this bot follows its owner
+// into DMs, where Discord carries the caller somewhere else entirely and a
+// populated allowlist would otherwise deny him in his own DM.
 func (s *slash) gate(ctx context.Context, ix dctl.Interaction) bool {
-	if s.allow.Allowed(ix.Member.User.ID) {
+	if s.allow.Allowed(ix.UserID()) {
 		return true
 	}
 	s.respond(ctx, ix, "you are not allowed to run commands here")

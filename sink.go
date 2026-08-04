@@ -34,6 +34,7 @@ type sink struct {
 	rc    renderClient
 	ch    string // the conversation this sink renders into
 	level string
+	owner string // the operator every answer pings
 
 	mu       sync.Mutex
 	pv       *progressView
@@ -47,11 +48,11 @@ type sink struct {
 // was written in, and reacting to it in the wrong channel is a 404.
 type msgRef struct{ ch, id string }
 
-func newSink(ctx context.Context, rc renderClient, ch, level string) *sink {
+func newSink(ctx context.Context, rc renderClient, ch, level, owner string) *sink {
 	if level == "" {
 		level = defaultLevel
 	}
-	return &sink{ctx: ctx, rc: rc, ch: ch, level: level}
+	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner}
 }
 
 // sinks is the set of live per-conversation renderers. The gateway is no longer
@@ -63,13 +64,14 @@ type sinks struct {
 	ctx   context.Context
 	rc    renderClient
 	level string
+	owner string
 
 	mu sync.Mutex
 	m  map[string]*sink
 }
 
-func newSinks(ctx context.Context, rc renderClient, level string) *sinks {
-	return &sinks{ctx: ctx, rc: rc, level: level, m: map[string]*sink{}}
+func newSinks(ctx context.Context, rc renderClient, level, owner string) *sinks {
+	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, m: map[string]*sink{}}
 }
 
 // at returns the renderer for one conversation, creating it on first use.
@@ -79,7 +81,7 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	v := newSink(s.ctx, s.rc, convID, s.level)
+	v := newSink(s.ctx, s.rc, convID, s.level, s.owner)
 	s.m[convID] = v
 	return v
 }
@@ -171,10 +173,8 @@ func (s *sink) handle(e contracts.Event) {
 		if !e.Done {
 			return
 		}
-		if e.Text != "" {
-			for _, part := range chunkText(e.Text, gatewayMaxLen) {
-				_ = s.rc.Post(s.ctx, ch, part)
-			}
+		for _, part := range chunkText(s.answer(e.Text), gatewayMaxLen) {
+			_ = s.rc.Post(s.ctx, ch, part)
 		}
 		if s.pv != nil {
 			if e.Cost > 0 {
@@ -185,6 +185,22 @@ func (s *sink) handle(e contracts.Event) {
 		}
 		s.clearAck(ch)
 	}
+}
+
+// answer prepares the text a finished turn is posted as. It opens with the
+// operator's @mention: a turn runs for minutes and its answer is a plain post
+// in whatever conversation the job lives in — without a mention Discord tells
+// nobody, and the operator has to go looking. A turn that ends with nothing to
+// say still gets a line, because the alternative is the ⏳ silently vanishing,
+// which reads exactly like a bot that died.
+func (s *sink) answer(text string) string {
+	if text == "" {
+		text = "✅ terminé"
+	}
+	if s.owner == "" {
+		return text
+	}
+	return "<@" + s.owner + "> " + text
 }
 
 // clearAck removes the ⏳ reaction left on the triggering message, if any.
