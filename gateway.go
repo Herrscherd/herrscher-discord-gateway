@@ -14,6 +14,10 @@ type client interface {
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
+	// ReadMessages backs the router's channel context. REST reads are not gated by
+	// the message-content intent, which is how the bot sees what everyone said
+	// without asking Discord for a privileged intent.
+	ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error)
 }
 
 var (
@@ -125,6 +129,10 @@ func (d discordClient) React(ctx context.Context, channelID, messageID, emoji st
 
 func (d discordClient) SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error) {
 	return d.c.Components().SendSelectMenu(ctx, channelID, replyTo, content, customID, options)
+}
+
+func (d discordClient) ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error) {
+	return d.c.Messages().Read(ctx, channelID, limit, after)
 }
 
 func msgID(m *dctl.Message) contracts.MessageID {
