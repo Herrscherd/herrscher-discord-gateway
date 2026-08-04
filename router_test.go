@@ -13,6 +13,7 @@ import (
 // fakeCtrl records what the router asked the core to do.
 type fakeCtrl struct {
 	repos     []contracts.RepoRef
+	sessions  []contracts.SessionInfo
 	created   []contracts.CreateSession
 	submitted map[string][]contracts.Inbound
 	live      map[string]bool
@@ -34,7 +35,7 @@ func (f *fakeCtrl) Create(_ context.Context, s contracts.CreateSession) (string,
 	return "created", nil
 }
 func (f *fakeCtrl) Close(context.Context, string, bool) (string, error) { return "", nil }
-func (f *fakeCtrl) Sessions() []contracts.SessionInfo                   { return nil }
+func (f *fakeCtrl) Sessions() []contracts.SessionInfo                   { return f.sessions }
 func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine        { return nil }
 func (f *fakeCtrl) Resume(string) error                                 { return nil }
 func (f *fakeCtrl) Interrupt(string) bool                               { return false }
@@ -229,6 +230,34 @@ func TestNoReposTellsTheOperator(t *testing.T) {
 	}
 	if len(c.sent) != 1 || c.sent[0].channel != "c1" {
 		t.Fatalf("sent = %+v, want one explanation in the pinged channel", c.sent)
+	}
+}
+
+// A choice menu carries the conversation it was posted into, not a session name
+// (Gateway.Menu only ever knows the conversation), so the pick must be resolved
+// back to the session driving that channel — bound or created by command.
+func TestChoicePickResolvesTheChannelToItsSession(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+	if msg := r.onChoicePick(context.Background(), "c1", "yes"); msg != "" {
+		t.Fatalf("pick on a bound channel = %q, want it to land", msg)
+	}
+	if got := ctrl.picked["ch-c1"]; len(got) != 1 || got[0] != "yes" {
+		t.Fatalf("picked = %v, want the bound session to receive it", ctrl.picked)
+	}
+
+	// A session created by `/session create` has no binding; the live session list
+	// is what maps its channel back to its name.
+	ctrl.live["demo"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "demo", ChannelID: "c9"}}
+	if msg := r.onChoicePick(context.Background(), "c9", "no"); msg != "" {
+		t.Fatalf("pick on a command-created session = %q, want it to land", msg)
+	}
+	if got := ctrl.picked["demo"]; len(got) != 1 || got[0] != "no" {
+		t.Fatalf("picked = %v, want demo to receive it", ctrl.picked)
 	}
 }
 
