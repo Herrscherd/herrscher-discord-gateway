@@ -18,19 +18,28 @@ import (
 // core never learns the Discord command surface — only the neutral argv crosses
 // the boundary via ctrl.Dispatch.
 type slash struct {
-	ctx   context.Context
-	token string
-	ix    *dctl.Interactions
-	reg   *dctl.Registry
-	allow *allowStore
-	ctrl  contracts.SessionControl
+	ctx    context.Context
+	token  string
+	ix     *dctl.Interactions
+	reg    *dctl.Registry
+	allow  *allowStore
+	ctrl   contracts.SessionControl
+	comp   acker
+	router *router
+}
+
+// acker acknowledges a select-menu click so the dropdown collapses instead of
+// spinning. *dctl.Components satisfies it; tests substitute a recorder.
+type acker interface {
+	Ack(ctx context.Context, id, token, content string) error
 }
 
 // newSlash builds the slash runtime and registers the command catalog + handlers
 // on the interactions registry. ctrl is bound later (BindSessionControl) once the
-// daemon hands the gateway its runtime session controller.
-func newSlash(ctx context.Context, ix *dctl.Interactions, token string, allow *allowStore) *slash {
-	s := &slash{ctx: ctx, token: token, ix: ix, reg: ix.Registry(), allow: allow}
+// daemon hands the gateway its runtime session controller; router is assigned by
+// the factory once the application id it needs has been resolved.
+func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token string, allow *allowStore) *slash {
+	s := &slash{ctx: ctx, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow}
 	s.reg.
 		Add(commandSet(), s.handleSet).
 		Add(commandSession(), s.handleSession).
@@ -50,15 +59,52 @@ func (s *slash) start() {
 	newWS(s.token, s.onInteraction, s.onMessage).run(s.ctx)
 }
 
-// onMessage receives every MESSAGE_CREATE the intents deliver. The trigger
-// filter (which messages are meant for the bot) is wired in later; until then a
-// delivered message costs nothing.
-func (s *slash) onMessage(context.Context, messageCreate) {}
+// onMessage hands every MESSAGE_CREATE to the router, which decides whether it
+// is the owner addressing the bot.
+func (s *slash) onMessage(ctx context.Context, m messageCreate) {
+	if s.router != nil {
+		s.router.onMessage(ctx, m)
+	}
+}
+
+// onComponent answers a select-menu click: a repo-binding menu creates the
+// session, a session-choice menu answers the agent's pending question. A click
+// that belongs to neither is dropped — an unknown custom_id is not ours to
+// acknowledge.
+func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
+	if s.router == nil {
+		return
+	}
+	value := ""
+	if len(ix.Data.Values) > 0 {
+		value = ix.Data.Values[0]
+	}
+	var msg string
+	if channel, ok := ParseBindCustomID(ix.Data.CustomID); ok {
+		msg = s.router.onBindPick(ctx, channel, value)
+	} else if session, ok := ParseChoiceCustomID(ix.Data.CustomID); ok {
+		if msg = s.router.onChoicePick(ctx, session, value); msg == "" {
+			msg = "choix enregistré : " + value
+		}
+	} else {
+		return
+	}
+	if s.comp != nil {
+		_ = s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg)
+	}
+}
 
 // onInteraction is the gateway's single entry point from the websocket loop. It
 // routes command interactions through the registry (whose handlers respond
 // themselves) and autocomplete interactions through the autocomplete dispatcher.
 func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
+	// A component click is not a command: it answers a menu this gateway posted,
+	// and the custom_id says which one. Route it before the command registry,
+	// which has no handler for it.
+	if ix.Type == dctl.InteractionComponent {
+		s.onComponent(ctx, ix)
+		return
+	}
 	if ix.Type == dctl.InteractionAutocomplete {
 		// Gate autocomplete too: an unallowed user must not be able to enumerate
 		// session names (the suggestions would otherwise leak the topology).
