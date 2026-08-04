@@ -43,7 +43,7 @@ type sink struct {
 
 func newSink(ctx context.Context, rc renderClient, ch, level string) *sink {
 	if level == "" {
-		level = "full"
+		level = "quiet"
 	}
 	return &sink{ctx: ctx, rc: rc, ch: ch, level: level}
 }
@@ -86,6 +86,22 @@ func (s *sink) noteUser(id string) {
 	s.mu.Unlock()
 }
 
+// ack marks a message as received now, without waiting for a turn to start.
+// Some pings are answered by a question rather than by work — the repo menu —
+// and there is no "human" event to hang the ⏳ on, so the ping would sit
+// unmarked while the operator decides, reading as ignored.
+func (s *sink) ack(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastUser = id
+	if id == "" || s.acked == id {
+		return
+	}
+	if err := s.rc.React(s.ctx, s.ch, id, ackEmoji); err == nil {
+		s.acked = id
+	}
+}
+
 // handle renders one live turn event onto Discord. It holds s.mu across the
 // event's blocking REST I/O (React, UpsertStatusMessage, Post, Unreact) on
 // purpose: one turn at a time per conversation, so the inbound goroutine's
@@ -103,7 +119,9 @@ func (s *sink) handle(e contracts.Event) {
 			return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
 		}
 		s.pv = newProgressView(post, s.level, time.Now())
-		if s.lastUser != "" {
+		// Already marked when the ping was received (see ack): reacting twice
+		// would be a wasted call, and the same ⏳ already says "received".
+		if s.lastUser != "" && s.acked != s.lastUser {
 			if err := s.rc.React(s.ctx, ch, s.lastUser, ackEmoji); err == nil {
 				s.acked = s.lastUser
 			}
