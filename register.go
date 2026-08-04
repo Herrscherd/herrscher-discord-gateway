@@ -25,7 +25,7 @@ func init() {
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
-				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: quiet (default; tool names only, no paths or commands) | actions (adds the details) | full (adds the assistant's text)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 			},
@@ -117,17 +117,18 @@ func intSetting(v string, def int) int {
 	return n
 }
 
-// verbositySetting maps the configured render level onto the three the progress
-// view knows, falling back to quiet for anything else. Quiet is the only safe
-// default: the bot is meant to be pinged in channels other people read, and
-// paths, shell commands and search patterns are machine layout. Showing more
-// than that has to be asked for, and a typo must not turn it on by accident.
+// verbositySetting maps the configured render level onto the four the renderer
+// knows, falling back to silent for anything else. Silent is the only safe
+// default: the bot is meant to be pinged in channels other people read, where
+// a live list of tools, paths and shell commands is both noise and machine
+// layout. Showing more than the answer has to be asked for, and a typo must not
+// turn it on by accident.
 func verbositySetting(v string) string {
 	switch v {
-	case "quiet", "actions", "full":
+	case levelSilent, levelQuiet, levelActions, levelFull:
 		return v
 	}
-	return "quiet"
+	return defaultLevel
 }
 
 func strSetting(v, def string) string {

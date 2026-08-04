@@ -24,11 +24,11 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	if _, err := p.Read(context.Background(), "c1", 100, ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := set.at("c1").lastUser; got != "3" {
-		t.Fatalf("c1 lastUser = %q, want 3", got)
+	if got := set.at("c1").lastUser; got != (msgRef{ch: "c1", id: "3"}) {
+		t.Fatalf("c1 lastUser = %+v, want 3 in c1", got)
 	}
-	if got := set.at("c2").lastUser; got != "9" {
-		t.Fatalf("c2 lastUser = %q, want 9 — the ack must follow the message's own channel", got)
+	if got := set.at("c2").lastUser; got != (msgRef{ch: "c2", id: "9"}) {
+		t.Fatalf("c2 lastUser = %+v, want 9 in c2 — the ack must follow the message's own channel", got)
 	}
 }
 

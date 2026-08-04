@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`quiet` default / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -26,18 +26,26 @@ herrscher plugin add github.com/Herrscherd/herrscher-discord-gateway
 
 ## Rendering happens here, not in the core
 
-The Gateway receives the raw turn-event stream and draws Discord itself: one
-live-updating progress message per turn (capped at 15 lines, one edit per 1.5 s),
-a ⏳ ACK reaction on the triggering message, and a final reply chunked at Discord's
-2000-rune limit and collapsed to a ✅ summary. A mid-turn backend reset discards the
-partial render and keeps going; an abandoned turn clears the ACK silently.
+The Gateway receives the raw turn-event stream and draws Discord itself: a ⏳ ACK
+reaction on the triggering message, and a final reply chunked at Discord's
+2000-rune limit. Above the default level it also draws one live-updating progress
+message per turn (capped at 15 lines, one edit per 1.5 s) collapsed to a ✅
+summary at the end; a mid-turn backend reset discards the partial render and
+keeps going, and an abandoned turn clears the ACK silently.
 
-`DISCORD_VERBOSITY` sets how much of that reaches the channel. `quiet` (default)
-posts tool names only, so no absolute path, shell command or search pattern from
-your machine is ever shown — the level to leave alone when the bot is pinged in
-a channel other people read. `actions` adds each tool's detail; `full` also adds
-the assistant's thinking. Repeated lines collapse to `×N`, and the ✅ summary
-(tool names, count, duration, cost) is the same at every level.
+`DISCORD_VERBOSITY` sets how much of that reaches the channel:
+
+| Level | What the channel sees |
+|-------|-----------------------|
+| `silent` (default) | the ⏳, then the answer — nothing else |
+| `quiet` | adds a live list of tool names, with no path, command or search pattern from your machine |
+| `actions` | adds each tool's detail |
+| `full` | adds the assistant's thinking |
+
+`silent` is the default because this bot is meant to be pinged in rooms other
+people read, where a running commentary of tool calls is noise; raise it when you
+want to watch a turn work. Repeated lines collapse to `×N`, and the ✅ summary
+(tool names, count, duration, cost) is the same at every level that has one.
 
 ## Owner-bound, not channel-bound
 
@@ -46,12 +54,24 @@ non-privileged — and acts on a message only when the configured owner @mention
 the bot or replies to it. Everyone else's messages are never triggers, but the
 last `context_messages` messages of the channel are read over REST and carried
 into the turn, so the agent sees the whole conversation. The first ping in an
-unknown channel is acked with ⏳ and asks which repo to work on with a select
-menu — the ack lands right away, since that ping is answered by a question
-rather than by a turn; the answer creates
-a session that **adopts that channel** and is remembered in `discord-router.json`
-(mode 0600, under `DCTL_STATE_DIR`). Rendering is per conversation: each channel
-gets its own progress message, ⏳ ack and reply.
+unknown channel is acked with ⏳ right away, since it may be answered by a
+question rather than by a turn. That ping decides two things:
+
+- **Which repo.** Name it in the message ("le bug d'auth de *herrscher*", by bare
+  name or as `owner/repo`) and the work starts immediately. Name none or two, and
+  a select menu asks — once.
+- **Where.** Ask for a thread ("dans un fil", "ouvre un thread", "en privé") and
+  the job gets a **private** thread: created off the channel so it leaves no trace
+  there, `invitable: false`, with you added as its only human member. Everything
+  after that — questions, progress, the answer — happens inside it, and a plain
+  message there needs no @mention. Server moderators holding `Manage Threads` can
+  still see it; nobody else can. If the thread cannot be created, the job falls
+  back to the channel and says so out loud.
+
+Either way the answer creates a session that **adopts that conversation** and is
+remembered in `discord-router.json` (mode 0600, under `DCTL_STATE_DIR`).
+Rendering is per conversation: each one gets its own progress message, ⏳ ack and
+reply.
 
 ## The slash surface
 

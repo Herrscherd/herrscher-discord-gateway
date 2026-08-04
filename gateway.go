@@ -18,6 +18,11 @@ type client interface {
 	// the message-content intent, which is how the bot sees what everyone said
 	// without asking Discord for a privileged intent.
 	ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error)
+	// CreatePrivateThread opens a thread nobody can see until they are added, and
+	// AddThreadMember is what adds them. A private thread is created off the
+	// channel rather than off a message, so the channel keeps no trace of it.
+	CreatePrivateThread(ctx context.Context, channelID, name string) (string, error)
+	AddThreadMember(ctx context.Context, threadID, userID string) error
 }
 
 var (
@@ -133,6 +138,21 @@ func (d discordClient) SendSelectMenu(ctx context.Context, channelID, replyTo, c
 
 func (d discordClient) ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error) {
 	return d.c.Messages().Read(ctx, channelID, limit, after)
+}
+
+func (d discordClient) CreatePrivateThread(ctx context.Context, channelID, name string) (string, error) {
+	ch, err := d.c.Threads().StartPrivate(ctx, channelID, name)
+	if err != nil {
+		return "", err
+	}
+	if ch == nil {
+		return "", nil
+	}
+	return ch.ID, nil
+}
+
+func (d discordClient) AddThreadMember(ctx context.Context, threadID, userID string) error {
+	return d.c.Threads().AddMember(ctx, threadID, userID)
 }
 
 func msgID(m *dctl.Message) contracts.MessageID {

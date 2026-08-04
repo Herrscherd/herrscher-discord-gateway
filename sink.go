@@ -37,13 +37,19 @@ type sink struct {
 
 	mu       sync.Mutex
 	pv       *progressView
-	lastUser string // id of the message that triggered the current/next turn
-	acked    string // id currently carrying the ⏳ reaction ("" if none)
+	lastUser msgRef // the message that triggered the current/next turn
+	acked    msgRef // the message currently carrying the ⏳ reaction
 }
+
+// msgRef points at one message. The channel travels with the id because a sink
+// does not always render where its trigger lives: a job moved into a private
+// thread renders there, while the ping that opened it stays in the channel it
+// was written in, and reacting to it in the wrong channel is a 404.
+type msgRef struct{ ch, id string }
 
 func newSink(ctx context.Context, rc renderClient, ch, level string) *sink {
 	if level == "" {
-		level = "quiet"
+		level = defaultLevel
 	}
 	return &sink{ctx: ctx, rc: rc, ch: ch, level: level}
 }
@@ -78,11 +84,11 @@ func (s *sinks) at(convID string) *sink {
 	return v
 }
 
-// noteUser records the id of the latest user (non-bot) message, so the next
-// turn's ACK reaction lands on it.
-func (s *sink) noteUser(id string) {
+// noteUser records the latest user (non-bot) message, so the next turn's ACK
+// reaction lands on it.
+func (s *sink) noteUser(ch, id string) {
 	s.mu.Lock()
-	s.lastUser = id
+	s.lastUser = msgRef{ch: ch, id: id}
 	s.mu.Unlock()
 }
 
@@ -90,15 +96,16 @@ func (s *sink) noteUser(id string) {
 // Some pings are answered by a question rather than by work — the repo menu —
 // and there is no "human" event to hang the ⏳ on, so the ping would sit
 // unmarked while the operator decides, reading as ignored.
-func (s *sink) ack(id string) {
+func (s *sink) ack(ch, id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lastUser = id
-	if id == "" || s.acked == id {
+	ref := msgRef{ch: ch, id: id}
+	s.lastUser = ref
+	if id == "" || s.acked == ref {
 		return
 	}
-	if err := s.rc.React(s.ctx, s.ch, id, ackEmoji); err == nil {
-		s.acked = id
+	if err := s.rc.React(s.ctx, ch, id, ackEmoji); err == nil {
+		s.acked = ref
 	}
 }
 
@@ -115,14 +122,19 @@ func (s *sink) handle(e contracts.Event) {
 
 	switch e.T {
 	case "human":
-		post := func(id, content string) (string, error) {
-			return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
+		// At the silent level there is no live view at all: no progress message
+		// is ever posted, so every "if s.pv != nil" below is skipped and the turn
+		// shows up as the ⏳ and then the answer.
+		if rendersProgress(s.level) {
+			post := func(id, content string) (string, error) {
+				return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
+			}
+			s.pv = newProgressView(post, s.level, time.Now())
 		}
-		s.pv = newProgressView(post, s.level, time.Now())
 		// Already marked when the ping was received (see ack): reacting twice
 		// would be a wasted call, and the same ⏳ already says "received".
-		if s.lastUser != "" && s.acked != s.lastUser {
-			if err := s.rc.React(s.ctx, ch, s.lastUser, ackEmoji); err == nil {
+		if s.lastUser.id != "" && s.acked != s.lastUser {
+			if err := s.rc.React(s.ctx, s.lastUser.chOr(ch), s.lastUser.id, ackEmoji); err == nil {
 				s.acked = s.lastUser
 			}
 		}
@@ -177,11 +189,20 @@ func (s *sink) handle(e contracts.Event) {
 
 // clearAck removes the ⏳ reaction left on the triggering message, if any.
 func (s *sink) clearAck(ch string) {
-	if s.acked == "" {
+	if s.acked.id == "" {
 		return
 	}
-	_ = s.rc.Unreact(s.ctx, ch, s.acked, ackEmoji)
-	s.acked = ""
+	_ = s.rc.Unreact(s.ctx, s.acked.chOr(ch), s.acked.id, ackEmoji)
+	s.acked = msgRef{}
+}
+
+// chOr falls back to the sink's own conversation for a ref recorded without a
+// channel of its own.
+func (m msgRef) chOr(def string) string {
+	if m.ch == "" {
+		return def
+	}
+	return m.ch
 }
 
 // splitTool recovers the tool name and detail from a status line emitted as
