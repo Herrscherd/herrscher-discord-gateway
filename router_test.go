@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -309,6 +310,123 @@ func TestChoicePickResolvesTheChannelToItsSession(t *testing.T) {
 	}
 	if got := ctrl.picked["demo"]; len(got) != 1 || got[0] != "no" {
 		t.Fatalf("picked = %v, want demo to receive it", ctrl.picked)
+	}
+}
+
+// The repo is usually named in the ping itself; the menu is friction there.
+func TestNamedRepoSkipsTheMenu(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "Herrscherd/dctl"}}
+
+	r.onMessage(context.Background(), ownerPing("le bug d'auth de herrscher, tu regardes ?"))
+
+	if len(c.menus) != 0 {
+		t.Fatalf("menus = %+v, want none — the ping already said which repo", c.menus)
+	}
+	if len(ctrl.created) != 1 || ctrl.created[0].Project != "herrscher" {
+		t.Fatalf("created = %+v, want a session on herrscher", ctrl.created)
+	}
+	got := ctrl.submitted[ctrl.created[0].Name]
+	if len(got) != 1 || !strings.Contains(got[0].Text, "le bug d'auth") {
+		t.Fatalf("submitted = %+v, want the ping run straight away", got)
+	}
+	if r.binds.Session("c1") != ctrl.created[0].Name {
+		t.Fatal("the channel was not bound to the session it created")
+	}
+}
+
+// Two repos named is not an answer: binding the wrong one outlives the message.
+func TestAmbiguousRepoStillAsks(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "Herrscherd/dctl"}}
+
+	r.onMessage(context.Background(), ownerPing("aligne herrscher et dctl"))
+
+	if len(c.menus) != 1 {
+		t.Fatalf("menus = %+v, want the question asked", c.menus)
+	}
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want nothing before the operator picks", ctrl.created)
+	}
+}
+
+func TestThreadRequestOpensAPrivateThreadAndWorksThere(t *testing.T) {
+	r, ctrl, c, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.nextThreadID = "t1"
+
+	r.onMessage(context.Background(), ownerPing("ouvre un thread et corrige herrscher"))
+
+	if len(c.threads) != 1 || c.threads[0].channel != "c1" {
+		t.Fatalf("threads = %+v, want one opened in the pinged channel", c.threads)
+	}
+	// A thread nobody was added to is a room only the bot can read.
+	if len(c.members) != 1 || c.members[0] != (outMsg{"t1", "owner1"}) {
+		t.Fatalf("members = %+v, want the owner added to t1", c.members)
+	}
+	spec := ctrl.created[0]
+	if spec.ChannelID != "t1" || spec.Name != sessionNameFor("t1") {
+		t.Fatalf("spec = %+v, want the session to live in the thread", spec)
+	}
+	if in := ctrl.submitted[spec.Name][0]; in.Conversation.ID != "t1" {
+		t.Fatalf("conversation = %+v, want the answer to land in the thread", in.Conversation)
+	}
+	if r.binds.Session("t1") != spec.Name || !r.binds.IsThread("t1") {
+		t.Fatal("the thread was not remembered as a bound conversation of ours")
+	}
+	// The ⏳ still belongs on the ping, which lives in the parent channel.
+	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1"}) {
+		t.Fatalf("lastUser = %+v, want the ping in its own channel", got)
+	}
+	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
+		t.Fatalf("reacted = %v, want the ping acked", f.reacted)
+	}
+}
+
+// Inside a thread the gateway opened, a bare message is for the bot: nobody
+// else is in the room.
+func TestThreadMessagesNeedNoMention(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.live["ch-t1"] = true
+	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	r.onMessage(context.Background(), messageCreate{
+		ID: "m2", ChannelID: "t1", Content: "et les tests ?",
+		Author: dctl.Author{ID: "owner1", Username: "leo"},
+	})
+	if got := ctrl.submitted["ch-t1"]; len(got) != 1 {
+		t.Fatalf("submitted = %+v, want the bare message to open a turn", got)
+	}
+}
+
+// Work asked for in private must never quietly land in a room other people
+// read: the fallback happens, but it is announced.
+func TestThreadFailureFallsBackToTheChannelOutLoud(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.threadErr = errors.New("missing permission")
+
+	r.onMessage(context.Background(), ownerPing("en privé stp, herrscher"))
+
+	if len(c.sent) != 1 || c.sent[0].channel != "c1" || !strings.Contains(c.sent[0].content, "fil privé") {
+		t.Fatalf("sent = %+v, want the fallback said out loud in the channel", c.sent)
+	}
+	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
+		t.Fatalf("spec = %+v, want the job to fall back to the channel", spec)
+	}
+}
+
+// A thread the operator cannot see is worse than no thread at all.
+func TestThreadWithoutItsMemberIsNotUsed(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.memberErr = errors.New("forbidden")
+
+	r.onMessage(context.Background(), ownerPing("dans un fil, herrscher"))
+
+	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
+		t.Fatalf("spec = %+v, want the channel rather than a thread only the bot can read", spec)
 	}
 }
 

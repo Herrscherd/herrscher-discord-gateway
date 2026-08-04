@@ -85,9 +85,52 @@ func newTestSink(f *fakeRender) *sink {
 
 // An unconfigured sink renders at the level that leaks nothing: the operator
 // pings this bot in channels other people read.
-func TestSinkDefaultsToQuiet(t *testing.T) {
-	if s := newSink(context.Background(), &fakeRender{}, "c1", ""); s.level != "quiet" {
-		t.Fatalf("default level = %q, want quiet", s.level)
+func TestSinkDefaultsToSilent(t *testing.T) {
+	if s := newSink(context.Background(), &fakeRender{}, "c1", ""); s.level != levelSilent {
+		t.Fatalf("default level = %q, want %q", s.level, levelSilent)
+	}
+}
+
+// At the silent level a turn is the ⏳ and then the answer: no live message, no
+// ✅ summary. The operator asked to be pinged in public channels without a wall
+// of tool calls following every request.
+func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newSink(context.Background(), f, "c1", levelSilent)
+	s.noteUser("c1", "u1")
+
+	s.handle(contracts.Event{T: "human"})
+	s.handle(contracts.Event{T: "status", Text: "Bash go test ./..."})
+	s.handle(contracts.Event{T: "chunk", Text: "je regarde"})
+	s.handle(contracts.Event{T: "reply", Text: "c'est corrigé", Done: true, Cost: 0.4})
+
+	if len(f.upserts) != 0 {
+		t.Fatalf("upserts = %v, want no progress message at all", f.upserts)
+	}
+	if len(f.posts) != 1 || f.posts[0] != "c'est corrigé" {
+		t.Fatalf("posts = %v, want only the answer", f.posts)
+	}
+	// The ⏳ still says "received": it is the only sign the ping landed.
+	if len(f.reacted) != 1 || len(f.unreacted) != 1 {
+		t.Fatalf("reacted = %v, unreacted = %v, want the ack raised and cleared", f.reacted, f.unreacted)
+	}
+}
+
+// An abandoned turn at the silent level still clears the ⏳, or the ping reads
+// as pending forever.
+func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newSink(context.Background(), f, "c1", levelSilent)
+	s.noteUser("c1", "u1")
+	s.handle(contracts.Event{T: "human"})
+	s.handle(contracts.Event{T: "status", Text: "Read x"})
+	s.handle(contracts.Event{T: "abandoned"})
+
+	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+		t.Fatalf("unreacted = %v, want the ack cleared", f.unreacted)
+	}
+	if len(f.upserts) != 0 || len(f.posts) != 0 {
+		t.Fatalf("upserts = %v, posts = %v, want nothing rendered", f.upserts, f.posts)
 	}
 }
 
@@ -95,8 +138,8 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(context.Background(), f, "full")
 
-	set.at("chanA").noteUser("mA")
-	set.at("chanB").noteUser("mB")
+	set.at("chanA").noteUser("chanA", "mA")
+	set.at("chanB").noteUser("chanB", "mB")
 	set.at("chanA").handle(contracts.Event{T: "human"})
 	set.at("chanB").handle(contracts.Event{T: "human"})
 	set.at("chanA").handle(contracts.Event{T: "reply", Text: "answer A", Done: true})
@@ -132,7 +175,7 @@ func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("u1")
+	s.noteUser("c1", "u1")
 
 	s.handle(contracts.Event{T: "human", Who: "alice", Text: "hi"})
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
@@ -159,7 +202,7 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 func TestSinkAbandonedClearsAck(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("u1")
+	s.noteUser("c1", "u1")
 	s.handle(contracts.Event{T: "human"})
 	// First status flushes immediately (lastEdit zero); the second is coalesced
 	// inside the throttle window and stays unflushed until abandon forces it.
@@ -201,7 +244,7 @@ func TestSinkChunksLongReply(t *testing.T) {
 func TestSinkResetDiscardsAndContinues(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("u1")
+	s.noteUser("c1", "u1")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "reset"})

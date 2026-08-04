@@ -12,9 +12,17 @@ type trigger struct {
 
 // fires reports whether m should open a turn. An unset owner fires for nobody:
 // a misconfigured bot must be inert, never obedient to everyone.
-func (t trigger) fires(m messageCreate) bool {
+//
+// direct marks a conversation the gateway opened for one job and nobody else —
+// a private thread. There the address is the room itself, so the owner's plain
+// messages are for the bot; requiring an @mention in a two-member thread is
+// friction with nothing to disambiguate.
+func (t trigger) fires(m messageCreate, direct bool) bool {
 	if t.owner == "" || m.Author.ID != t.owner || m.Author.Bot {
 		return false
+	}
+	if direct {
+		return true
 	}
 	for _, u := range m.Mentions {
 		if u.ID == t.appID {
