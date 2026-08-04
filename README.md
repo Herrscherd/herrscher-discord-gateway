@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `guild` / `DISCORD_GUILD_ID` (the server the slash commands live in — required once the bot is in more than one), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `guild` / `DISCORD_GUILD_ID` (the server the slash commands live in — required once the bot is in more than one), `verbosity` / `DISCORD_VERBOSITY` (`full` default / `actions` / `quiet` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -31,6 +31,13 @@ live-updating progress message per turn (capped at 15 lines, one edit per 1.5 s)
 a ⏳ ACK reaction on the triggering message, and a final reply chunked at Discord's
 2000-rune limit and collapsed to a ✅ summary. A mid-turn backend reset discards the
 partial render and keeps going; an abandoned turn clears the ACK silently.
+
+`DISCORD_VERBOSITY` sets how much of that reaches the channel. `full` (default)
+shows the assistant's thinking and each tool's detail; `actions` drops the
+thinking; `quiet` also drops the details — tool names only, so no absolute path,
+shell command or search pattern from your machine is ever posted. Repeated lines
+collapse to `×N`, and the ✅ summary (tool names, count, duration, cost) is the
+same at every level.
 
 ## Owner-bound, not channel-bound
 

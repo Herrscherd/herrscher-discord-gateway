@@ -47,6 +47,20 @@ func TestGuildSettingIsDeclaredOptional(t *testing.T) {
 	}
 }
 
+func TestVerbositySettingFallsBackToFull(t *testing.T) {
+	for _, v := range []string{"quiet", "actions", "full"} {
+		if got := verbositySetting(v); got != v {
+			t.Errorf("verbositySetting(%q) = %q, want it kept", v, got)
+		}
+	}
+	// A typo must not silently hide the whole turn: unknown values stay at full.
+	for _, v := range []string{"", "silent", "FULL"} {
+		if got := verbositySetting(v); got != "full" {
+			t.Errorf("verbositySetting(%q) = %q, want full", v, got)
+		}
+	}
+}
+
 func TestClientOptsOnlyWhenGuildSet(t *testing.T) {
 	if got := clientOpts(""); got != nil {
 		t.Errorf("clientOpts(\"\") = %v, want nil so dctl keeps resolving the sole guild", got)

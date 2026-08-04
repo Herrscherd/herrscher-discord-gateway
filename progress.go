@@ -20,19 +20,21 @@ const progressInterval = 1500 * time.Millisecond
 // live-updating Discord message, then collapses it to a one-line summary. post
 // creates (empty id) or edits (non-empty id) the message and returns its id.
 type progressView struct {
-	post     func(msgID, content string) (string, error)
-	level    string // "actions" | "full"
-	start    time.Time
-	now      func() time.Time
-	lines    []string
-	elided   bool // older lines were dropped past maxLines (render shows a leading "…")
-	counts   map[string]int
-	order    []string
-	cost     float64
-	actions  int
-	msgID    string
-	lastEdit time.Time
-	dirty    bool
+	post      func(msgID, content string) (string, error)
+	level     string // "quiet" | "actions" | "full"
+	start     time.Time
+	now       func() time.Time
+	lines     []string
+	elided    bool // older lines were dropped past maxLines (render shows a leading "…")
+	lastLine  string
+	lastCount int
+	counts    map[string]int
+	order     []string
+	cost      float64
+	actions   int
+	msgID     string
+	lastEdit  time.Time
+	dirty     bool
 }
 
 func newProgressView(post func(string, string) (string, error), level string, start time.Time) *progressView {
@@ -48,7 +50,7 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		if p.level != "full" {
 			return
 		}
-		p.lines = append(p.lines, "💭 "+clip(flatten(ev.Detail), 120))
+		p.push("💭 " + clip(flatten(ev.Detail), 120))
 	case "tool":
 		if _, seen := p.counts[ev.Tool]; !seen {
 			p.order = append(p.order, ev.Tool)
@@ -56,10 +58,13 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		p.counts[ev.Tool]++
 		p.actions++
 		line := emojiFor(ev.Tool) + " " + ev.Tool
-		if d := clip(flatten(ev.Detail), 120); d != "" {
+		// A tool detail is a file path, a shell command or a search pattern: it
+		// exposes the machine's layout to everyone who can read the channel.
+		// "quiet" keeps the pulse of the turn and drops what it was aimed at.
+		if d := clip(flatten(ev.Detail), 120); d != "" && p.level != "quiet" {
 			line += " · " + d
 		}
-		p.lines = append(p.lines, line)
+		p.push(line)
 	default:
 		return
 	}
@@ -71,6 +76,19 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 	}
 	p.dirty = true
 	p.flush(false)
+}
+
+// push appends a rendered line, collapsing an immediate repeat into "×N".
+// Stripped of their details ("quiet"), a burst of the same tool is a run of
+// identical lines that would push everything else out of the 15-line window.
+func (p *progressView) push(line string) {
+	if p.lastCount > 0 && line == p.lastLine {
+		p.lastCount++
+		p.lines[len(p.lines)-1] = fmt.Sprintf("%s ×%d", line, p.lastCount)
+		return
+	}
+	p.lastLine, p.lastCount = line, 1
+	p.lines = append(p.lines, line)
 }
 
 func (p *progressView) flush(force bool) {
@@ -108,6 +126,7 @@ func (p *progressView) finish() {
 func (p *progressView) reset() {
 	p.lines = nil
 	p.elided = false
+	p.lastLine, p.lastCount = "", 0
 	p.counts = map[string]int{}
 	p.order = nil
 	p.cost = 0
