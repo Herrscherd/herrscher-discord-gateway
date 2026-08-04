@@ -25,6 +25,7 @@ func init() {
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
+				{Key: "guild", Env: "DISCORD_GUILD_ID", Help: "server the slash commands are registered in (required once the bot is in more than one)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 			},
@@ -42,8 +43,10 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: owner (DISCORD_USER_ID) is required — without it the bot would obey everyone")
 	}
 	// No default channel: the bot is bound to an operator, not to a room, and it
-	// always answers in the conversation it was addressed in.
-	c := dctl.New(token, "")
+	// always answers in the conversation it was addressed in. The guild is only
+	// needed to scope the slash commands; left empty, dctl resolves the bot's sole
+	// server, which fails once the bot has been invited to a second one.
+	c := dctl.New(token, "", clientOpts(cfg.Get("guild"))...)
 	gw := NewGateway(discordClient{c})
 	plat := NewPlatform(c)
 	binds := newBindStore(bindStorePath())
@@ -112,6 +115,15 @@ func intSetting(v string, def int) int {
 		return def
 	}
 	return n
+}
+
+// clientOpts turns the optional guild setting into dctl client options, so an
+// unset guild keeps the sole-server behaviour rather than pinning "".
+func clientOpts(guild string) []dctl.ClientOption {
+	if guild == "" {
+		return nil
+	}
+	return []dctl.ClientOption{dctl.WithGuild(guild)}
 }
 
 func strSetting(v, def string) string {
