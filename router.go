@@ -149,12 +149,29 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 
 // onChoicePick routes an agent's pending-choice answer back to its session. It
 // returns the acknowledgement text, empty when the pick landed.
-func (r *router) onChoicePick(_ context.Context, session, value string) string {
+func (r *router) onChoicePick(_ context.Context, id, value string) string {
 	ctrl := r.ctrl()
-	if ctrl == nil || !ctrl.Pick(session, value) {
+	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id), value) {
 		return "cette session n'est plus active"
 	}
 	return ""
+}
+
+// sessionOf resolves a choice menu's custom_id payload to the session that must
+// receive the pick. Gateway.Menu stamps the conversation it posted into, so the
+// payload is usually a channel id: the binding store answers for channels this
+// router drives, the live session list for channels created by `/session
+// create`. An id that matches neither is already a session name.
+func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
+	if s := r.binds.Session(id); s != "" {
+		return s
+	}
+	for _, si := range ctrl.Sessions() {
+		if si.ChannelID == id {
+			return si.Name
+		}
+	}
+	return id
 }
 
 // submit assembles the neutral Inbound and hands it to the core. opening marks
