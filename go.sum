@@ -1,6 +1,6 @@
 github.com/Herrscherd/dctl v1.2.0 h1:IRsTXcTMKA/roqHcDXq8qHos4D9ZPoZkQEANAgqYz7A=
 github.com/Herrscherd/dctl v1.2.0/go.mod h1:43yI1s+IzYjP0MPwkkN3rTKrBgXxqA2t7W6bkIjdiPA=
-github.com/Herrscherd/herrscher-contracts v0.2.13 h1:ivPj30k3sqANuS+aTwK17AtWV5nBZyWHdL3MJXIjwcg=
-github.com/Herrscherd/herrscher-contracts v0.2.13/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
+github.com/Herrscherd/herrscher-contracts v0.2.14 h1:nfl2+iqsKhKDi+GTUfRoMO3vEBLNArNa028eAYL04Bk=
+github.com/Herrscherd/herrscher-contracts v0.2.14/go.mod h1:LM6PwTwJwF4+uVjeqIGFhWZOaQbLPtUxyhjD9ji+NmI=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
