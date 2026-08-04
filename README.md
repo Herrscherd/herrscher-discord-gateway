@@ -80,6 +80,11 @@ question rather than by a turn. That ping decides two things:
   still see it; nobody else can. If the thread cannot be created, the job falls
   back to the channel and says so out loud.
 
+Asking for a thread works in a channel that already has a session too: the job
+**forks** into a private thread of its own, on the same repo — that question was
+answered when the channel was bound, and asking it again would be friction. The
+channel keeps its own session for the pings that stay there.
+
 A message that does not @mention the bot arrives from the websocket with an empty
 body: `MESSAGE_CONTENT` is a privileged intent this gateway deliberately does not
 ask for. Those messages are read back over REST, which the intent does not gate,
