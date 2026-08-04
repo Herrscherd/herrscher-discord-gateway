@@ -22,6 +22,15 @@ type routerConfig struct {
 // selectMenuMax is Discord's hard cap on options in one select menu.
 const selectMenuMax = 25
 
+// turnRule is prepended to every turn, not just the opening one. Nothing the
+// agent starts outlives the turn — there is no background runner behind this
+// gateway — and an agent that announces "I've started the investigation" leaves
+// the operator waiting on work that stopped the moment the turn ended. Repeating
+// it each turn is deliberate: the rule matters most deep in a conversation,
+// which is exactly where an opening-only instruction has faded.
+const turnRule = "Rappel : ton travail s'arrête à la fin de ce tour, rien ne continue en tâche de fond. " +
+	"Fais le travail maintenant et rends le résultat, ou dis ce qui bloque — n'annonce jamais un travail « lancé » ou « en cours » pour plus tard.\n\n"
+
 // router turns a Discord message into a core turn. It owns every Discord-shaped
 // decision the flow needs — who may trigger, which session a channel belongs to,
 // what context to carry, how a repo question is asked and answered — so the core
@@ -84,6 +93,9 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	r.mu.Lock()
 	r.pending[m.ChannelID] = m
 	r.mu.Unlock()
+	// The ping is taken; the answer is a question, not a turn. Mark it now or it
+	// stays unmarked until the operator picks, which reads as being ignored.
+	r.sinks.at(m.ChannelID).ack(m.ID)
 
 	opts := make([]dctl.SelectOption, 0, len(repos))
 	for _, repo := range repos {
@@ -208,6 +220,7 @@ func (r *router) compose(ctx context.Context, m messageCreate, opening bool) str
 	if opening && r.cfg.playbook != "" {
 		fmt.Fprintf(&b, "Pour finir ce travail, suis la skill %q.\n\n", r.cfg.playbook)
 	}
+	b.WriteString(turnRule)
 	b.WriteString(m.Content)
 	return b.String()
 }

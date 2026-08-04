@@ -25,7 +25,7 @@ func init() {
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
-				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: full (default) | actions (no assistant text) | quiet (tool names only, no paths or commands)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: quiet (default; tool names only, no paths or commands) | actions (adds the details) | full (adds the assistant's text)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 			},
@@ -118,16 +118,16 @@ func intSetting(v string, def int) int {
 }
 
 // verbositySetting maps the configured render level onto the three the progress
-// view knows, falling back to full for anything else. An unknown value must not
-// resolve to a stricter level than asked: an operator who wants less in the
-// channel picks it explicitly, and a typo that silently hid every detail would
-// read as a broken gateway.
+// view knows, falling back to quiet for anything else. Quiet is the only safe
+// default: the bot is meant to be pinged in channels other people read, and
+// paths, shell commands and search patterns are machine layout. Showing more
+// than that has to be asked for, and a typo must not turn it on by accident.
 func verbositySetting(v string) string {
 	switch v {
 	case "quiet", "actions", "full":
 		return v
 	}
-	return "full"
+	return "quiet"
 }
 
 func strSetting(v, def string) string {
