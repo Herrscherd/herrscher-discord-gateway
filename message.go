@@ -17,11 +17,8 @@ type messageCreate struct {
 	Attachments []dctl.Attachment `json:"attachments"`
 	// Referenced is the message this one replies to, present only when Discord
 	// resolves it. A reply to a message the bot wrote is a trigger; nil is not.
-	Referenced *referencedMessage `json:"referenced_message"`
-}
-
-// referencedMessage is the replied-to message, narrowed to its author — the only
-// field the trigger filter needs.
-type referencedMessage struct {
-	Author dctl.Author `json:"author"`
+	// Its body arrives blanked for the same reason this message's would be, and
+	// it is whatever the operator scrolled back to rather than something recent,
+	// so it is a name to re-read rather than content — see router.reference.
+	Referenced *dctl.Message `json:"referenced_message"`
 }
