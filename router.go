@@ -73,6 +73,13 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 	}
 	m = r.hydrate(ctx, m)
 	if session := r.binds.Session(m.ChannelID); session != "" {
+		// A ping that asks for a private thread gets one here too. Only ask()
+		// used to read that request, so a channel that already had a session
+		// swallowed it and answered in public — which is the one outcome asking
+		// for privacy is about.
+		if r.fork(ctx, ctrl, session, m) {
+			return
+		}
 		if r.submit(ctx, ctrl, session, m.ChannelID, m, false) {
 			return
 		}
@@ -204,6 +211,54 @@ func (r *router) conversation(ctx context.Context, m messageCreate) (conv string
 	fmt.Fprintf(os.Stderr, "discord gateway: private thread: %v\n", err)
 	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé (permissions ?) — je réponds ici")
 	return m.ChannelID, false
+}
+
+// fork moves a job out of a channel that already has a session and into a
+// private thread of its own, when the ping asks for one. The thread's session is
+// created on the same repo the channel's session runs on: the operator answered
+// that question when this channel was bound, and asking again for work they just
+// described is friction. It reports whether it took the ping — false leaves the
+// caller on the ordinary path, which answers in the channel.
+func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, session string, m messageCreate) bool {
+	if !wantsThread(m.Content) || r.binds.IsThread(m.ChannelID) {
+		return false
+	}
+	value, ok := repoOf(ctrl, session)
+	if !ok {
+		return false
+	}
+	conv, thread := r.conversation(ctx, m)
+	if !thread {
+		// The thread could not be opened, and conversation() already said so in
+		// the channel. The job stays on the session already bound here: the one
+		// fork would create is named after this same channel and would collide.
+		return false
+	}
+	r.sinks.at(conv).ack(m.ChannelID, m.ID)
+	if msg := r.bind(ctx, ctrl, conv, thread, value, m, true); msg != "" {
+		r.post(ctx, conv, msg)
+	}
+	return true
+}
+
+// repoOf encodes what a live session runs on as a menu value, so a thread forked
+// off it is created through the same path a menu answer takes. It is always the
+// local form: whatever the channel's session started from, remote clone
+// included, is a checkout in the workspace by now and re-cloning it would be
+// work for nothing. A session the controller no longer lists has nothing to
+// inherit, and neither has one started from the bare workspace with no project —
+// both fall back to asking.
+func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
+	for _, si := range ctrl.Sessions() {
+		if si.Name != session {
+			continue
+		}
+		if si.Project == "" {
+			return "", false
+		}
+		return "local:" + si.Project, true
+	}
+	return "", false
 }
 
 // bind creates the session on the chosen repo, adopting conv, remembers the
