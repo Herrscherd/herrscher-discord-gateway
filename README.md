@@ -91,6 +91,26 @@ ask for. Those messages are read back over REST, which the intent does not gate,
 so a bare message in a thread costs one extra call and no privilege. The bot role
 needs `Create Private Threads` and `Send Messages in Threads`.
 
+## Replying to something is pointing at it
+
+Ping the bot **as a reply** to another message and that message is the request:
+"@Herrscher regarde ça" under someone's bug report says nothing on its own. The
+replied-to message is re-read by id — it arrives blanked like any other, and it
+is whatever you scrolled back to rather than something recent — and quoted at the
+head of the turn, right before your instruction.
+
+Everything hanging off it comes too: its uploads, and the images inside its
+embeds, which is where a bot posts its screenshots. They are handed to the host
+as attachments, after your own uploads — the host caps how many files it
+downloads per message, and what you attached yourself comes first. An embed image
+Discord did not mirror onto its own CDN is named in the text but not handed over:
+the host would refuse it, and the refusal would spend a download slot.
+
+The same reason keeps embeds in the channel context: a message with no text is
+not an empty message. A bot that reports through embeds used to be invisible to
+the agent, which in a channel full of bot reports is most of what there is to
+read.
+
 Either way the answer creates a session that **adopts that conversation** and is
 remembered in `discord-router.json` (mode 0600, under `DCTL_STATE_DIR`).
 Rendering is per conversation: each one gets its own progress message, ⏳ ack and

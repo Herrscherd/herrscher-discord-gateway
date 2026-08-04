@@ -18,6 +18,10 @@ type client interface {
 	// the message-content intent, which is how the bot sees what everyone said
 	// without asking Discord for a privileged intent.
 	ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error)
+	// GetMessage reads one message by id, for the one the ping replies to: it is
+	// blanked like every other dispatch, and it is far past the window a channel
+	// read covers — a reply target is whatever the operator scrolled back to.
+	GetMessage(ctx context.Context, channelID, messageID string) (*dctl.Message, error)
 	// CreatePrivateThread opens a thread nobody can see until they are added, and
 	// AddThreadMember is what adds them. A private thread is created off the
 	// channel rather than off a message, so the channel keeps no trace of it.
@@ -61,6 +65,10 @@ func (g *Gateway) Manifest() contracts.Manifest {
 		Kind:         "discord",
 		Category:     contracts.CategoryGateway,
 		Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
+		// The host downloads the attachment urls this gateway hands it, and pins
+		// them to what the gateway vouches for. Without this the allowlist is
+		// empty and every screenshot is refused before it is fetched.
+		AttachmentHosts: attachmentHosts,
 	}
 }
 
@@ -138,6 +146,10 @@ func (d discordClient) SendSelectMenu(ctx context.Context, channelID, replyTo, c
 
 func (d discordClient) ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error) {
 	return d.c.Messages().Read(ctx, channelID, limit, after)
+}
+
+func (d discordClient) GetMessage(ctx context.Context, channelID, messageID string) (*dctl.Message, error) {
+	return d.c.Messages().Get(ctx, channelID, messageID)
 }
 
 func (d discordClient) CreatePrivateThread(ctx context.Context, channelID, name string) (string, error) {
