@@ -10,7 +10,7 @@ func TestTriggerFires(t *testing.T) {
 	tr := trigger{owner: "owner1", appID: "app1"}
 	owner := dctl.Author{ID: "owner1", Username: "leo"}
 	someoneElse := dctl.Author{ID: "other", Username: "sam"}
-	botMsg := &referencedMessage{Author: dctl.Author{ID: "app1", Bot: true}}
+	botMsg := &dctl.Message{Author: dctl.Author{ID: "app1", Bot: true}}
 
 	cases := []struct {
 		name   string
@@ -25,7 +25,7 @@ func TestTriggerFires(t *testing.T) {
 		{"owner mentions someone else", messageCreate{Author: owner, Mentions: []dctl.Author{{ID: "other"}}}, false, false},
 		{"the bot's own message", messageCreate{Author: dctl.Author{ID: "app1", Bot: true}, Mentions: []dctl.Author{{ID: "app1"}}}, false, false},
 		{"a bot impersonating the owner id", messageCreate{Author: dctl.Author{ID: "owner1", Bot: true}, Mentions: []dctl.Author{{ID: "app1"}}}, false, false},
-		{"owner replies to a human", messageCreate{Author: owner, Referenced: &referencedMessage{Author: someoneElse}}, false, false},
+		{"owner replies to a human", messageCreate{Author: owner, Referenced: &dctl.Message{Author: someoneElse}}, false, false},
 		// In a thread the gateway opened for one job there is nobody else to
 		// address, so a bare message is for the bot.
 		{"owner speaks in our own thread", messageCreate{Author: owner, Content: "et les tests ?"}, true, true},
