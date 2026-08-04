@@ -9,7 +9,7 @@ import (
 
 func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(context.Background(), f, "full")
+	set := newSinks(context.Background(), f, "full", "")
 	p := &Platform{sinks: set} // c left nil: readImpl is injected below
 
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
