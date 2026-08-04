@@ -39,16 +39,17 @@ func TestNoGuildSettingIsDeclared(t *testing.T) {
 	}
 }
 
-func TestVerbositySettingFallsBackToFull(t *testing.T) {
+func TestVerbositySettingFallsBackToQuiet(t *testing.T) {
 	for _, v := range []string{"quiet", "actions", "full"} {
 		if got := verbositySetting(v); got != v {
 			t.Errorf("verbositySetting(%q) = %q, want it kept", v, got)
 		}
 	}
-	// A typo must not silently hide the whole turn: unknown values stay at full.
+	// The bot gets pinged in channels other people read: an unset or mistyped
+	// level must never be the one that prints local paths and shell commands.
 	for _, v := range []string{"", "silent", "FULL"} {
-		if got := verbositySetting(v); got != "full" {
-			t.Errorf("verbositySetting(%q) = %q, want full", v, got)
+		if got := verbositySetting(v); got != "quiet" {
+			t.Errorf("verbositySetting(%q) = %q, want quiet", v, got)
 		}
 	}
 }

@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`full` default / `actions` / `quiet` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`quiet` default / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -32,12 +32,12 @@ a ⏳ ACK reaction on the triggering message, and a final reply chunked at Disco
 2000-rune limit and collapsed to a ✅ summary. A mid-turn backend reset discards the
 partial render and keeps going; an abandoned turn clears the ACK silently.
 
-`DISCORD_VERBOSITY` sets how much of that reaches the channel. `full` (default)
-shows the assistant's thinking and each tool's detail; `actions` drops the
-thinking; `quiet` also drops the details — tool names only, so no absolute path,
-shell command or search pattern from your machine is ever posted. Repeated lines
-collapse to `×N`, and the ✅ summary (tool names, count, duration, cost) is the
-same at every level.
+`DISCORD_VERBOSITY` sets how much of that reaches the channel. `quiet` (default)
+posts tool names only, so no absolute path, shell command or search pattern from
+your machine is ever shown — the level to leave alone when the bot is pinged in
+a channel other people read. `actions` adds each tool's detail; `full` also adds
+the assistant's thinking. Repeated lines collapse to `×N`, and the ✅ summary
+(tool names, count, duration, cost) is the same at every level.
 
 ## Owner-bound, not channel-bound
 
@@ -46,7 +46,9 @@ non-privileged — and acts on a message only when the configured owner @mention
 the bot or replies to it. Everyone else's messages are never triggers, but the
 last `context_messages` messages of the channel are read over REST and carried
 into the turn, so the agent sees the whole conversation. The first ping in an
-unknown channel asks which repo to work on with a select menu; the answer creates
+unknown channel is acked with ⏳ and asks which repo to work on with a select
+menu — the ack lands right away, since that ping is answered by a question
+rather than by a turn; the answer creates
 a session that **adopts that channel** and is remembered in `discord-router.json`
 (mode 0600, under `DCTL_STATE_DIR`). Rendering is per conversation: each channel
 gets its own progress message, ⏳ ack and reply.
