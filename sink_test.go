@@ -80,13 +80,13 @@ func newTestSink(f *fakeRender) *sink {
 	if ch == "" {
 		ch = "c1"
 	}
-	return newSink(context.Background(), f, ch, "full")
+	return newSink(context.Background(), f, ch, "full", "")
 }
 
 // An unconfigured sink renders at the level that leaks nothing: the operator
 // pings this bot in channels other people read.
 func TestSinkDefaultsToSilent(t *testing.T) {
-	if s := newSink(context.Background(), &fakeRender{}, "c1", ""); s.level != levelSilent {
+	if s := newSink(context.Background(), &fakeRender{}, "c1", "", ""); s.level != levelSilent {
 		t.Fatalf("default level = %q, want %q", s.level, levelSilent)
 	}
 }
@@ -96,7 +96,7 @@ func TestSinkDefaultsToSilent(t *testing.T) {
 // of tool calls following every request.
 func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", levelSilent)
+	s := newSink(context.Background(), f, "c1", levelSilent, "")
 	s.noteUser("c1", "u1")
 
 	s.handle(contracts.Event{T: "human"})
@@ -120,7 +120,7 @@ func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 // as pending forever.
 func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", levelSilent)
+	s := newSink(context.Background(), f, "c1", levelSilent, "")
 	s.noteUser("c1", "u1")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
@@ -134,9 +134,52 @@ func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	}
 }
 
+// The answer pings the operator: a turn takes minutes, and its reply is a plain
+// post that Discord notifies nobody about.
+func TestReplyPingsTheOwner(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newSink(context.Background(), f, "c1", levelSilent, "42")
+	s.handle(contracts.Event{T: "human"})
+	s.handle(contracts.Event{T: "reply", Text: "c'est corrigé", Done: true})
+
+	if len(f.posts) != 1 || f.posts[0] != "<@42> c'est corrigé" {
+		t.Fatalf("posts = %v, want the answer prefixed with the owner mention", f.posts)
+	}
+}
+
+// The mention is part of the text before it is chunked, so the first chunk still
+// fits Discord's limit.
+func TestReplyPingKeepsChunksWithinTheLimit(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newSink(context.Background(), f, "c1", levelSilent, "42")
+	s.handle(contracts.Event{T: "reply", Text: strings.Repeat("x", gatewayMaxLen), Done: true})
+
+	for i, p := range f.posts {
+		if n := utf8.RuneCountInString(p); n > gatewayMaxLen {
+			t.Fatalf("post %d has %d runes, want <= %d", i, n, gatewayMaxLen)
+		}
+	}
+	if !strings.HasPrefix(f.posts[0], "<@42> ") {
+		t.Fatalf("first post = %q, want it to open with the mention", f.posts[0][:20])
+	}
+}
+
+// A turn that ends with nothing to say still says so. The alternative is the ⏳
+// vanishing with no message, which reads as a bot that died mid-turn.
+func TestEmptyReplyStillAnswers(t *testing.T) {
+	f := &fakeRender{channel: "c1"}
+	s := newSink(context.Background(), f, "c1", levelSilent, "42")
+	s.handle(contracts.Event{T: "human"})
+	s.handle(contracts.Event{T: "reply", Done: true})
+
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "terminé") {
+		t.Fatalf("posts = %v, want one completion line", f.posts)
+	}
+}
+
 func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(context.Background(), f, "full")
+	set := newSinks(context.Background(), f, "full", "")
 
 	set.at("chanA").noteUser("chanA", "mA")
 	set.at("chanB").noteUser("chanB", "mB")
@@ -157,7 +200,7 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 
 func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 	f := &fakeRender{}
-	g := &Gateway{sinks: newSinks(context.Background(), f, "full")}
+	g := &Gateway{sinks: newSinks(context.Background(), f, "full", "")}
 
 	g.EmitTo(contracts.Conversation{ID: "chanA"}, contracts.Event{T: "reply", Text: "hello A", Done: true})
 	// An unrouted event has no conversation to render into and must be dropped

@@ -55,7 +55,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	// One shared set of per-conversation renderers: the gateway feeds it routed
 	// events (EmitTo) and the router records the triggering message id for the ACK
 	// of the conversation that message belongs to.
-	s := newSinks(ctx, renderAdapter{plat}, verbositySetting(cfg.Get("verbosity")))
+	s := newSinks(ctx, renderAdapter{plat}, verbositySetting(cfg.Get("verbosity")), owner)
 	gw.sinks = s
 	plat.sinks = s
 

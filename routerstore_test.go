@@ -49,3 +49,33 @@ func TestCorruptBindStoreStartsEmpty(t *testing.T) {
 		t.Fatalf("corrupt store resolved %q — it must ask again, never guess a repo", got)
 	}
 }
+
+// A half-decoded store must not leave a channel marked as one of our private
+// threads: there a plain message from the owner makes the bot act, with no
+// @mention to ask for it.
+func TestCorruptBindStoreKeepsNoThreads(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	if err := os.WriteFile(path, []byte(`{"threads":{"c1":true},"channels":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if newBindStore(path).IsThread("c1") {
+		t.Fatal("a corrupt store granted a channel the no-@mention rule")
+	}
+}
+
+// Unbinding drops the session, not the fact that the conversation is a private
+// thread the gateway opened: the thread outlives the session running in it.
+func TestUnbindKeepsTheThreadFlag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	s := newBindStore(path)
+	if err := s.BindThread("t1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Unbind("t1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := newBindStore(path); got.Session("t1") != "" || !got.IsThread("t1") {
+		t.Fatalf("session = %q, thread = %v, want the binding gone and the thread kept",
+			got.Session("t1"), got.IsThread("t1"))
+	}
+}
