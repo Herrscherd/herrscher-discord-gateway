@@ -96,28 +96,43 @@ func quote(ref *dctl.Message) string {
 	return b.String()
 }
 
+// describeMax bounds one rendered line. An embed description runs to 4096
+// characters and a field value to 1024, and the channel context renders every
+// embed of the last DISCORD_CONTEXT_MESSAGES messages — a channel of verbose bot
+// reports would otherwise be most of the turn.
+const describeMax = 600
+
 // describe renders what a message carries besides its text: the files on it, and
 // the embeds a bot or a webhook posts instead of writing anything. Without this
 // a channel driven by bot reports reads as a wall of empty messages.
+//
+// Every line is flattened to one line: both call sites frame a line by prefixing
+// it, with "> " for a quote and with an author name for the channel context, and
+// an embed body full of newlines would walk straight out of that frame.
 func describe(m dctl.Message) []string {
 	var out []string
+	add := func(s string) {
+		if s = clip(flatten(s), describeMax); s != "" {
+			out = append(out, s)
+		}
+	}
 	for _, a := range m.Attachments {
-		out = append(out, "[fichier] "+a.Filename)
+		add("[fichier] " + a.Filename)
 	}
 	for _, e := range m.Embeds {
 		if head := embedHead(e); head != "" {
-			out = append(out, "[embed] "+head)
+			add("[embed] " + head)
 		}
 		for _, f := range e.Fields {
 			if f.Name == "" && f.Value == "" {
 				continue
 			}
-			out = append(out, fmt.Sprintf("[embed] %s : %s", f.Name, f.Value))
+			add(fmt.Sprintf("[embed] %s : %s", f.Name, f.Value))
 		}
 		if u := mediaURL(e.Image); u != "" {
-			out = append(out, "[image] "+label(u))
+			add("[image] " + label(u))
 		} else if u := mediaURL(e.Thumbnail); u != "" {
-			out = append(out, "[image] "+label(u))
+			add("[image] " + label(u))
 		}
 	}
 	return out
@@ -171,7 +186,9 @@ func label(u string) string {
 // decide it is looking at an image, since an embed declares no content type.
 func cdnName(raw string) (string, bool) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || !attachmentHost[u.Hostname()] {
+	// A host name is case-insensitive, and this is a map lookup — as is the
+	// host's own check against the very list this gateway declares.
+	if err != nil || u.Scheme != "https" || !attachmentHost[strings.ToLower(u.Hostname())] {
 		return "", false
 	}
 	name := path.Base(u.Path)
@@ -216,18 +233,23 @@ func uploads(as []dctl.Attachment) []contracts.Attachment {
 // declares no content type and no size, so the filename carries the whole
 // signal — hence cdnName, which is also what keeps an off-CDN url from being
 // forwarded at all. One image per embed: a thumbnail is the same picture
-// smaller, and downloading both would spend the host's cap twice on it.
+// smaller, and downloading both would spend the host's cap twice on it. Two
+// embeds naming the same picture spend it twice as well, so a url is handed over
+// once — a bot that reports in several embeds off one screenshot is the ordinary
+// case, not a corner one.
 func embedImages(m dctl.Message) []contracts.Attachment {
 	var out []contracts.Attachment
+	seen := map[string]bool{}
 	for _, e := range m.Embeds {
 		u := mediaURL(e.Image)
 		if u == "" {
 			u = mediaURL(e.Thumbnail)
 		}
 		name, ok := cdnName(u)
-		if !ok {
+		if !ok || seen[u] {
 			continue
 		}
+		seen[u] = true
 		out = append(out, contracts.Attachment{Filename: name, URL: u})
 	}
 	return out
