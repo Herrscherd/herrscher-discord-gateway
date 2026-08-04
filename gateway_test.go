@@ -8,28 +8,38 @@ import (
 	"github.com/Herrscherd/herrscher-contracts"
 )
 
+// outMsg and outMenu record where an outbound call landed, not just what it
+// said: the router's whole job is choosing the right channel and custom_id.
+type outMsg struct{ channel, content string }
+
+type outMenu struct{ channel, content, customID string }
+
 type fakeClient struct {
-	sent    []string
-	replied []string
+	sent    []outMsg
+	replied []outMsg
 	reacted []string
-	menus   []string
+	menus   []outMenu
+	read    []dctl.Message
 }
 
-func (f *fakeClient) Send(_ context.Context, _, content string) (*dctl.Message, error) {
-	f.sent = append(f.sent, content)
+func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
+	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
-func (f *fakeClient) Reply(_ context.Context, _, _, content string) (*dctl.Message, error) {
-	f.replied = append(f.replied, content)
+func (f *fakeClient) Reply(_ context.Context, ch, _, content string) (*dctl.Message, error) {
+	f.replied = append(f.replied, outMsg{ch, content})
 	return &dctl.Message{ID: "m2"}, nil
 }
 func (f *fakeClient) React(_ context.Context, _, _, emoji string) error {
 	f.reacted = append(f.reacted, emoji)
 	return nil
 }
-func (f *fakeClient) SendSelectMenu(_ context.Context, _, _, content, _ string, _ []dctl.SelectOption) (*dctl.Message, error) {
-	f.menus = append(f.menus, content)
+func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
+	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
+}
+func (f *fakeClient) ReadMessages(context.Context, string, int, string) ([]dctl.Message, error) {
+	return f.read, nil
 }
 
 var _ contracts.Gateway = (*Gateway)(nil)
