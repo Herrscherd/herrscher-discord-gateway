@@ -26,6 +26,7 @@ func init() {
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
 				{Key: "guild", Env: "DISCORD_GUILD_ID", Help: "server the slash commands are registered in (required once the bot is in more than one)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: full (default) | actions (no assistant text) | quiet (tool names only, no paths or commands)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 			},
@@ -55,7 +56,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	// One shared set of per-conversation renderers: the gateway feeds it routed
 	// events (EmitTo) and the router records the triggering message id for the ACK
 	// of the conversation that message belongs to.
-	s := newSinks(ctx, renderAdapter{plat}, "full")
+	s := newSinks(ctx, renderAdapter{plat}, verbositySetting(cfg.Get("verbosity")))
 	gw.sinks = s
 	plat.sinks = s
 
@@ -124,6 +125,19 @@ func clientOpts(guild string) []dctl.ClientOption {
 		return nil
 	}
 	return []dctl.ClientOption{dctl.WithGuild(guild)}
+}
+
+// verbositySetting maps the configured render level onto the three the progress
+// view knows, falling back to full for anything else. An unknown value must not
+// resolve to a stricter level than asked: an operator who wants less in the
+// channel picks it explicitly, and a typo that silently hid every detail would
+// read as a broken gateway.
+func verbositySetting(v string) string {
+	switch v {
+	case "quiet", "actions", "full":
+		return v
+	}
+	return "full"
 }
 
 func strSetting(v, def string) string {
