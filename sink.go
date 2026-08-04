@@ -17,20 +17,22 @@ const gatewayMaxLen = 2000
 const ackEmoji = "⏳"
 
 // renderClient is the narrow Discord surface the sink needs (faked in tests).
+// It has no DefaultChannel: a sink is told which conversation it renders into,
+// so nothing here can fall back to a single global channel.
 type renderClient interface {
-	DefaultChannel() string
 	UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error)
 	Post(ctx context.Context, channelID, content string) error
 	React(ctx context.Context, channelID, messageID, emoji string) error
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 }
 
-// sink renders the live turn-event stream onto Discord. Mono-channel: one
-// in-flight turn at a time, guarded by mu. It is shared between the Gateway
-// (Emit) and the Platform (Read records the last user message id for the ACK).
+// sink renders the live turn-event stream into ONE Discord conversation: one
+// in-flight turn at a time, guarded by mu. Several sinks coexist (see sinks),
+// one per conversation the bot is talking in.
 type sink struct {
 	ctx   context.Context
 	rc    renderClient
+	ch    string // the conversation this sink renders into
 	level string
 
 	mu       sync.Mutex
@@ -39,11 +41,41 @@ type sink struct {
 	acked    string // id currently carrying the ⏳ reaction ("" if none)
 }
 
-func newSink(ctx context.Context, rc renderClient, level string) *sink {
+func newSink(ctx context.Context, rc renderClient, ch, level string) *sink {
 	if level == "" {
 		level = "full"
 	}
-	return &sink{ctx: ctx, rc: rc, level: level}
+	return &sink{ctx: ctx, rc: rc, ch: ch, level: level}
+}
+
+// sinks is the set of live per-conversation renderers. The gateway is no longer
+// mono-channel: one sink per conversation, each with its own in-flight turn
+// state, created on first use and kept for the process's life (a conversation
+// the bot has spoken in is cheap to keep, and its ack/progress ids must survive
+// between turns).
+type sinks struct {
+	ctx   context.Context
+	rc    renderClient
+	level string
+
+	mu sync.Mutex
+	m  map[string]*sink
+}
+
+func newSinks(ctx context.Context, rc renderClient, level string) *sinks {
+	return &sinks{ctx: ctx, rc: rc, level: level, m: map[string]*sink{}}
+}
+
+// at returns the renderer for one conversation, creating it on first use.
+func (s *sinks) at(convID string) *sink {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if v := s.m[convID]; v != nil {
+		return v
+	}
+	v := newSink(s.ctx, s.rc, convID, s.level)
+	s.m[convID] = v
+	return v
 }
 
 // noteUser records the id of the latest user (non-bot) message, so the next
@@ -56,13 +88,14 @@ func (s *sink) noteUser(id string) {
 
 // handle renders one live turn event onto Discord. It holds s.mu across the
 // event's blocking REST I/O (React, UpsertStatusMessage, Post, Unreact) on
-// purpose: mono-channel means one turn at a time, so the poll goroutine's
-// noteUser briefly serializes behind a single event's render, which is
-// acceptable and intentional for this single-in-flight-turn design.
+// purpose: one turn at a time per conversation, so the inbound goroutine's
+// noteUser briefly serializes behind a single event's render — acceptable and
+// intentional for this single-in-flight-turn design. Other conversations render
+// on their own sink and are never blocked by this one.
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ch := s.rc.DefaultChannel()
+	ch := s.ch
 
 	switch e.T {
 	case "human":

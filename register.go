@@ -37,11 +37,12 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	gw := NewGateway(discordClient{c})
 	plat := NewPlatform(c)
 
-	// One shared sink renders the live turn stream: the gateway feeds it events
-	// (Emit) and the platform records the last user message id (Read) for the ACK.
-	s := newSink(ctx, renderAdapter{plat}, "full")
-	gw.sink = s
-	plat.sink = s
+	// One shared set of per-conversation renderers: the gateway feeds it routed
+	// events (EmitTo) and the platform records the last user message id (Read) for
+	// the ACK of the conversation that message belongs to.
+	s := newSinks(ctx, renderAdapter{plat}, "full")
+	gw.sinks = s
+	plat.sinks = s
 
 	// The slash surface lives entirely in the plugin: it builds its own dctl
 	// command catalog + allow store and only crosses the boundary through the
