@@ -8,28 +8,38 @@ import (
 	"github.com/Herrscherd/herrscher-contracts"
 )
 
+// outMsg and outMenu record where an outbound call landed, not just what it
+// said: the router's whole job is choosing the right channel and custom_id.
+type outMsg struct{ channel, content string }
+
+type outMenu struct{ channel, content, customID string }
+
 type fakeClient struct {
-	sent    []string
-	replied []string
+	sent    []outMsg
+	replied []outMsg
 	reacted []string
-	menus   []string
+	menus   []outMenu
+	read    []dctl.Message
 }
 
-func (f *fakeClient) Send(_ context.Context, _, content string) (*dctl.Message, error) {
-	f.sent = append(f.sent, content)
+func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
+	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
-func (f *fakeClient) Reply(_ context.Context, _, _, content string) (*dctl.Message, error) {
-	f.replied = append(f.replied, content)
+func (f *fakeClient) Reply(_ context.Context, ch, _, content string) (*dctl.Message, error) {
+	f.replied = append(f.replied, outMsg{ch, content})
 	return &dctl.Message{ID: "m2"}, nil
 }
 func (f *fakeClient) React(_ context.Context, _, _, emoji string) error {
 	f.reacted = append(f.reacted, emoji)
 	return nil
 }
-func (f *fakeClient) SendSelectMenu(_ context.Context, _, _, content, _ string, _ []dctl.SelectOption) (*dctl.Message, error) {
-	f.menus = append(f.menus, content)
+func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
+	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
+}
+func (f *fakeClient) ReadMessages(context.Context, string, int, string) ([]dctl.Message, error) {
+	return f.read, nil
 }
 
 var _ contracts.Gateway = (*Gateway)(nil)
@@ -65,13 +75,14 @@ func TestGatewayImplementsEventSink(t *testing.T) {
 	var _ contracts.EventSink = (*Gateway)(nil)
 }
 
-func TestGatewayEmitForwardsToSink(t *testing.T) {
-	f := &fakeRender{channel: "c1"}
+func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
+	f := &fakeRender{}
 	g := NewGateway(&fakeClient{})
-	g.sink = newSink(context.Background(), f, "full")
-	g.Emit(contracts.Event{T: "human"})
-	g.Emit(contracts.Event{T: "reply", Text: "ok", Done: true})
-	if len(f.posts) != 1 || f.posts[0] != "ok" {
-		t.Fatalf("posts = %v, want [ok]", f.posts)
+	g.sinks = newSinks(context.Background(), f, "full")
+	conv := contracts.Conversation{ID: "c1"}
+	g.EmitTo(conv, contracts.Event{T: "human"})
+	g.EmitTo(conv, contracts.Event{T: "reply", Text: "ok", Done: true})
+	if got := f.postsTo("c1"); len(got) != 1 || got[0] != "ok" {
+		t.Fatalf("posts = %v, want [ok]", got)
 	}
 }

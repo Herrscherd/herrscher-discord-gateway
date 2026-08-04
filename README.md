@@ -11,10 +11,10 @@ anything Discord-specific.
 
 | Aspect | Value |
 |--------|-------|
-| **Role** | Receives Discord slash interactions, posts replies, and renders turn progress in-channel |
+| **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
-| **Ports implemented** | `Gateway`, `EventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `channel` / `DISCORD_CHANNEL_ID` (default channel id), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -31,7 +31,18 @@ live-updating progress message per turn (capped at 15 lines, one edit per 1.5 s)
 a ⏳ ACK reaction on the triggering message, and a final reply chunked at Discord's
 2000-rune limit and collapsed to a ✅ summary. A mid-turn backend reset discards the
 partial render and keeps going; an abandoned turn clears the ACK silently.
-Mono-channel by design: one bot, one default channel, one in-flight turn.
+
+## Owner-bound, not channel-bound
+
+The gateway identifies with `GUILD_MESSAGES` and `DIRECT_MESSAGES` — both
+non-privileged — and acts on a message only when the configured owner @mentions
+the bot or replies to it. Everyone else's messages are never triggers, but the
+last `context_messages` messages of the channel are read over REST and carried
+into the turn, so the agent sees the whole conversation. The first ping in an
+unknown channel asks which repo to work on with a select menu; the answer creates
+a session that **adopts that channel** and is remembered in `discord-router.json`
+(mode 0600, under `DCTL_STATE_DIR`). Rendering is per conversation: each channel
+gets its own progress message, ⏳ ack and reply.
 
 ## The slash surface
 
