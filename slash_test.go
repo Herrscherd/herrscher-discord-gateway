@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
@@ -158,6 +159,65 @@ func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
 	}
 	if !s.gate(context.Background(), dctl.Interaction{Member: dctl.Member{User: dctl.Author{ID: "owner1"}}}) {
 		t.Fatal("the owner was denied in a guild")
+	}
+}
+
+// /stop takes no session name: it is typed in the room the runaway turn is
+// talking in, and that room already says which session it is.
+func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+	ctrl.live["ch-c1"] = true
+	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
+
+	if got := s.stop("c1"); !strings.Contains(got, "interrompu") {
+		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
+	}
+	if !reflect.DeepEqual(ctrl.interrupted, []string{"ch-c1"}) {
+		t.Fatalf("interrupted = %v, want [ch-c1]", ctrl.interrupted)
+	}
+}
+
+// A /stop with nothing running must say so. Claiming it stopped a turn would
+// send the operator off waiting for an answer that is still coming.
+func TestStopReportsWhenNothingIsRunning(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
+	if got := s.stop("c1"); !strings.Contains(got, "aucun tour") {
+		t.Fatalf("stop = %q, want it to report no live turn", got)
+	}
+}
+
+// The level belongs to the room: retuning one conversation must leave every
+// other one on what it had.
+func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	s := &slash{ctx: context.Background(), binds: binds}
+
+	if got := s.setVerbosity("c1", levelFull); !strings.Contains(got, levelFull) {
+		t.Fatalf("setVerbosity = %q, want the new level confirmed", got)
+	}
+	if got := binds.Level("c1"); got != levelFull {
+		t.Fatalf("level(c1) = %q, want %q", got, levelFull)
+	}
+	if got := binds.Level("c2"); got != "" {
+		t.Fatalf("level(c2) = %q — retuning one room changed another", got)
+	}
+}
+
+// A level the renderer does not know must be refused rather than stored: stored,
+// it would render as junk forever with the operator told it worked.
+func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	s := &slash{ctx: context.Background(), binds: binds}
+
+	if got := s.setVerbosity("c1", "loud"); !strings.Contains(got, "inconnu") {
+		t.Fatalf("setVerbosity = %q, want it refused", got)
+	}
+	if got := binds.Level("c1"); got != "" {
+		t.Fatalf("level(c1) = %q, want nothing stored", got)
 	}
 }
 

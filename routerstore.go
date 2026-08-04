@@ -7,10 +7,11 @@ import (
 	"sync"
 )
 
-// bindStore remembers which session drives which channel, persisted as JSON
-// beside the allow store. It lives entirely in the plugin: the core knows
-// sessions, never channels-to-sessions. Losing it is safe — an unbound channel
-// simply asks the operator again.
+// bindStore holds what the gateway remembers about a conversation — which
+// session drives it, whether the gateway opened it, how loud it wants the bot —
+// persisted as JSON beside the allow store. It lives entirely in the plugin: the
+// core knows sessions, never channels-to-sessions. Losing it is safe — an
+// unbound channel simply asks the operator again.
 type bindStore struct {
 	mu   sync.Mutex
 	path string
@@ -22,19 +23,25 @@ type bindStore struct {
 	// only costs an @: the thread still works, it just stops answering bare
 	// messages.
 	Threads map[string]bool `json:"threads,omitempty"`
+	// Levels holds the render level `/verbosity` set on a conversation, which
+	// overrides the daemon-wide DISCORD_VERBOSITY default. It is keyed by
+	// conversation and not by session on purpose: how loud the bot is belongs to
+	// the room it speaks in — often a channel other people read — not to whatever
+	// job happens to be running there.
+	Levels map[string]string `json:"levels,omitempty"`
 }
 
 func newBindStore(path string) *bindStore {
-	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}}
+	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently resolve to a wrong session: report
 			// it and start empty, which only costs one extra question.
-			// Both maps go, not just the bindings: a half-decoded Threads would
+			// Every map goes, not just the bindings: a half-decoded Threads would
 			// leave a channel marked as a thread the gateway opened, and there a
 			// plain message needs no @mention to make the bot act.
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store %s is corrupt, ignoring: %v\n", path, err)
-			s.Channels, s.Threads = map[string]string{}, map[string]bool{}
+			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
@@ -42,6 +49,10 @@ func newBindStore(path string) *bindStore {
 		// Absent from every store written before threads existed.
 		if s.Threads == nil {
 			s.Threads = map[string]bool{}
+		}
+		// Likewise for every store written before /verbosity existed.
+		if s.Levels == nil {
+			s.Levels = map[string]string{}
 		}
 	}
 	return s
@@ -65,6 +76,27 @@ func (s *bindStore) Session(channel string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.Channels[channel]
+}
+
+// Level returns the render level set on a conversation, or "" when none is — the
+// caller then falls back on the configured default.
+func (s *bindStore) Level(channel string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Levels[channel]
+}
+
+// SetLevel overrides the render level of one conversation. An empty level drops
+// the override rather than storing one, putting the conversation back on the
+// configured default.
+func (s *bindStore) SetLevel(channel, level string) error {
+	return s.persist(func() {
+		if level == "" {
+			delete(s.Levels, channel)
+			return
+		}
+		s.Levels[channel] = level
+	})
 }
 
 // IsThread reports whether this conversation is a thread the gateway opened.

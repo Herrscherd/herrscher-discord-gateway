@@ -191,6 +191,13 @@ func (r *router) conversation(ctx context.Context, m messageCreate) (conv string
 		// A thread the operator is not a member of is a room only the bot can
 		// read, which is no better than not having one.
 		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
+			// The thread inherits the render level of the channel the job was asked
+			// in: the operator set it there for this work, and the work just moved.
+			if lv := r.binds.Level(m.ChannelID); lv != "" {
+				if err := r.binds.SetLevel(id, lv); err != nil {
+					fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+				}
+			}
 			return id, true
 		}
 	}
