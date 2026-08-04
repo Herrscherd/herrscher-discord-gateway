@@ -57,12 +57,20 @@ func (f *fakeCtrl) Repos(context.Context) ([]contracts.RepoRef, error) { return 
 
 func newTestRouter(t *testing.T) (*router, *fakeCtrl, *fakeClient) {
 	t.Helper()
-	ctrl, c := newFakeCtrl(), &fakeClient{}
+	r, ctrl, c, _ := newTestRouterRendering(t)
+	return r, ctrl, c
+}
+
+// newTestRouterRendering also hands back the render fake, for the tests that
+// assert on what the operator sees rather than on what the core is told.
+func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fakeRender) {
+	t.Helper()
+	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), &fakeRender{}, "full"),
+		newSinks(context.Background(), f, "full"),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
-	return r, ctrl, c
+	return r, ctrl, c, f
 }
 
 func ownerPing(text string) messageCreate {
@@ -84,6 +92,31 @@ func TestUnknownChannelAsksWhichRepo(t *testing.T) {
 	}
 	if len(ctrl.created) != 0 {
 		t.Fatal("a session was created before the operator picked a repo")
+	}
+}
+
+// The repo question is the one reply that is not a turn, so nothing else would
+// mark the ping as received while the operator reads the menu.
+func TestAskAcksThePingItIsAnswering(t *testing.T) {
+	r, ctrl, _, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+
+	r.onMessage(context.Background(), ownerPing("fix the login bug"))
+
+	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
+		t.Fatalf("reacted = %v, want one %q on the ping that asked the question", f.reacted, ackEmoji)
+	}
+	// The turn that follows the pick reuses that same ⏳ rather than adding one,
+	// and clears it exactly once when the turn ends.
+	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	s := r.sinks.at("c1")
+	s.handle(contracts.Event{T: "human"})
+	if len(f.reacted) != 1 {
+		t.Fatalf("reacted = %v, want the ack not to be repeated by the turn", f.reacted)
+	}
+	s.handle(contracts.Event{T: "reply", Text: "done", Done: true})
+	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+		t.Fatalf("unreacted = %v, want the ack cleared once at turn end", f.unreacted)
 	}
 }
 
@@ -159,6 +192,24 @@ func TestSubmitCarriesAttachmentsAndConversation(t *testing.T) {
 	}
 	if len(in.Attachments) != 1 || in.Attachments[0].URL != "https://cdn/bug.png" {
 		t.Fatalf("attachments = %+v, want the screenshot handed to the host", in.Attachments)
+	}
+}
+
+// The rule that no work survives a turn has to be on every turn: the opening
+// one is the least likely place for the agent to promise background work.
+func TestEveryTurnCarriesTheNoBackgroundWorkRule(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+	r.onMessage(context.Background(), ownerPing("first"))
+	r.onMessage(context.Background(), ownerPing("second"))
+
+	for i, in := range ctrl.submitted["ch-c1"] {
+		if !strings.Contains(in.Text, "rien ne continue en tâche de fond") {
+			t.Fatalf("turn %d dropped the rule:\n%s", i, in.Text)
+		}
 	}
 }
 

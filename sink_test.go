@@ -83,6 +83,14 @@ func newTestSink(f *fakeRender) *sink {
 	return newSink(context.Background(), f, ch, "full")
 }
 
+// An unconfigured sink renders at the level that leaks nothing: the operator
+// pings this bot in channels other people read.
+func TestSinkDefaultsToQuiet(t *testing.T) {
+	if s := newSink(context.Background(), &fakeRender{}, "c1", ""); s.level != "quiet" {
+		t.Fatalf("default level = %q, want quiet", s.level)
+	}
+}
+
 func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(context.Background(), f, "full")
