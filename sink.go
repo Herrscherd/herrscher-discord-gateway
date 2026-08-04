@@ -30,10 +30,13 @@ type renderClient interface {
 // in-flight turn at a time, guarded by mu. Several sinks coexist (see sinks),
 // one per conversation the bot is talking in.
 type sink struct {
-	ctx   context.Context
-	rc    renderClient
-	ch    string // the conversation this sink renders into
-	level string
+	ctx context.Context
+	rc  renderClient
+	ch  string // the conversation this sink renders into
+	// level is resolved at the start of each turn rather than fixed at
+	// construction: `/verbosity` changes how loud a conversation is while its
+	// sink is alive, and a sink outlives every turn it renders.
+	level func() string
 	owner string // the operator every answer pings
 
 	mu       sync.Mutex
@@ -48,11 +51,25 @@ type sink struct {
 // was written in, and reacting to it in the wrong channel is a 404.
 type msgRef struct{ ch, id string }
 
-func newSink(ctx context.Context, rc renderClient, ch, level, owner string) *sink {
-	if level == "" {
-		level = defaultLevel
+func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string) *sink {
+	if level == nil {
+		level = staticLevel("")
 	}
 	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner}
+}
+
+// staticLevel resolves to one fixed render level, normalized. It is what a
+// conversation that nobody can retune uses — tests, and the fallback when no
+// resolver was wired.
+func staticLevel(level string) func() string {
+	level = verbositySetting(level)
+	return func() string { return level }
+}
+
+// staticLevels resolves every conversation to the same fixed render level.
+func staticLevels(level string) func(string) string {
+	level = verbositySetting(level)
+	return func(string) string { return level }
 }
 
 // sinks is the set of live per-conversation renderers. The gateway is no longer
@@ -61,16 +78,22 @@ func newSink(ctx context.Context, rc renderClient, ch, level, owner string) *sin
 // the bot has spoken in is cheap to keep, and its ack/progress ids must survive
 // between turns).
 type sinks struct {
-	ctx   context.Context
-	rc    renderClient
-	level string
+	ctx context.Context
+	rc  renderClient
+	// level answers "how loud is this conversation" for any conversation id. It
+	// is a function, not a value, because the answer is the operator's to change
+	// at any moment (see sink.level).
+	level func(conv string) string
 	owner string
 
 	mu sync.Mutex
 	m  map[string]*sink
 }
 
-func newSinks(ctx context.Context, rc renderClient, level, owner string) *sinks {
+func newSinks(ctx context.Context, rc renderClient, level func(conv string) string, owner string) *sinks {
+	if level == nil {
+		level = staticLevels("")
+	}
 	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, m: map[string]*sink{}}
 }
 
@@ -81,7 +104,7 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	v := newSink(s.ctx, s.rc, convID, s.level, s.owner)
+	v := newSink(s.ctx, s.rc, convID, func() string { return s.level(convID) }, s.owner)
 	s.m[convID] = v
 	return v
 }
@@ -127,11 +150,11 @@ func (s *sink) handle(e contracts.Event) {
 		// At the silent level there is no live view at all: no progress message
 		// is ever posted, so every "if s.pv != nil" below is skipped and the turn
 		// shows up as the ⏳ and then the answer.
-		if rendersProgress(s.level) {
+		if level := s.level(); rendersProgress(level) {
 			post := func(id, content string) (string, error) {
 				return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
 			}
-			s.pv = newProgressView(post, s.level, time.Now())
+			s.pv = newProgressView(post, level, time.Now())
 		}
 		// Already marked when the ping was received (see ack): reacting twice
 		// would be a wasted call, and the same ⏳ already says "received".

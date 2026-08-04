@@ -38,7 +38,7 @@ Above the default level it also draws one live-updating progress message per tur
 1.5 s) collapsed to a ✅ summary at the end; a mid-turn backend reset discards the
 partial render and keeps going, and an abandoned turn clears the ACK silently.
 
-`DISCORD_VERBOSITY` sets how much of that reaches the channel:
+`DISCORD_VERBOSITY` sets how much of that reaches a channel by default:
 
 | Level | What the channel sees |
 |-------|-----------------------|
@@ -51,6 +51,13 @@ partial render and keeps going, and an abandoned turn clears the ACK silently.
 people read, where a running commentary of tool calls is noise; raise it when you
 want to watch a turn work. Repeated lines collapse to `×N`, and the ✅ summary
 (tool names, count, duration, cost) is the same at every level that has one.
+
+`/verbosity level:…` retunes **one conversation**, takes effect on the next turn
+and survives a restart (`discord-router.json`). The level belongs to the room,
+not to the job: the same operator wants a live tool trace in his own thread and
+nothing but the answer in a channel his team reads, and the env var can only say
+one of those, daemon-wide, until the next restart. A job that moves into a
+private thread takes its channel's level with it.
 
 ## Owner-bound, not channel-bound
 
@@ -86,7 +93,7 @@ reply.
 
 ## The slash surface
 
-`/set`, `/session`, `/service` and `/allow` are registered **globally** — on the
+`/set`, `/session`, `/service`, `/allow`, `/stop` and `/verbosity` are registered **globally** — on the
 application, not on a server — so the bot carries its commands into every server
 it is invited to and no server has to be named in config. Discord takes up to an
 hour to propagate a change to a global command. Commands the
@@ -97,6 +104,13 @@ core owns become neutral argv through `SessionControl.Dispatch`; `/allow` and
 who can see the command (so the first operator can bootstrap), populated means
 listed users only. Treat the store as the real policy; the Discord default is
 overridable by a guild admin.
+
+`/stop` cancels the turn running in the conversation it is typed in — it takes no
+session name, because the room already says which session that is. It reaches
+`SessionControl.Interrupt`, which stops the backend turn and keeps the
+conversation: the next message picks up where it left off. Without it the only
+way out of a turn gone wrong is `/session close`, which also throws away the
+worktree and everything in it.
 
 ## Reconnection
 

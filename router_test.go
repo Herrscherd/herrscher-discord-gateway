@@ -13,12 +13,13 @@ import (
 
 // fakeCtrl records what the router asked the core to do.
 type fakeCtrl struct {
-	repos     []contracts.RepoRef
-	sessions  []contracts.SessionInfo
-	created   []contracts.CreateSession
-	submitted map[string][]contracts.Inbound
-	live      map[string]bool
-	picked    map[string][]string
+	repos       []contracts.RepoRef
+	sessions    []contracts.SessionInfo
+	created     []contracts.CreateSession
+	submitted   map[string][]contracts.Inbound
+	live        map[string]bool
+	picked      map[string][]string
+	interrupted []string
 }
 
 func newFakeCtrl() *fakeCtrl {
@@ -39,7 +40,10 @@ func (f *fakeCtrl) Close(context.Context, string, bool) (string, error) { return
 func (f *fakeCtrl) Sessions() []contracts.SessionInfo                   { return f.sessions }
 func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine        { return nil }
 func (f *fakeCtrl) Resume(string) error                                 { return nil }
-func (f *fakeCtrl) Interrupt(string) bool                               { return false }
+func (f *fakeCtrl) Interrupt(name string) bool {
+	f.interrupted = append(f.interrupted, name)
+	return f.live[name]
+}
 func (f *fakeCtrl) Submit(name string, in contracts.Inbound) bool {
 	if !f.live[name] {
 		return false
@@ -69,7 +73,7 @@ func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fak
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), f, "full", ""),
+		newSinks(context.Background(), f, staticLevels("full"), ""),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }
@@ -380,6 +384,24 @@ func TestThreadRequestOpensAPrivateThreadAndWorksThere(t *testing.T) {
 	}
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
 		t.Fatalf("reacted = %v, want the ping acked", f.reacted)
+	}
+}
+
+// A job that moves into a private thread takes the channel's render level with
+// it. The operator asked for that level for this work, and the work just walked
+// into another room.
+func TestThreadInheritsTheChannelRenderLevel(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.nextThreadID = "t1"
+	if err := r.binds.SetLevel("c1", levelFull); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), ownerPing("ouvre un thread et corrige herrscher"))
+
+	if got := r.binds.Level("t1"); got != levelFull {
+		t.Fatalf("level(t1) = %q, want %q — the thread went quiet on its own", got, levelFull)
 	}
 }
 
