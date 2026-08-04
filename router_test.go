@@ -502,6 +502,138 @@ func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
 	}
 }
 
+// Asking for a private thread in a channel that already has a session used to be
+// swallowed: the bound-session shortcut answered in the channel, in public, and
+// the request was never read. The fork opens the thread and inherits the repo
+// rather than asking a question the binding already answers.
+func TestThreadRequestInABoundChannelForksIntoOne(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-c1", ChannelID: "c1", Project: "enderbot"}}
+	c.nextThreadID = "t1"
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), ownerPing("ouvre un thread et regarde ce bug (fil privé)"))
+
+	if len(c.threads) != 1 || c.threads[0].channel != "c1" {
+		t.Fatalf("threads = %+v, want one opened in the pinged channel", c.threads)
+	}
+	if len(c.members) != 1 || c.members[0] != (outMsg{"t1", "owner1"}) {
+		t.Fatalf("members = %+v, want the owner added to t1", c.members)
+	}
+	if len(ctrl.created) != 1 {
+		t.Fatalf("created = %+v, want one session for the thread", ctrl.created)
+	}
+	spec := ctrl.created[0]
+	if spec.ChannelID != "t1" || spec.Name != sessionNameFor("t1") || spec.Project != "enderbot" {
+		t.Fatalf("spec = %+v, want a session in t1 on the channel's own repo", spec)
+	}
+	if len(c.menus) != 0 {
+		t.Fatalf("menus = %+v, want the repo inherited rather than re-asked", c.menus)
+	}
+	if got := ctrl.submitted["ch-c1"]; len(got) != 0 {
+		t.Fatalf("submitted to the channel session = %+v, want the ping to go to the thread only", got)
+	}
+	if in := ctrl.submitted[spec.Name]; len(in) != 1 || in[0].Conversation.ID != "t1" {
+		t.Fatalf("submitted = %+v, want the ping replayed into the thread", in)
+	}
+	if r.binds.Session("t1") != spec.Name || !r.binds.IsThread("t1") {
+		t.Fatal("the thread was not remembered as a bound conversation of ours")
+	}
+}
+
+// A remote repo is a checkout in the workspace once its first session cloned it,
+// so a thread forked off that session reuses the checkout instead of cloning
+// again.
+func TestForkReusesTheCheckoutRatherThanCloningAgain(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-c1", ChannelID: "c1", Project: "dctl"}}
+	c.nextThreadID = "t1"
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), ownerPing("en privé stp"))
+
+	if spec := ctrl.created[0]; spec.Project != "dctl" || spec.Clone != "" {
+		t.Fatalf("spec = %+v, want the existing checkout, not a fresh clone", spec)
+	}
+}
+
+// Nothing to inherit — a session the controller no longer lists, or one started
+// from the bare workspace — is not a reason to lose the ping. The turn happens
+// where it always did.
+func TestForkWithNothingToInheritStaysInTheChannel(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-c1", ChannelID: "c1"}} // no project
+	c.nextThreadID = "t1"
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), ownerPing("ouvre un fil pour ça"))
+
+	if len(c.threads) != 0 {
+		t.Fatalf("threads = %+v, want none — there was no repo to start one on", c.threads)
+	}
+	if got := ctrl.submitted["ch-c1"]; len(got) != 1 {
+		t.Fatalf("submitted = %+v, want the ping still answered in the channel", got)
+	}
+}
+
+// The thread could not be opened. conversation() already said so out loud, and
+// the ping must still run — on the session already bound here, never on a second
+// one named after the same channel.
+func TestForkFallsBackToTheBoundSessionWhenTheThreadFails(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-c1", ChannelID: "c1", Project: "enderbot"}}
+	c.threadErr = errors.New("missing permission")
+	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), ownerPing("dans un fil privé, ce bug"))
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want no second session on a channel that already has one", ctrl.created)
+	}
+	if got := ctrl.submitted["ch-c1"]; len(got) != 1 {
+		t.Fatalf("submitted = %+v, want the ping answered by the bound session", got)
+	}
+	if len(c.sent) != 1 || !strings.Contains(c.sent[0].content, "fil privé") {
+		t.Fatalf("sent = %+v, want the fallback said out loud", c.sent)
+	}
+}
+
+// Inside a thread the gateway opened, the word that asks for a thread is just a
+// word: forking there would open a thread inside a thread on every mention of it.
+func TestThreadWordInsideAThreadDoesNotForkAgain(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-t1"] = true
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-t1", ChannelID: "t1", Project: "enderbot"}}
+	c.nextThreadID = "t2"
+	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), messageCreate{
+		ID: "m2", ChannelID: "t1", Content: "reprends le fil d'hier",
+		Author: dctl.Author{ID: "owner1", Username: "leo"},
+	})
+
+	if len(c.threads) != 0 {
+		t.Fatalf("threads = %+v, want no thread opened inside a thread", c.threads)
+	}
+	if got := ctrl.submitted["ch-t1"]; len(got) != 1 {
+		t.Fatalf("submitted = %+v, want the message answered in the thread it was written in", got)
+	}
+}
+
 func TestPickOnADeadSessionReportsIt(t *testing.T) {
 	r, _, _ := newTestRouter(t)
 	if err := r.binds.Bind("c1", "ch-dead"); err != nil {
