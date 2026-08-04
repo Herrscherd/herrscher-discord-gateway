@@ -8,3 +8,5 @@ require (
 )
 
 require github.com/coder/websocket v1.8.15
+
+replace github.com/Herrscherd/herrscher-contracts => /tmp/wt-contracts

@@ -65,13 +65,14 @@ func TestGatewayImplementsEventSink(t *testing.T) {
 	var _ contracts.EventSink = (*Gateway)(nil)
 }
 
-func TestGatewayEmitForwardsToSink(t *testing.T) {
-	f := &fakeRender{channel: "c1"}
+func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
+	f := &fakeRender{}
 	g := NewGateway(&fakeClient{})
-	g.sink = newSink(context.Background(), f, "full")
-	g.Emit(contracts.Event{T: "human"})
-	g.Emit(contracts.Event{T: "reply", Text: "ok", Done: true})
-	if len(f.posts) != 1 || f.posts[0] != "ok" {
-		t.Fatalf("posts = %v, want [ok]", f.posts)
+	g.sinks = newSinks(context.Background(), f, "full")
+	conv := contracts.Conversation{ID: "c1"}
+	g.EmitTo(conv, contracts.Event{T: "human"})
+	g.EmitTo(conv, contracts.Event{T: "reply", Text: "ok", Done: true})
+	if got := f.postsTo("c1"); len(got) != 1 || got[0] != "ok" {
+		t.Fatalf("posts = %v, want [ok]", got)
 	}
 }

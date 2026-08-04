@@ -20,6 +20,7 @@ var (
 	_ contracts.Gateway                = (*Gateway)(nil)
 	_ contracts.SessionControlReceiver = (*Gateway)(nil)
 	_ contracts.EventSink              = (*Gateway)(nil)
+	_ contracts.RoutedEventSink        = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
@@ -29,7 +30,7 @@ var (
 type Gateway struct {
 	c     client
 	slash *slash
-	sink  *sink
+	sinks *sinks
 }
 
 func NewGateway(c client) *Gateway { return &Gateway{c: c} }
@@ -54,15 +55,21 @@ func (g *Gateway) Manifest() contracts.Manifest {
 	}
 }
 
-// Emit renders one live turn event onto Discord. It satisfies
-// contracts.EventSink; a Gateway built without a sink (e.g. in some tests)
-// drops events rather than panicking.
-func (g *Gateway) Emit(e contracts.Event) {
-	if g.sink == nil {
+// EmitTo renders one live turn event into the conversation the host routed it
+// to. It satisfies contracts.RoutedEventSink, which the host prefers over the
+// flat EventSink — so each session renders into its own channel instead of one
+// global default.
+func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
+	if g.sinks == nil || conv.ID == "" {
 		return
 	}
-	g.sink.handle(e)
+	g.sinks.at(conv.ID).handle(e)
 }
+
+// Emit is the unrouted fallback for a host that does not route events. Without a
+// conversation there is nothing to render into, so it drops rather than guessing
+// a channel. It satisfies contracts.EventSink.
+func (g *Gateway) Emit(contracts.Event) {}
 
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
 	m, err := g.c.Send(ctx, conv.ID, text)
