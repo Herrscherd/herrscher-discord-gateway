@@ -23,6 +23,7 @@ type slash struct {
 	ix     *dctl.Interactions
 	reg    *dctl.Registry
 	allow  *allowStore
+	binds  *bindStore
 	ctrl   contracts.SessionControl
 	comp   acker
 	router *router
@@ -38,13 +39,15 @@ type acker interface {
 // on the interactions registry. ctrl is bound later (BindSessionControl) once the
 // daemon hands the gateway its runtime session controller; router is assigned by
 // the factory once the application id it needs has been resolved.
-func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token string, allow *allowStore) *slash {
-	s := &slash{ctx: ctx, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow}
+func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore) *slash {
+	s := &slash{ctx: ctx, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
 	s.reg.
 		Add(commandSet(), s.handleSet).
 		Add(commandSession(), s.handleSession).
 		Add(commandService(), s.handleService).
 		Add(commandAllow(), s.handleAllow).
+		Add(commandStop(), s.handleStop).
+		Add(commandVerbosity(), s.handleVerbosity).
 		Autocomplete("session", s.autoSession)
 	return s
 }
@@ -161,9 +164,9 @@ func (s *slash) handleSession(ctx context.Context, ix dctl.Interaction) (dctl.Re
 		user, _ := ix.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, ix, saveNote(s.allow.AddSession(name, user), fmt.Sprintf("added <@%s> to session %q", user, name)))
+			s.respond(ctx, ix, saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
 		case "remove":
-			s.respond(ctx, ix, saveNote(s.allow.RemoveSession(name, user), fmt.Sprintf("removed <@%s> from session %q", user, name)))
+			s.respond(ctx, ix, saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
 		case "list":
 			s.respond(ctx, ix, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
 		}
@@ -181,13 +184,60 @@ func (s *slash) handleAllow(ctx context.Context, ix dctl.Interaction) (dctl.Resp
 	user, _ := ix.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, ix, saveNote(s.allow.AddGlobal(user), fmt.Sprintf("allowed <@%s> to run commands", user)))
+		s.respond(ctx, ix, saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
 	case "remove":
-		s.respond(ctx, ix, saveNote(s.allow.RemoveGlobal(user), fmt.Sprintf("removed <@%s>", user)))
+		s.respond(ctx, ix, saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
 	case "list":
 		s.respond(ctx, ix, listUsers("command allowlist", s.allow.ListGlobal()))
 	}
 	return dctl.Response{}, nil
+}
+
+func (s *slash) handleStop(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, ix) {
+		return dctl.Response{}, nil
+	}
+	s.respond(ctx, ix, s.stop(ix.ChannelID))
+	return dctl.Response{}, nil
+}
+
+// stop cancels the turn running in the conversation the command was typed in.
+// It takes no session name on purpose: the operator asks for it from the room
+// the runaway turn is talking in, and that room already says which session it
+// is. Without it the only way out of a turn gone wrong is `/session close`,
+// which also throws away the worktree and everything in it.
+func (s *slash) stop(channel string) string {
+	if s.ctrl == nil || s.router == nil {
+		return "session control is not available yet"
+	}
+	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel)) {
+		return "aucun tour en cours ici"
+	}
+	return "⏹️ tour interrompu — la conversation est gardée, dis-moi la suite"
+}
+
+func (s *slash) handleVerbosity(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, ix) {
+		return dctl.Response{}, nil
+	}
+	level, _ := ix.Data.Opt("level")
+	s.respond(ctx, ix, s.setVerbosity(ix.ChannelID, level))
+	return dctl.Response{}, nil
+}
+
+// setVerbosity retunes one conversation. The level is stored per conversation
+// rather than per session because it describes the room: the same operator wants
+// a live tool trace in his own thread and nothing but the answer in a channel his
+// team reads, and DISCORD_VERBOSITY can only say one of those, daemon-wide, until
+// the next restart.
+func (s *slash) setVerbosity(channel, level string) string {
+	if !knownLevel(level) {
+		return "niveau inconnu : " + level
+	}
+	if s.binds == nil {
+		return "le store de conversations n'est pas disponible"
+	}
+	return saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
 }
 
 // autoSession suggests existing session names for any `name` option that opts
@@ -269,11 +319,11 @@ const (
 )
 
 // saveNote returns the success message, or that message annotated with a
-// not-persisted warning (and logs the cause) when the allow-store write failed —
-// so the operator is not told a change stuck when it was lost.
-func saveNote(err error, ok string) string {
+// not-persisted warning (and logs the cause) when the store write failed — so the
+// operator is not told a change stuck when it was lost.
+func saveNote(err error, store, ok string) string {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: allow store save failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "discord gateway: %s save failed: %v\n", store, err)
 		return ok + " (warning: not saved, will be lost on restart)"
 	}
 	return ok
@@ -404,6 +454,27 @@ func commandService() *dctl.Command {
 			dctl.Sub("restart", "restart the daemon"),
 			dctl.Sub("update", "rebuild the daemon from source and restart it",
 				dctl.Bool("no_pull", "skip the git pull before building", false)),
+		)
+}
+
+// commandStop is deliberately flat and argument-free: it is typed in a panic,
+// in the room the runaway turn is in.
+func commandStop() *dctl.Command {
+	return dctl.NewCommand("stop", "cancel the turn running in this conversation").
+		Perms(dctl.PermManageGuild)
+}
+
+func commandVerbosity() *dctl.Command {
+	return dctl.NewCommand("verbosity", "set how much of a turn this conversation shows").
+		Perms(dctl.PermManageGuild).
+		With(
+			dctl.String("level", "how much of a turn to show here", true).
+				Choices(
+					dctl.NewChoice("silent — the answer and nothing else", levelSilent),
+					dctl.NewChoice("quiet — adds a live list of tool names", levelQuiet),
+					dctl.NewChoice("actions — adds each tool's detail", levelActions),
+					dctl.NewChoice("full — adds the assistant's text", levelFull),
+				),
 		)
 }
 

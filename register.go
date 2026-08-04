@@ -25,7 +25,7 @@ func init() {
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
-				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "how much of a turn shows in-channel: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default for how much of a turn shows in-channel, overridable per conversation with /verbosity: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 			},
@@ -55,7 +55,17 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	// One shared set of per-conversation renderers: the gateway feeds it routed
 	// events (EmitTo) and the router records the triggering message id for the ACK
 	// of the conversation that message belongs to.
-	s := newSinks(ctx, renderAdapter{plat}, verbositySetting(cfg.Get("verbosity")), owner)
+	//
+	// DISCORD_VERBOSITY is only the default a conversation falls back on: `/verbosity`
+	// retunes one room without touching the others and without a daemon restart,
+	// so the level is read from the store on every turn, not captured here.
+	level := verbositySetting(cfg.Get("verbosity"))
+	s := newSinks(ctx, renderAdapter{plat}, func(conv string) string {
+		if v := binds.Level(conv); v != "" {
+			return v
+		}
+		return level
+	}, owner)
 	gw.sinks = s
 	plat.sinks = s
 
@@ -67,7 +77,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	// The slash surface lives entirely in the plugin: it builds its own dctl
 	// command catalog + allow store and only crosses the boundary through the
 	// neutral SessionControl seam bound later (BindSessionControl).
-	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowStorePath()))
+	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowStorePath()), binds)
 	// The router reads the controller through a closure because it is bound after
 	// the plugin is built (BindSessionControl), not before.
 	gw.slash.router = newRouter(
@@ -117,6 +127,15 @@ func intSetting(v string, def int) int {
 	return n
 }
 
+// knownLevel reports whether v is one of the four render levels.
+func knownLevel(v string) bool {
+	switch v {
+	case levelSilent, levelQuiet, levelActions, levelFull:
+		return true
+	}
+	return false
+}
+
 // verbositySetting maps the configured render level onto the four the renderer
 // knows, falling back to silent for anything else. Silent is the only safe
 // default: the bot is meant to be pinged in channels other people read, where
@@ -124,8 +143,7 @@ func intSetting(v string, def int) int {
 // layout. Showing more than the answer has to be asked for, and a typo must not
 // turn it on by accident.
 func verbositySetting(v string) string {
-	switch v {
-	case levelSilent, levelQuiet, levelActions, levelFull:
+	if knownLevel(v) {
 		return v
 	}
 	return defaultLevel

@@ -63,6 +63,48 @@ func TestCorruptBindStoreKeepsNoThreads(t *testing.T) {
 	}
 }
 
+// The render level survives a restart — the operator sets it once, not on every
+// boot — and an empty level puts the conversation back on the configured default
+// rather than storing a meaningless override.
+func TestLevelRoundTripsAndResets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	s := newBindStore(path)
+	if got := s.Level("c1"); got != "" {
+		t.Fatalf("empty store returned level %q, want the configured default to win", got)
+	}
+	if err := s.SetLevel("c1", levelFull); err != nil {
+		t.Fatal(err)
+	}
+	if got := newBindStore(path).Level("c1"); got != levelFull {
+		t.Fatalf("reloaded level = %q, want %q", got, levelFull)
+	}
+	if err := s.SetLevel("c1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := newBindStore(path).Level("c1"); got != "" {
+		t.Fatalf("reset level = %q, want the override gone", got)
+	}
+}
+
+// Closing a session must not reset how loud the room is: the level describes the
+// room, and the next job lands in the same one.
+func TestUnbindKeepsTheRenderLevel(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	s := newBindStore(path)
+	if err := s.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLevel("c1", levelQuiet); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Unbind("c1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := newBindStore(path).Level("c1"); got != levelQuiet {
+		t.Fatalf("level = %q, want %q kept across the session's death", got, levelQuiet)
+	}
+}
+
 // Unbinding drops the session, not the fact that the conversation is a private
 // thread the gateway opened: the thread outlives the session running in it.
 func TestUnbindKeepsTheThreadFlag(t *testing.T) {
