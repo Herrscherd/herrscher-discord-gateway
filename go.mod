@@ -3,7 +3,7 @@ module github.com/Herrscherd/herrscher-discord-gateway
 go 1.25
 
 require (
-	github.com/Herrscherd/dctl v1.3.0
+	github.com/Herrscherd/dctl v1.4.0
 	github.com/Herrscherd/herrscher-contracts v0.2.14
 )
 
