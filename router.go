@@ -71,6 +71,7 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 	if ctrl == nil {
 		return
 	}
+	m = r.hydrate(ctx, m)
 	if session := r.binds.Session(m.ChannelID); session != "" {
 		if r.submit(ctx, ctrl, session, m.ChannelID, m, false) {
 			return
@@ -81,6 +82,35 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 		_ = r.binds.Unbind(m.ChannelID)
 	}
 	r.ask(ctx, ctrl, m)
+}
+
+// hydrateWindow is how far back a blanked message is looked for. It only has to
+// cover the messages posted between the dispatch and the REST read.
+const hydrateWindow = 5
+
+// hydrate fills in a body the websocket dispatch did not carry. The gateway
+// identifies without the privileged MESSAGE_CONTENT intent, so Discord blanks
+// `content` for everything that does not @mention the bot — which is every bare
+// message in one of our private threads, the one place the bot answers without
+// being mentioned. The same text is readable over REST, which the intent does
+// not gate, so it costs one extra call in exactly that case and nothing at all
+// when the dispatch already carried the text.
+func (r *router) hydrate(ctx context.Context, m messageCreate) messageCreate {
+	if m.Content != "" || len(m.Attachments) > 0 {
+		return m
+	}
+	msgs, err := r.c.ReadMessages(ctx, m.ChannelID, hydrateWindow, "")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: read blanked message: %v\n", err)
+		return m
+	}
+	for _, prev := range msgs {
+		if prev.ID == m.ID {
+			m.Content, m.Attachments = prev.Content, prev.Attachments
+			break
+		}
+	}
+	return m
 }
 
 // ask opens a conversation for the ping: it picks where the job happens, then
@@ -147,6 +177,12 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 // asked for in private landing in a room other people read is the one outcome
 // the request was about.
 func (r *router) conversation(ctx context.Context, m messageCreate) (conv string, thread bool) {
+	// Already inside a thread the gateway opened — its session died and is being
+	// recreated. The job stays where it is: opening a thread inside a thread is
+	// not a thing, and losing the flag would cost the thread its no-@mention rule.
+	if r.binds.IsThread(m.ChannelID) {
+		return m.ChannelID, true
+	}
 	if !wantsThread(m.Content) {
 		return m.ChannelID, false
 	}

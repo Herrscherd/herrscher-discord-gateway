@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// maxLines caps the live progress body so it stays under Discord's 2000-char
-// message limit; older lines are elided with a leading "…".
+// maxLines caps how many lines of activity the live progress body shows; older
+// lines are elided with a leading "…". It bounds the message visually — the
+// hard byte budget is enforced by render, since 15 lines of tool detail can
+// exceed Discord's limit on their own.
 const maxLines = 15
 
 // progressInterval throttles live edits so a tool-heavy turn does not hammer
@@ -125,16 +128,14 @@ func (p *progressView) flush(force bool) {
 	p.dirty = false
 }
 
+// finish collapses the turn to its one-line summary. A turn that rendered
+// nothing and never created a message is left alone: posting a summary then
+// would add a message where the level asked for none.
 func (p *progressView) finish() {
-	if len(p.lines) == 0 {
-		if p.msgID != "" && p.post != nil {
-			_, _ = p.post(p.msgID, p.summary())
-		}
+	if p.post == nil || (p.msgID == "" && len(p.lines) == 0) {
 		return
 	}
-	if p.post != nil {
-		_, _ = p.post(p.msgID, p.summary())
-	}
+	_, _ = p.post(p.msgID, p.summary())
 }
 
 // reset discards the current turn's accumulated activity after a backend
@@ -156,14 +157,26 @@ func (p *progressView) reset() {
 	p.flush(true)
 }
 
+// render draws the live body, dropping oldest lines until it fits Discord's
+// per-message limit. maxLines alone does not guarantee that: at the "actions"
+// and "full" levels a line carries up to 120 runes of detail, so a full window
+// runs past 2000. Discord rejects an oversized edit outright, and flush ignores
+// the error — the live message would simply freeze for the rest of the turn.
 func (p *progressView) render() string {
-	var b strings.Builder
-	b.WriteString("⏳ en cours…\n")
-	if p.elided {
-		b.WriteString("…\n")
+	lines, elided := p.lines, p.elided
+	for {
+		var b strings.Builder
+		b.WriteString("⏳ en cours…\n")
+		if elided {
+			b.WriteString("…\n")
+		}
+		b.WriteString(strings.Join(lines, "\n"))
+		out := b.String()
+		if len(lines) <= 1 || utf8.RuneCountInString(out) <= gatewayMaxLen {
+			return out
+		}
+		lines, elided = lines[1:], true
 	}
-	b.WriteString(strings.Join(p.lines, "\n"))
-	return b.String()
 }
 
 func (p *progressView) summary() string {

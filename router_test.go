@@ -69,7 +69,7 @@ func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fak
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), f, "full"),
+		newSinks(context.Background(), f, "full", ""),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }
@@ -400,6 +400,29 @@ func TestThreadMessagesNeedNoMention(t *testing.T) {
 	}
 }
 
+// Without the privileged MESSAGE_CONTENT intent, Discord blanks the body of
+// every message that does not @mention the bot — which is exactly the bare
+// messages a private thread exists to accept. The text is read back over REST,
+// which the intent does not gate; otherwise the turn would carry no instruction.
+func TestBlankedThreadMessageIsReadBack(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.live["ch-t1"] = true
+	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	c.read = []dctl.Message{{ID: "m2", ChannelID: "t1", Content: "et les tests ?"}}
+
+	r.onMessage(context.Background(), messageCreate{
+		ID: "m2", ChannelID: "t1",
+		Author: dctl.Author{ID: "owner1", Username: "leo"},
+	})
+
+	got := ctrl.submitted["ch-t1"]
+	if len(got) != 1 || !strings.Contains(got[0].Text, "et les tests ?") {
+		t.Fatalf("submitted = %+v, want the turn to carry the message body", got)
+	}
+}
+
 // Work asked for in private must never quietly land in a room other people
 // read: the fallback happens, but it is announced.
 func TestThreadFailureFallsBackToTheChannelOutLoud(t *testing.T) {
@@ -427,6 +450,33 @@ func TestThreadWithoutItsMemberIsNotUsed(t *testing.T) {
 
 	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
 		t.Fatalf("spec = %+v, want the channel rather than a thread only the bot can read", spec)
+	}
+}
+
+// A daemon restart kills the session but not the thread. Rebinding must keep it
+// a thread of ours, or the operator would suddenly have to @mention the bot in
+// a room that holds nobody else — and a second thread would be opened inside it.
+func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	// The session is gone: Submit fails, the binding is dropped, the router asks
+	// again — here answered by the repo named in the message.
+	r.onMessage(context.Background(), messageCreate{
+		ID: "m2", ChannelID: "t1", Content: "reprends herrscher",
+		Author: dctl.Author{ID: "owner1", Username: "leo"},
+	})
+
+	if len(c.threads) != 0 {
+		t.Fatalf("threads = %+v, want no thread opened inside a thread", c.threads)
+	}
+	if spec := ctrl.created[0]; spec.ChannelID != "t1" {
+		t.Fatalf("spec = %+v, want the job to stay in the thread", spec)
+	}
+	if !r.binds.IsThread("t1") {
+		t.Fatal("the thread lost its no-@mention rule when its session died")
 	}
 }
 

@@ -27,11 +27,16 @@ herrscher plugin add github.com/Herrscherd/herrscher-discord-gateway
 ## Rendering happens here, not in the core
 
 The Gateway receives the raw turn-event stream and draws Discord itself: a ⏳ ACK
-reaction on the triggering message, and a final reply chunked at Discord's
-2000-rune limit. Above the default level it also draws one live-updating progress
-message per turn (capped at 15 lines, one edit per 1.5 s) collapsed to a ✅
-summary at the end; a mid-turn backend reset discards the partial render and
-keeps going, and an abandoned turn clears the ACK silently.
+reaction on the triggering message, and a final reply that opens with the owner's
+@mention and is chunked at Discord's 2000-rune limit. The mention is not
+decoration — a turn runs for minutes and its answer is a plain post, which
+notifies nobody. A turn that ends with nothing to say still posts a line, because
+a ⏳ that merely vanishes reads like a bot that died.
+
+Above the default level it also draws one live-updating progress message per turn
+(15 lines, trimmed further if they would exceed the message limit, one edit per
+1.5 s) collapsed to a ✅ summary at the end; a mid-turn backend reset discards the
+partial render and keeps going, and an abandoned turn clears the ACK silently.
 
 `DISCORD_VERBOSITY` sets how much of that reaches the channel:
 
@@ -67,6 +72,12 @@ question rather than by a turn. That ping decides two things:
   message there needs no @mention. Server moderators holding `Manage Threads` can
   still see it; nobody else can. If the thread cannot be created, the job falls
   back to the channel and says so out loud.
+
+A message that does not @mention the bot arrives from the websocket with an empty
+body: `MESSAGE_CONTENT` is a privileged intent this gateway deliberately does not
+ask for. Those messages are read back over REST, which the intent does not gate,
+so a bare message in a thread costs one extra call and no privilege. The bot role
+needs `Create Private Threads` and `Send Messages in Threads`.
 
 Either way the answer creates a session that **adopts that conversation** and is
 remembered in `discord-router.json` (mode 0600, under `DCTL_STATE_DIR`).
