@@ -1,10 +1,13 @@
 package discord
 
 import (
+	"context"
+	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // route walks groups + sub-commands and returns the command path plus the leaf
@@ -78,5 +81,81 @@ func TestListUsers(t *testing.T) {
 	}
 	if got := listUsers("allowlist", []string{"a", "b"}); got != "allowlist: <@a>, <@b>" {
 		t.Fatalf("list = %q", got)
+	}
+}
+
+// fakeAcker records the acknowledgement a component click is answered with.
+type fakeAcker struct{ acked []string }
+
+func (f *fakeAcker) Ack(_ context.Context, _, _, content string) error {
+	f.acked = append(f.acked, content)
+	return nil
+}
+
+func TestComponentInteractionRoutesToPickNotTheRegistry(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.live["ch-c1"] = true
+	ack := &fakeAcker{}
+	s := &slash{ctx: context.Background(), router: r, comp: ack}
+
+	s.onInteraction(context.Background(), dctl.Interaction{
+		Type:      dctl.InteractionComponent,
+		ChannelID: "c1",
+		Data:      dctl.InteractionData{CustomID: ChoiceCustomID("ch-c1"), Values: []string{"yes"}},
+	})
+
+	if got := ctrl.picked["ch-c1"]; len(got) != 1 || got[0] != "yes" {
+		t.Fatalf("picked = %v, want [yes]", got)
+	}
+	if len(ack.acked) != 1 {
+		t.Fatalf("acked = %v, want the click acknowledged so the dropdown collapses", ack.acked)
+	}
+}
+
+func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	r.onMessage(context.Background(), ownerPing("fix it"))
+	s := &slash{ctx: context.Background(), router: r, comp: &fakeAcker{}}
+
+	s.onInteraction(context.Background(), dctl.Interaction{
+		Type:      dctl.InteractionComponent,
+		ChannelID: "c1",
+		Data:      dctl.InteractionData{CustomID: BindCustomID("c1"), Values: []string{"local:herrscher"}},
+	})
+
+	if len(ctrl.created) != 1 {
+		t.Fatalf("created = %+v, want the session created from the click", ctrl.created)
+	}
+}
+
+// An unknown custom_id belongs to nobody: it must not reach the command registry
+// (which has no handler for a component) nor be acknowledged as if it worked.
+func TestUnknownComponentIsDropped(t *testing.T) {
+	r, _, _ := newTestRouter(t)
+	ack := &fakeAcker{}
+	s := &slash{ctx: context.Background(), router: r, comp: ack}
+	s.onInteraction(context.Background(), dctl.Interaction{
+		Type: dctl.InteractionComponent,
+		Data: dctl.InteractionData{CustomID: "someone-elses-menu", Values: []string{"x"}},
+	})
+	if len(ack.acked) != 0 {
+		t.Fatalf("acked = %v, want nothing", ack.acked)
+	}
+}
+
+func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	if err := binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+	p := &Platform{binds: binds}
+	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
+		t.Fatal("Read hit the network for a push-driven channel")
+		return nil, nil
+	}
+	got, err := p.Read(context.Background(), "c1", 100, "")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("Read = %v, %v; want empty and no error", got, err)
 	}
 }

@@ -37,9 +37,12 @@ type fakeRender struct {
 	reacted   []string // emojis added
 	unreacted []string // emojis removed
 	statusID  string
+
+	// postChans records the channel each post landed in, so a test can prove one
+	// conversation's render never leaks into another's.
+	postChans []string
 }
 
-func (f *fakeRender) DefaultChannel() string { return f.channel }
 func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, id, content string) (string, error) {
 	f.upserts = append(f.upserts, content)
 	if f.statusID == "" {
@@ -47,8 +50,9 @@ func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, id, content strin
 	}
 	return f.statusID, nil
 }
-func (f *fakeRender) Post(_ context.Context, _, content string) error {
+func (f *fakeRender) Post(_ context.Context, ch, content string) error {
 	f.posts = append(f.posts, content)
+	f.postChans = append(f.postChans, ch)
 	return nil
 }
 func (f *fakeRender) React(_ context.Context, _, _, emoji string) error {
@@ -60,9 +64,61 @@ func (f *fakeRender) Unreact(_ context.Context, _, _, emoji string) error {
 	return nil
 }
 
+// postsTo returns the contents posted into one channel, in order.
+func (f *fakeRender) postsTo(ch string) []string {
+	var out []string
+	for i, c := range f.postChans {
+		if c == ch {
+			out = append(out, f.posts[i])
+		}
+	}
+	return out
+}
+
 func newTestSink(f *fakeRender) *sink {
-	s := newSink(context.Background(), f, "full")
-	return s
+	ch := f.channel
+	if ch == "" {
+		ch = "c1"
+	}
+	return newSink(context.Background(), f, ch, "full")
+}
+
+func TestSinksRenderPerConversationIndependently(t *testing.T) {
+	f := &fakeRender{}
+	set := newSinks(context.Background(), f, "full")
+
+	set.at("chanA").noteUser("mA")
+	set.at("chanB").noteUser("mB")
+	set.at("chanA").handle(contracts.Event{T: "human"})
+	set.at("chanB").handle(contracts.Event{T: "human"})
+	set.at("chanA").handle(contracts.Event{T: "reply", Text: "answer A", Done: true})
+
+	if got := f.postsTo("chanB"); len(got) != 0 {
+		t.Fatalf("conversation B received %v; A's reply leaked across channels", got)
+	}
+	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != "answer A" {
+		t.Fatalf("conversation A posts = %v, want [answer A]", got)
+	}
+	if set.at("chanA") != set.at("chanA") {
+		t.Fatal("at() returned a fresh sink for a known conversation — per-turn state would be lost")
+	}
+}
+
+func TestGatewayEmitToRoutesByConversation(t *testing.T) {
+	f := &fakeRender{}
+	g := &Gateway{sinks: newSinks(context.Background(), f, "full")}
+
+	g.EmitTo(contracts.Conversation{ID: "chanA"}, contracts.Event{T: "reply", Text: "hello A", Done: true})
+	// An unrouted event has no conversation to render into and must be dropped
+	// rather than guessing a channel.
+	g.Emit(contracts.Event{T: "reply", Text: "orphan", Done: true})
+
+	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != "hello A" {
+		t.Fatalf("chanA posts = %v, want [hello A]", got)
+	}
+	if len(f.posts) != 1 {
+		t.Fatalf("posts = %v, want only the routed one", f.posts)
+	}
 }
 
 func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {

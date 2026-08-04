@@ -77,8 +77,11 @@ func (a *ChannelAdmin) ChannelRef(id string) string { return "<#" + id + ">" }
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct {
-	c        *dctl.Client
-	sink     *sink
+	c     *dctl.Client
+	sinks *sinks
+	// binds tells which channels the router already drives by push; those are
+	// skipped by Read (see there).
+	binds    *bindStore
 	readImpl func(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error)
 }
 
@@ -153,8 +156,13 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 }
 
 // Read returns recent channel messages and records the id of the last non-bot
-// message so the next turn's ACK reaction lands on it.
+// message so the next turn's ACK reaction lands on it. A channel the router
+// drives by push returns nothing: that channel already has an inbound path, and
+// two would deliver every message twice.
 func (p *Platform) Read(ctx context.Context, channelID string, limit int, after string) ([]contracts.Message, error) {
+	if p.binds != nil && p.binds.Session(channelID) != "" {
+		return nil, nil
+	}
 	raws, err := p.readImpl(ctx, channelID, limit, after)
 	if err != nil {
 		return nil, err
@@ -162,8 +170,10 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	out := make([]contracts.Message, 0, len(raws))
 	for _, r := range raws {
 		out = append(out, r.msg)
-		if !r.bot && p.sink != nil {
-			p.sink.noteUser(r.id) // newest non-bot id wins (messages are oldest→newest)
+		if !r.bot && p.sinks != nil {
+			// Newest non-bot id wins (messages are oldest→newest), recorded on the
+			// sink of the channel the message actually came from.
+			p.sinks.at(r.msg.ChannelID).noteUser(r.id)
 		}
 	}
 	return out, nil
@@ -200,11 +210,11 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 }
 
 // renderAdapter exposes the exact renderClient surface the sink needs, backed by
-// the dctl client. DefaultChannel/UpsertStatusMessage/Unreact reuse Platform's
-// logic; Post/React go straight to dctl.
+// the dctl client. UpsertStatusMessage/Unreact reuse Platform's logic;
+// Post/React go straight to dctl. Every method takes its channel, so one adapter
+// serves every conversation's sink.
 type renderAdapter struct{ p *Platform }
 
-func (r renderAdapter) DefaultChannel() string { return r.p.DefaultChannel() }
 func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
 	return r.p.UpsertStatusMessage(ctx, ch, id, content)
 }

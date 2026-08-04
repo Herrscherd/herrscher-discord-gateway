@@ -14,8 +14,8 @@ import (
 )
 
 // gatewayURL is the Discord Gateway v10 endpoint (JSON encoding). Interactions
-// are delivered over the gateway regardless of intents, so we identify with
-// intents=0 and only ever read INTERACTION_CREATE dispatches.
+// are delivered regardless of intents; messages need the two non-privileged
+// message intents (see wsIntents).
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
 
 // Gateway opcodes (v10) we handle.
@@ -29,18 +29,27 @@ const (
 	opHeartbeatACK      = 11
 	readLimit           = 1 << 20
 	maxReconnectBackoff = 30 * time.Second
-	// maxInFlight bounds concurrent interaction handlers so a burst of
-	// INTERACTION_CREATE dispatches cannot spawn arbitrarily many goroutines /
-	// in-flight REST calls; the read loop back-pressures once it is saturated.
+	// maxInFlight bounds concurrent dispatch handlers so a burst of
+	// INTERACTION_CREATE / MESSAGE_CREATE dispatches cannot spawn arbitrarily many
+	// goroutines / in-flight REST calls; the read loop back-pressures once it is
+	// saturated.
 	maxInFlight = 64
+	// wsIntents is GUILD_MESSAGES | DIRECT_MESSAGES. Both are non-privileged.
+	// MESSAGE_CONTENT (1<<15) is deliberately absent: without it Discord still
+	// populates content and attachments for messages that mention the app (and for
+	// DMs), which is exactly the set the trigger filter keeps — and channel context
+	// is read over REST, which the intent does not gate.
+	wsIntents = (1 << 9) | (1 << 12)
 )
 
 // ws is the Discord Gateway websocket client. It connects, identifies, keeps the
 // connection alive with heartbeats, and forwards every INTERACTION_CREATE to
-// handle. It reconnects with exponential backoff until its context is cancelled.
+// handle and every MESSAGE_CREATE to onMessage. It reconnects with exponential
+// backoff until its context is cancelled.
 type ws struct {
-	token  string
-	handle func(context.Context, dctl.Interaction)
+	token     string
+	handle    func(context.Context, dctl.Interaction)
+	onMessage func(context.Context, messageCreate)
 
 	mu    sync.Mutex // serializes writes (only one Write may be in flight)
 	acked atomic.Bool
@@ -58,8 +67,8 @@ type gwPayload struct {
 	T  string          `json:"t"`
 }
 
-func newWS(token string, handle func(context.Context, dctl.Interaction)) *ws {
-	return &ws{token: token, handle: handle, sem: make(chan struct{}, maxInFlight)}
+func newWS(token string, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate)) *ws {
+	return &ws{token: token, handle: handle, onMessage: onMessage, sem: make(chan struct{}, maxInFlight)}
 }
 
 // run is the supervised connect loop: it keeps a session up, reconnecting with
@@ -154,9 +163,7 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 		}
 		switch p.Op {
 		case opDispatch:
-			if p.T == "INTERACTION_CREATE" {
-				w.onDispatch(ctx, p.D)
-			}
+			w.dispatch(ctx, p.T, p.D)
 		case opHeartbeat:
 			// An explicit server request to beat now; honor it without the
 			// missed-ACK check (that gate belongs to the periodic loop).
@@ -171,12 +178,37 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	}
 }
 
-func (w *ws) onDispatch(ctx context.Context, d json.RawMessage) {
-	var ix dctl.Interaction
-	if err := json.Unmarshal(d, &ix); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bad interaction: %v\n", err)
-		return
+// dispatch fans one gateway dispatch out to the right decoder. Unknown event
+// types are dropped: the two intents we identify with deliver a handful of
+// events we do not act on, and they must cost nothing.
+func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
+	switch t {
+	case "INTERACTION_CREATE":
+		if w.handle == nil {
+			return
+		}
+		var ix dctl.Interaction
+		if err := json.Unmarshal(d, &ix); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bad interaction: %v\n", err)
+			return
+		}
+		w.bounded(ctx, func() { w.handle(ctx, ix) })
+	case "MESSAGE_CREATE":
+		if w.onMessage == nil {
+			return
+		}
+		var m messageCreate
+		if err := json.Unmarshal(d, &m); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bad message: %v\n", err)
+			return
+		}
+		w.bounded(ctx, func() { w.onMessage(ctx, m) })
 	}
+}
+
+// bounded runs fn on its own goroutine under the in-flight semaphore, so a burst
+// of dispatches cannot spawn arbitrarily many handlers.
+func (w *ws) bounded(ctx context.Context, fn func()) {
 	select {
 	case w.sem <- struct{}{}:
 	case <-ctx.Done():
@@ -184,7 +216,7 @@ func (w *ws) onDispatch(ctx context.Context, d json.RawMessage) {
 	}
 	go func() {
 		defer func() { <-w.sem }()
-		w.handle(ctx, ix)
+		fn()
 	}()
 }
 
@@ -215,7 +247,7 @@ func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 		Op: opIdentify,
 		D: identifyData{
 			Token:      w.token,
-			Intents:    0,
+			Intents:    wsIntents,
 			Properties: identifyProps{OS: "linux", Browser: "herrscher", Device: "herrscher"},
 		},
 	})
