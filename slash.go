@@ -47,8 +47,13 @@ func (s *slash) start() {
 	if err := s.reg.Sync(s.ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: command sync: %v\n", err)
 	}
-	newWS(s.token, s.onInteraction).run(s.ctx)
+	newWS(s.token, s.onInteraction, s.onMessage).run(s.ctx)
 }
+
+// onMessage receives every MESSAGE_CREATE the intents deliver. The trigger
+// filter (which messages are meant for the bot) is wired in later; until then a
+// delivered message costs nothing.
+func (s *slash) onMessage(context.Context, messageCreate) {}
 
 // onInteraction is the gateway's single entry point from the websocket loop. It
 // routes command interactions through the registry (whose handlers respond
