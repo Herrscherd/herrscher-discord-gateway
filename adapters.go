@@ -77,8 +77,11 @@ func (a *ChannelAdmin) ChannelRef(id string) string { return "<#" + id + ">" }
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct {
-	c        *dctl.Client
-	sinks    *sinks
+	c     *dctl.Client
+	sinks *sinks
+	// binds tells which channels the router already drives by push; those are
+	// skipped by Read (see there).
+	binds    *bindStore
 	readImpl func(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error)
 }
 
@@ -153,8 +156,13 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 }
 
 // Read returns recent channel messages and records the id of the last non-bot
-// message so the next turn's ACK reaction lands on it.
+// message so the next turn's ACK reaction lands on it. A channel the router
+// drives by push returns nothing: that channel already has an inbound path, and
+// two would deliver every message twice.
 func (p *Platform) Read(ctx context.Context, channelID string, limit int, after string) ([]contracts.Message, error) {
+	if p.binds != nil && p.binds.Session(channelID) != "" {
+		return nil, nil
+	}
 	raws, err := p.readImpl(ctx, channelID, limit, after)
 	if err != nil {
 		return nil, err
