@@ -356,12 +356,15 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
 // channel. opening marks the first turn of a freshly created session, which is
 // where the playbook is named. It reports whether a live session accepted it.
 func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening bool) bool {
+	// Resolved once: the message this ping replies to feeds both the turn text
+	// and its attachments, and re-reading it for each would cost a second call.
+	ref := r.reference(ctx, m)
 	in := contracts.Inbound{
 		Conversation: contracts.Conversation{Gateway: "discord", ID: conv},
 		Author:       m.Author.Username,
 		AuthorID:     m.Author.ID,
-		Text:         r.compose(ctx, m, opening),
-		Attachments:  attachmentsOf(m),
+		Text:         r.compose(ctx, m, ref, opening),
+		Attachments:  attachmentsOf(m, ref),
 		MessageID:    contracts.MessageID(m.ID),
 	}
 	if !ctrl.Submit(session, in) {
@@ -376,13 +379,19 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 }
 
 // compose builds the turn text: what everyone else has been saying in this
-// channel, then the owner's actual instruction. Assembling context here is what
-// keeps the core agnostic — it receives one opaque string.
-func (r *router) compose(ctx context.Context, m messageCreate, opening bool) string {
+// channel, then the message the ping replies to, then the owner's actual
+// instruction. Assembling context here is what keeps the core agnostic — it
+// receives one opaque string. The quote sits closest to the instruction because
+// that is what the instruction is usually about.
+func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message, opening bool) string {
 	var b strings.Builder
 	if lines := r.context(ctx, m); lines != "" {
 		b.WriteString("Contexte du salon (messages précédents, tous auteurs) :\n")
 		b.WriteString(lines)
+		b.WriteString("\n---\n\n")
+	}
+	if q := quote(ref); q != "" {
+		b.WriteString(q)
 		b.WriteString("\n---\n\n")
 	}
 	if opening && r.cfg.playbook != "" {
@@ -407,30 +416,19 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 	}
 	var b strings.Builder
 	for _, prev := range msgs {
-		if prev.ID == m.ID || strings.TrimSpace(prev.Content) == "" {
+		if prev.ID == m.ID {
 			continue
 		}
-		fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, prev.Content)
+		// A message with no text is not an empty message: a bot reports through
+		// embeds, and skipping those made a whole channel of them invisible.
+		if body := strings.TrimSpace(prev.Content); body != "" {
+			fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, body)
+		}
+		for _, line := range describe(prev) {
+			fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, line)
+		}
 	}
 	return b.String()
-}
-
-// attachmentsOf maps the message's uploads to the neutral shape. The host, not
-// the gateway, downloads them — against the session's own allowlist.
-func attachmentsOf(m messageCreate) []contracts.Attachment {
-	if len(m.Attachments) == 0 {
-		return nil
-	}
-	out := make([]contracts.Attachment, 0, len(m.Attachments))
-	for _, a := range m.Attachments {
-		out = append(out, contracts.Attachment{
-			Filename:    a.Filename,
-			URL:         a.URL,
-			ContentType: a.ContentType,
-			Size:        a.Size,
-		})
-	}
-	return out
 }
 
 // sessionNameFor derives a stable session name from a channel id, so a restart

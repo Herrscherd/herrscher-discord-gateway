@@ -26,6 +26,10 @@ type fakeClient struct {
 	threadErr    error    // fails CreatePrivateThread
 	memberErr    error    // fails AddThreadMember
 	nextThreadID string
+
+	got    []outMsg      // channel and id of every GetMessage call
+	getMsg *dctl.Message // what GetMessage answers
+	getErr error         // fails GetMessage
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -46,6 +50,13 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 }
 func (f *fakeClient) ReadMessages(context.Context, string, int, string) ([]dctl.Message, error) {
 	return f.read, nil
+}
+func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message, error) {
+	f.got = append(f.got, outMsg{ch, id})
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	return f.getMsg, nil
 }
 func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (string, error) {
 	if f.threadErr != nil {
@@ -75,6 +86,16 @@ func TestGatewayManifest(t *testing.T) {
 	}
 	if !m.Capabilities.Reactions || !m.Capabilities.SelectMenus || !m.Capabilities.Replies {
 		t.Fatalf("discord should announce all capabilities: %+v", m.Capabilities)
+	}
+	// Undeclared, the host's attachment allowlist is empty and every screenshot
+	// is refused before it is fetched — silently, since a dropped attachment is
+	// never worth failing a turn over.
+	hosts := map[string]bool{}
+	for _, h := range m.AttachmentHosts {
+		hosts[h] = true
+	}
+	if !hosts["cdn.discordapp.com"] || !hosts["media.discordapp.net"] {
+		t.Fatalf("manifest attachment hosts = %v, want the Discord CDN", m.AttachmentHosts)
 	}
 }
 
