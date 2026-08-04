@@ -20,6 +20,12 @@ type fakeClient struct {
 	reacted []string
 	menus   []outMenu
 	read    []dctl.Message
+
+	threads      []outMsg // channel the thread was opened in, and its name
+	members      []outMsg // thread id, and the user added to it
+	threadErr    error    // fails CreatePrivateThread
+	memberErr    error    // fails AddThreadMember
+	nextThreadID string
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -40,6 +46,23 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 }
 func (f *fakeClient) ReadMessages(context.Context, string, int, string) ([]dctl.Message, error) {
 	return f.read, nil
+}
+func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (string, error) {
+	if f.threadErr != nil {
+		return "", f.threadErr
+	}
+	f.threads = append(f.threads, outMsg{ch, name})
+	if f.nextThreadID == "" {
+		return "thread1", nil
+	}
+	return f.nextThreadID, nil
+}
+func (f *fakeClient) AddThreadMember(_ context.Context, thread, user string) error {
+	if f.memberErr != nil {
+		return f.memberErr
+	}
+	f.members = append(f.members, outMsg{thread, user})
+	return nil
 }
 
 var _ contracts.Gateway = (*Gateway)(nil)

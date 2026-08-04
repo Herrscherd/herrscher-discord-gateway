@@ -44,7 +44,8 @@ type router struct {
 	trig  trigger
 
 	mu      sync.Mutex
-	pending map[string]messageCreate // channel id -> the ping awaiting a repo answer
+	pending map[string]messageCreate // conversation id -> the ping awaiting a repo answer
+	threads map[string]bool          // conversation id -> it is a thread we opened
 }
 
 func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, cfg routerConfig) *router {
@@ -56,13 +57,14 @@ func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore,
 		cfg:     cfg,
 		trig:    trigger{owner: cfg.owner, appID: cfg.appID},
 		pending: map[string]messageCreate{},
+		threads: map[string]bool{},
 	}
 }
 
 // onMessage is the single entry point from the websocket. Everything that is not
 // the owner addressing the bot stops here, before any core call.
 func (r *router) onMessage(ctx context.Context, m messageCreate) {
-	if !r.trig.fires(m) {
+	if !r.trig.fires(m, r.binds.IsThread(m.ChannelID)) {
 		return
 	}
 	ctrl := r.ctrl()
@@ -70,7 +72,7 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 		return
 	}
 	if session := r.binds.Session(m.ChannelID); session != "" {
-		if r.submit(ctx, ctrl, session, m, false) {
+		if r.submit(ctx, ctrl, session, m.ChannelID, m, false) {
 			return
 		}
 		// The session is gone (daemon restarted, session closed out of band).
@@ -81,21 +83,37 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 	r.ask(ctx, ctrl, m)
 }
 
-// ask buffers the ping and posts the repo question. Only the newest ping is kept:
-// answering the menu replays one message, and replaying a stale one would be
-// worse than dropping it.
+// ask opens a conversation for the ping: it picks where the job happens, then
+// either binds the repo the message already names or buffers the ping and posts
+// the repo question. Only the newest ping is kept: answering the menu replays
+// one message, and replaying a stale one would be worse than dropping it.
 func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messageCreate) {
 	repos, err := ctrl.Repos(ctx)
 	if err != nil || len(repos) == 0 {
 		r.post(ctx, m.ChannelID, "je ne trouve aucun repo sur lequel travailler — vérifie le workspace ou l'auth de la forge")
 		return
 	}
+	// Where the job lives: this channel, or a private thread when the ping asks
+	// for one. Everything below is keyed on it — the binding, the menu, the
+	// session's own channel — so the whole job stays in one place.
+	conv, thread := r.conversation(ctx, m)
+	// The ping is taken. Mark it now, in the channel it was written in: behind a
+	// question, or at the silent level, there is nothing else to show, and an
+	// unmarked ping reads as ignored.
+	r.sinks.at(conv).ack(m.ChannelID, m.ID)
+
+	// The repo is usually named in the ping itself; asking anyway is friction.
+	if repo, ok := matchRepo(m.Content, repos); ok {
+		if msg := r.bind(ctx, ctrl, conv, thread, repoValue(repo), m, true); msg != "" {
+			r.post(ctx, conv, msg)
+		}
+		return
+	}
+
 	r.mu.Lock()
-	r.pending[m.ChannelID] = m
+	r.pending[conv] = m
+	r.threads[conv] = thread
 	r.mu.Unlock()
-	// The ping is taken; the answer is a question, not a turn. Mark it now or it
-	// stays unmarked until the operator picks, which reads as being ignored.
-	r.sinks.at(m.ChannelID).ack(m.ID)
 
 	opts := make([]dctl.SelectOption, 0, len(repos))
 	for _, repo := range repos {
@@ -104,13 +122,77 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 		}
 		opts = append(opts, dctl.SelectOption{Label: repo.Name, Value: repoValue(repo), Description: repo.Description})
 	}
-	prompt := "sur quel repo je travaille dans ce salon ? (je ne poserai la question qu'une fois)"
+	prompt := "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
 	if len(repos) > selectMenuMax {
 		prompt = fmt.Sprintf("%s — %d repos, les %d premiers sont listés", prompt, len(repos), selectMenuMax)
 	}
-	if _, err := r.c.SendSelectMenu(ctx, m.ChannelID, m.ID, prompt, BindCustomID(m.ChannelID), opts); err != nil {
+	// A reply only resolves inside its own channel: asked from a thread, the ping
+	// is in the parent and there is nothing here to reply to.
+	replyTo := m.ID
+	if conv != m.ChannelID {
+		replyTo = ""
+	}
+	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), opts); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: repo menu: %v\n", err)
 	}
+}
+
+// conversation decides where this job happens, and reports whether that is a
+// thread the gateway opened. A ping that asks for a thread gets a private one:
+// no trace in the channel, and the operator added as its only human member.
+//
+// Creating it can fail — a missing permission, a channel type with no threads —
+// and the ping must still be answered, so the job falls back to the channel it
+// was asked in. That fallback is said out loud rather than taken silently: work
+// asked for in private landing in a room other people read is the one outcome
+// the request was about.
+func (r *router) conversation(ctx context.Context, m messageCreate) (conv string, thread bool) {
+	if !wantsThread(m.Content) {
+		return m.ChannelID, false
+	}
+	id, err := r.c.CreatePrivateThread(ctx, m.ChannelID, threadName(m.Content))
+	if err == nil && id != "" {
+		// A thread the operator is not a member of is a room only the bot can
+		// read, which is no better than not having one.
+		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
+			return id, true
+		}
+	}
+	fmt.Fprintf(os.Stderr, "discord gateway: private thread: %v\n", err)
+	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé (permissions ?) — je réponds ici")
+	return m.ChannelID, false
+}
+
+// bind creates the session on the chosen repo, adopting conv, remembers the
+// binding and replays the ping. It returns the text the operator should be told,
+// empty when the session started and the work speaks for itself.
+func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, conv string, thread bool, value string, m messageCreate, buffered bool) string {
+	spec := contracts.CreateSession{
+		Name:      sessionNameFor(conv),
+		ChannelID: conv,
+		Gateways:  []string{"discord"},
+	}
+	if target, ok := strings.CutPrefix(value, "local:"); ok {
+		spec.Project = target
+	} else if target, ok := strings.CutPrefix(value, "remote:"); ok {
+		spec.Clone = target
+	} else {
+		return "choix illisible"
+	}
+	if _, err := ctrl.Create(ctx, spec); err != nil {
+		return "création de session impossible : " + err.Error()
+	}
+	save := r.binds.Bind
+	if thread {
+		save = r.binds.BindThread
+	}
+	if err := save(conv, spec.Name); err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+	}
+	if buffered {
+		r.submit(ctx, ctrl, spec.Name, conv, m, true)
+	}
+	return ""
 }
 
 // repoValue encodes a RepoRef into a menu value that survives the round trip and
@@ -132,29 +214,13 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 	}
 	r.mu.Lock()
 	m, buffered := r.pending[channel]
+	thread := r.threads[channel]
 	delete(r.pending, channel)
+	delete(r.threads, channel)
 	r.mu.Unlock()
 
-	spec := contracts.CreateSession{
-		Name:      sessionNameFor(channel),
-		ChannelID: channel,
-		Gateways:  []string{"discord"},
-	}
-	if target, ok := strings.CutPrefix(value, "local:"); ok {
-		spec.Project = target
-	} else if target, ok := strings.CutPrefix(value, "remote:"); ok {
-		spec.Clone = target
-	} else {
-		return "choix illisible"
-	}
-	if _, err := ctrl.Create(ctx, spec); err != nil {
-		return "création de session impossible : " + err.Error()
-	}
-	if err := r.binds.Bind(channel, spec.Name); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
-	}
-	if buffered {
-		r.submit(ctx, ctrl, spec.Name, m, true)
+	if msg := r.bind(ctx, ctrl, channel, thread, value, m, buffered); msg != "" {
+		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
 }
@@ -186,12 +252,14 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
 	return id
 }
 
-// submit assembles the neutral Inbound and hands it to the core. opening marks
-// the first turn of a freshly created session, which is where the playbook is
-// named. It reports whether a live session accepted it.
-func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session string, m messageCreate, opening bool) bool {
+// submit assembles the neutral Inbound and hands it to the core. conv is where
+// the answer goes, which is not always where the message came from: a job moved
+// into a private thread is driven by pings that may still land in the parent
+// channel. opening marks the first turn of a freshly created session, which is
+// where the playbook is named. It reports whether a live session accepted it.
+func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening bool) bool {
 	in := contracts.Inbound{
-		Conversation: contracts.Conversation{Gateway: "discord", ID: m.ChannelID},
+		Conversation: contracts.Conversation{Gateway: "discord", ID: conv},
 		Author:       m.Author.Username,
 		AuthorID:     m.Author.ID,
 		Text:         r.compose(ctx, m, opening),
@@ -201,9 +269,11 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 	if !ctrl.Submit(session, in) {
 		return false
 	}
-	// The ⏳ ack belongs on the message that triggered this turn, in its own
-	// channel — the poller used to do this from Read.
-	r.sinks.at(m.ChannelID).noteUser(m.ID)
+	// The ⏳ ack belongs on the message that triggered this turn, in the channel
+	// that message lives in — the poller used to do this from Read. The sink is
+	// the one rendering the answer, which is a different channel once the job
+	// moved into a thread.
+	r.sinks.at(conv).noteUser(m.ChannelID, m.ID)
 	return true
 }
 
