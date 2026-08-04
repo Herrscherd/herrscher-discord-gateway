@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `guild` / `DISCORD_GUILD_ID` (the server the slash commands live in — required once the bot is in more than one), `verbosity` / `DISCORD_VERBOSITY` (`full` default / `actions` / `quiet` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`full` default / `actions` / `quiet` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -53,7 +53,10 @@ gets its own progress message, ⏳ ack and reply.
 
 ## The slash surface
 
-`/set`, `/session`, `/service` and `/allow` are declared and parsed here. Commands the
+`/set`, `/session`, `/service` and `/allow` are registered **globally** — on the
+application, not on a server — so the bot carries its commands into every server
+it is invited to and no server has to be named in config. Discord takes up to an
+hour to propagate a change to a global command. Commands the
 core owns become neutral argv through `SessionControl.Dispatch`; `/allow` and
 `/session allow` mutate a plugin-local store the core never sees
 (`discord-allow.json`, mode 0600, under `DCTL_STATE_DIR`). Two gates stack: Discord's
