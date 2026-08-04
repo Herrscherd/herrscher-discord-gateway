@@ -16,12 +16,30 @@ const maxLines = 15
 // Discord's per-channel edit rate limit. Events are coalesced between edits.
 const progressInterval = 1500 * time.Millisecond
 
+// Render levels, quietest first. silent posts nothing at all: no live message,
+// no summary, only the reply the turn ends on. It is the default because the
+// bot is pinged in rooms other people read, and a wall of tool names is noise
+// there — the levels above it are opt-in for when the operator is watching a
+// turn and wants to see it work.
+const (
+	levelSilent  = "silent"
+	levelQuiet   = "quiet"
+	levelActions = "actions"
+	levelFull    = "full"
+
+	defaultLevel = levelSilent
+)
+
+// rendersProgress reports whether a level posts anything before the reply.
+func rendersProgress(level string) bool { return level != levelSilent }
+
 // progressView accumulates one turn's activity and pushes it to a single
 // live-updating Discord message, then collapses it to a one-line summary. post
 // creates (empty id) or edits (non-empty id) the message and returns its id.
+// It is never built at the silent level — see sink.handle.
 type progressView struct {
 	post      func(msgID, content string) (string, error)
-	level     string // "quiet" | "actions" | "full"
+	level     string // levelQuiet | levelActions | levelFull
 	start     time.Time
 	now       func() time.Time
 	lines     []string
@@ -47,7 +65,7 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		p.cost = ev.Cost
 		return
 	case "text":
-		if p.level != "full" {
+		if p.level != levelFull {
 			return
 		}
 		p.push("💭 " + clip(flatten(ev.Detail), 120))
@@ -61,7 +79,7 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		// A tool detail is a file path, a shell command or a search pattern: it
 		// exposes the machine's layout to everyone who can read the channel.
 		// "quiet" keeps the pulse of the turn and drops what it was aimed at.
-		if d := clip(flatten(ev.Detail), 120); d != "" && p.level != "quiet" {
+		if d := clip(flatten(ev.Detail), 120); d != "" && p.level != levelQuiet {
 			line += " · " + d
 		}
 		p.push(line)

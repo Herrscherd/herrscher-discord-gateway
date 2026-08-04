@@ -39,17 +39,18 @@ func TestNoGuildSettingIsDeclared(t *testing.T) {
 	}
 }
 
-func TestVerbositySettingFallsBackToQuiet(t *testing.T) {
-	for _, v := range []string{"quiet", "actions", "full"} {
+func TestVerbositySettingFallsBackToSilent(t *testing.T) {
+	for _, v := range []string{levelSilent, levelQuiet, levelActions, levelFull} {
 		if got := verbositySetting(v); got != v {
 			t.Errorf("verbositySetting(%q) = %q, want it kept", v, got)
 		}
 	}
 	// The bot gets pinged in channels other people read: an unset or mistyped
-	// level must never be the one that prints local paths and shell commands.
-	for _, v := range []string{"", "silent", "FULL"} {
-		if got := verbositySetting(v); got != "quiet" {
-			t.Errorf("verbositySetting(%q) = %q, want quiet", v, got)
+	// level must never be the one that narrates the turn, let alone prints local
+	// paths and shell commands.
+	for _, v := range []string{"", "FULL", "verbose", "1"} {
+		if got := verbositySetting(v); got != levelSilent {
+			t.Errorf("verbositySetting(%q) = %q, want %q", v, got, levelSilent)
 		}
 	}
 }

@@ -16,10 +16,16 @@ type bindStore struct {
 	path string
 
 	Channels map[string]string `json:"channels"` // channel id -> session name
+	// Threads holds the conversations the gateway opened itself. They are private
+	// threads created for one job, holding nobody but the operator and the bot,
+	// so a message there needs no @mention to be meant for the bot. Losing this
+	// only costs an @: the thread still works, it just stops answering bare
+	// messages.
+	Threads map[string]bool `json:"threads,omitempty"`
 }
 
 func newBindStore(path string) *bindStore {
-	s := &bindStore{path: path, Channels: map[string]string{}}
+	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently resolve to a wrong session: report
@@ -29,6 +35,10 @@ func newBindStore(path string) *bindStore {
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
+		}
+		// Absent from every store written before threads existed.
+		if s.Threads == nil {
+			s.Threads = map[string]bool{}
 		}
 	}
 	return s
@@ -54,10 +64,28 @@ func (s *bindStore) Session(channel string) string {
 	return s.Channels[channel]
 }
 
+// IsThread reports whether this conversation is a thread the gateway opened.
+func (s *bindStore) IsThread(channel string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Threads[channel]
+}
+
 func (s *bindStore) Bind(channel, session string) error {
 	return s.persist(func() { s.Channels[channel] = session })
 }
 
+// BindThread binds a conversation the gateway opened for this job alone.
+func (s *bindStore) BindThread(channel, session string) error {
+	return s.persist(func() {
+		s.Channels[channel] = session
+		s.Threads[channel] = true
+	})
+}
+
 func (s *bindStore) Unbind(channel string) error {
-	return s.persist(func() { delete(s.Channels, channel) })
+	return s.persist(func() {
+		delete(s.Channels, channel)
+		delete(s.Threads, channel)
+	})
 }
