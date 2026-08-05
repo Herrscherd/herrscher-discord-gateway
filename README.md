@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `tidy_pings` / `DISCORD_TIDY_PINGS` (default off — see below), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -61,8 +61,8 @@ private thread takes its channel's level with it.
 
 ## Owner-bound, not channel-bound
 
-The gateway identifies with `GUILD_MESSAGES` and `DIRECT_MESSAGES` — both
-non-privileged — and acts on a message only when the configured owner @mentions
+The gateway identifies with `GUILDS`, `GUILD_MESSAGES` and `DIRECT_MESSAGES` — all
+three non-privileged — and acts on a message only when the configured owner @mentions
 the bot or replies to it. Everyone else's messages are never triggers, but the
 last `context_messages` messages of the channel are read over REST and carried
 into the turn, so the agent sees the whole conversation. The first ping in an
@@ -115,6 +115,43 @@ Either way the answer creates a session that **adopts that conversation** and is
 remembered in `discord-router.json` (mode 0600, under `DCTL_STATE_DIR`).
 Rendering is per conversation: each one gets its own progress message, ⏳ ack and
 reply.
+
+## Deleting the room ends the job
+
+Delete a channel or a thread and the session driving it is closed. Nothing else
+would: a session's bridge is supervised and restarted forever, and only an
+explicit close stops it — so a conversation that disappears out from under one
+leaves an agent running against a room that no longer exists, burning tokens on a
+turn nobody will read and failing every reply it posts. That is why the gateway
+takes the `GUILDS` intent: it is what carries `CHANNEL_DELETE` and
+`THREAD_DELETE`.
+
+The close prefers the non-destructive form. If it is refused because the agent
+left uncommitted changes in its worktree, the forcing one is taken and said out
+loud in the daemon log — there is nobody left to ask to commit, since the
+conversation that would carry the question is the one that was deleted. Only
+uncommitted changes go: every commit the agent made is on branch
+`session/<name>`, which close keeps either way.
+
+## Tidying up your own pings
+
+With `DISCORD_TIDY_PINGS=true`, the message that opened a turn is deleted once
+its answer is posted, so a channel reads as a log of work rather than of requests
+for it. It is off by default because deleting a message is not undoable, and it
+is deliberately narrow:
+
+- Only for a turn that produced an answer. A turn that died keeps its ping — it
+  is the only remaining record of what was wanted.
+- Only for a ping written in the very conversation the answer landed in. This is
+  not caution but correctness: a support channel starts its thread **on** the
+  ping, and Discord deletes a thread along with the message it hangs off. The
+  same rule leaves alone the ping in a public channel for a job that forked into
+  a private thread.
+
+So in a support-mode channel, and for a forked job, nothing is ever deleted. It
+applies to an ordinary channel holding one conversation, where the ping and the
+answer live side by side. The bot role needs `Manage Messages`; without it the
+delete is refused and the ⏳ is cleared the ordinary way instead.
 
 ## The slash surface
 

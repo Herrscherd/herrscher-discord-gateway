@@ -51,6 +51,7 @@ func TestDispatchRoutesMessageCreate(t *testing.T) {
 	w := newWS("t",
 		func(_ context.Context, ix dctl.Interaction) { ixs <- ix },
 		func(_ context.Context, m messageCreate) { msgs <- m },
+		nil,
 	)
 
 	w.dispatch(context.Background(), "MESSAGE_CREATE", json.RawMessage(`{
@@ -92,9 +93,13 @@ func TestDispatchIgnoresUnknownEvents(t *testing.T) {
 	w := newWS("t",
 		func(context.Context, dctl.Interaction) { called <- struct{}{} },
 		func(context.Context, messageCreate) { called <- struct{}{} },
+		func(context.Context, string) { called <- struct{}{} },
 	)
 	w.dispatch(context.Background(), "TYPING_START", json.RawMessage(`{"channel_id":"c1"}`))
 	w.dispatch(context.Background(), "MESSAGE_CREATE", json.RawMessage(`not json`))
+	// A delete with no id names nothing to close; it must not reach the handler,
+	// where an empty id would be looked up as a conversation.
+	w.dispatch(context.Background(), "CHANNEL_DELETE", json.RawMessage(`{}`))
 	select {
 	case <-called:
 		t.Fatal("an unhandled event reached a handler")
@@ -102,10 +107,34 @@ func TestDispatchIgnoresUnknownEvents(t *testing.T) {
 	}
 }
 
+// TestDispatchRoutesDeletes proves both delete dispatches reach onGone carrying
+// the id of what is gone. A thread and a channel take the same path on purpose:
+// either can be the conversation a session drives.
+func TestDispatchRoutesDeletes(t *testing.T) {
+	for _, event := range []string{"CHANNEL_DELETE", "THREAD_DELETE"} {
+		gone := make(chan string, 1)
+		w := newWS("t", nil, nil, func(_ context.Context, id string) { gone <- id })
+		w.dispatch(context.Background(), event, json.RawMessage(`{"id":"c1","guild_id":"g1"}`))
+		if id := <-gone; id != "c1" {
+			t.Fatalf("%s delivered id %q, want c1", event, id)
+		}
+	}
+}
+
+// The gateway only learns a conversation was deleted if it asked for the intent
+// that carries CHANNEL_DELETE and THREAD_DELETE. Without GUILDS the dispatch
+// never arrives and a deleted room leaves its session running forever, which is
+// silent — hence a test on the constant itself.
+func TestIntentsIncludeGuilds(t *testing.T) {
+	if wsIntents&1 == 0 {
+		t.Fatal("wsIntents lacks GUILDS: channel and thread deletes will never be delivered")
+	}
+}
+
 // TestBoundedRespectsCancelledContext proves a cancelled context stops new work
 // from being spawned rather than queueing it behind a dead connection.
 func TestBoundedRespectsCancelledContext(t *testing.T) {
-	w := newWS("t", nil, nil)
+	w := newWS("t", nil, nil, nil)
 	for i := 0; i < maxInFlight; i++ {
 		w.sem <- struct{}{}
 	}

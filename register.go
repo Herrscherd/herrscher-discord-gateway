@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Herrscherd/dctl"
 	"github.com/Herrscherd/herrscher-contracts"
@@ -28,6 +29,7 @@ func init() {
 				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default for how much of a turn shows in-channel, overridable per conversation with /verbosity: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
+				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so a channel keeps the work and not the requests (default off; never applies where the answer lives in a thread started off the ping)"},
 			},
 		},
 		Gateway: NewGatewaySet,
@@ -65,7 +67,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 			return v
 		}
 		return level
-	}, owner)
+	}, owner, boolSetting(cfg.Get("tidy_pings")))
 	gw.sinks = s
 	plat.sinks = s
 
@@ -147,6 +149,17 @@ func verbositySetting(v string) string {
 		return v
 	}
 	return defaultLevel
+}
+
+// boolSetting reads an opt-in switch. Only the spellings people actually write
+// count as on; anything else — including a typo — leaves it off, which is what a
+// setting that deletes messages has to do when it is not sure.
+func boolSetting(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 func strSetting(v, def string) string {

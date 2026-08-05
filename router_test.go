@@ -20,6 +20,17 @@ type fakeCtrl struct {
 	live        map[string]bool
 	picked      map[string][]string
 	interrupted []string
+	closed      []closeCall
+	// closeErr fails every non-forcing close, standing in for the worktree the
+	// agent left uncommitted.
+	closeErr error
+}
+
+// closeCall is one Close, with the force flag that decides whether uncommitted
+// worktree changes are discarded.
+type closeCall struct {
+	name  string
+	force bool
 }
 
 func newFakeCtrl() *fakeCtrl {
@@ -36,10 +47,17 @@ func (f *fakeCtrl) Create(_ context.Context, s contracts.CreateSession) (string,
 	f.live[s.Name] = true
 	return "created", nil
 }
-func (f *fakeCtrl) Close(context.Context, string, bool) (string, error) { return "", nil }
-func (f *fakeCtrl) Sessions() []contracts.SessionInfo                   { return f.sessions }
-func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine        { return nil }
-func (f *fakeCtrl) Resume(string) error                                 { return nil }
+func (f *fakeCtrl) Close(_ context.Context, name string, force bool) (string, error) {
+	f.closed = append(f.closed, closeCall{name: name, force: force})
+	if f.closeErr != nil && !force {
+		return "", f.closeErr
+	}
+	delete(f.live, name)
+	return "", nil
+}
+func (f *fakeCtrl) Sessions() []contracts.SessionInfo            { return f.sessions }
+func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine { return nil }
+func (f *fakeCtrl) Resume(string) error                          { return nil }
 func (f *fakeCtrl) Interrupt(name string) bool {
 	f.interrupted = append(f.interrupted, name)
 	return f.live[name]
@@ -73,7 +91,7 @@ func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fak
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), f, staticLevels("full"), ""),
+		newSinks(context.Background(), f, staticLevels("full"), "", false),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }
