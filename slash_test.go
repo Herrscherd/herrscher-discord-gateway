@@ -236,3 +236,55 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 		t.Fatalf("Read = %v, %v; want empty and no error", got, err)
 	}
 }
+
+// A channel bound before the mode was set would keep sending every ping to that
+// one session, and the mode would look like it did nothing.
+func TestSupportModeUnbindsTheChannel(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	s := &slash{ctx: context.Background(), binds: binds}
+	if err := binds.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := s.setMode("c1", supportMode); !strings.Contains(got, "support") {
+		t.Fatalf("setMode = %q, want the mode confirmed", got)
+	}
+	if got := binds.Mode("c1"); got != supportMode {
+		t.Fatalf("mode(c1) = %q, want %q", got, supportMode)
+	}
+	if got := binds.Session("c1"); got != "" {
+		t.Fatalf("session(c1) = %q, want the old binding dropped", got)
+	}
+	if got := binds.Mode("c2"); got != "" {
+		t.Fatalf("mode(c2) = %q — one room's mode changed another", got)
+	}
+}
+
+func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	s := &slash{ctx: context.Background(), binds: binds}
+	if got := s.setMode("c1", supportMode); got == "" {
+		t.Fatal("setMode said nothing")
+	}
+
+	if got := s.setMode("c1", normalMode); !strings.Contains(got, "normal") {
+		t.Fatalf("setMode = %q, want the mode confirmed", got)
+	}
+	// Stored as no mode at all, which is what every channel written before the
+	// command existed already means.
+	if got := binds.Mode("c1"); got != "" {
+		t.Fatalf("mode(c1) = %q, want nothing stored", got)
+	}
+}
+
+func TestAnUnknownModeIsRefused(t *testing.T) {
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	s := &slash{ctx: context.Background(), binds: binds}
+
+	if got := s.setMode("c1", "helpdesk"); !strings.Contains(got, "inconnu") {
+		t.Fatalf("setMode = %q, want it refused", got)
+	}
+	if got := binds.Mode("c1"); got != "" {
+		t.Fatalf("mode(c1) = %q, want nothing stored", got)
+	}
+}

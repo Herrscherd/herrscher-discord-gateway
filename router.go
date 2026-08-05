@@ -45,8 +45,22 @@ type router struct {
 
 	mu      sync.Mutex
 	pending map[string]messageCreate // conversation id -> the ping awaiting a repo answer
-	threads map[string]bool          // conversation id -> it is a thread we opened
+	jobs    map[string]job           // conversation id -> where that ping's job lives
 }
+
+// job is where one piece of work happens: the conversation it runs in, whether
+// the gateway opened that conversation, and the channel it was asked from. The
+// parent is what the repo answer is remembered on — a support channel opens a
+// conversation per ping, and the answer belongs to the room, not to one of them.
+type job struct {
+	conv   string
+	thread bool
+	parent string
+}
+
+// supportMode is the mode of a channel that opens a thread per ping instead of
+// holding one conversation of its own.
+const supportMode = "support"
 
 func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, cfg routerConfig) *router {
 	return &router{
@@ -57,7 +71,7 @@ func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore,
 		cfg:     cfg,
 		trig:    trigger{owner: cfg.owner, appID: cfg.appID},
 		pending: map[string]messageCreate{},
-		threads: map[string]bool{},
+		jobs:    map[string]job{},
 	}
 }
 
@@ -133,23 +147,33 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// Where the job lives: this channel, or a private thread when the ping asks
 	// for one. Everything below is keyed on it — the binding, the menu, the
 	// session's own channel — so the whole job stays in one place.
-	conv, thread := r.conversation(ctx, m)
+	j := r.conversation(ctx, m)
 	// The ping is taken. Mark it now, in the channel it was written in: behind a
 	// question, or at the silent level, there is nothing else to show, and an
 	// unmarked ping reads as ignored.
-	r.sinks.at(conv).ack(m.ChannelID, m.ID)
+	r.sinks.at(j.conv).ack(m.ChannelID, m.ID)
 
-	// The repo is usually named in the ping itself; asking anyway is friction.
-	if repo, ok := matchRepo(m.Content, repos); ok {
-		if msg := r.bind(ctx, ctrl, conv, thread, repoValue(repo), m, true); msg != "" {
-			r.post(ctx, conv, msg)
+	// The room has already answered the repo question — a support channel asks it
+	// once and every conversation opened in it inherits the answer.
+	if value := r.binds.Repo(j.parent); value != "" {
+		if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
+			r.post(ctx, j.conv, msg)
 		}
 		return
 	}
 
+	// The repo is usually named in the ping itself; asking anyway is friction.
+	if repo, ok := matchRepo(m.Content, repos); ok {
+		if msg := r.bind(ctx, ctrl, j, repoValue(repo), m, true); msg != "" {
+			r.post(ctx, j.conv, msg)
+		}
+		return
+	}
+
+	conv := j.conv
 	r.mu.Lock()
 	r.pending[conv] = m
-	r.threads[conv] = thread
+	r.jobs[conv] = j
 	r.mu.Unlock()
 
 	opts := make([]dctl.SelectOption, 0, len(repos))
@@ -174,38 +198,49 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	}
 }
 
-// conversation decides where this job happens, and reports whether that is a
-// thread the gateway opened. A ping that asks for a thread gets a private one:
-// no trace in the channel, and the operator added as its only human member.
+// conversation decides where this job happens. A support channel gives every
+// ping a public thread of its own; elsewhere, a ping that asks for a thread gets
+// a private one — no trace in the channel, and the operator added as its only
+// human member.
 //
-// Creating it can fail — a missing permission, a channel type with no threads —
+// Creating either can fail — a missing permission, a channel type with no threads —
 // and the ping must still be answered, so the job falls back to the channel it
 // was asked in. That fallback is said out loud rather than taken silently: work
 // asked for in private landing in a room other people read is the one outcome
 // the request was about.
-func (r *router) conversation(ctx context.Context, m messageCreate) (conv string, thread bool) {
+func (r *router) conversation(ctx context.Context, m messageCreate) job {
+	here := job{conv: m.ChannelID, parent: m.ChannelID}
 	// Already inside a thread the gateway opened — its session died and is being
 	// recreated. The job stays where it is: opening a thread inside a thread is
 	// not a thing, and losing the flag would cost the thread its no-@mention rule.
 	if r.binds.IsThread(m.ChannelID) {
-		return m.ChannelID, true
+		here.thread = true
+		return here
+	}
+	// A support channel gives every ping a thread of its own, and a public one:
+	// the room is where independent questions arrive, so the channel keeps a
+	// readable trace of who asked what, the asker is a member of their own thread
+	// without being added, and no "create private threads" permission is needed.
+	if r.binds.Mode(m.ChannelID) == supportMode {
+		id, err := r.c.StartThread(ctx, m.ChannelID, m.ID, threadName(m.Content))
+		if err == nil && id != "" {
+			r.inherit(m.ChannelID, id)
+			return job{conv: id, thread: true, parent: m.ChannelID}
+		}
+		fmt.Fprintf(os.Stderr, "discord gateway: support thread in channel %s: %v\n", m.ChannelID, err)
+		r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil ici — il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois.")
+		return here
 	}
 	if !wantsThread(m.Content) {
-		return m.ChannelID, false
+		return here
 	}
 	id, err := r.c.CreatePrivateThread(ctx, m.ChannelID, threadName(m.Content))
 	if err == nil && id != "" {
 		// A thread the operator is not a member of is a room only the bot can
 		// read, which is no better than not having one.
 		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
-			// The thread inherits the render level of the channel the job was asked
-			// in: the operator set it there for this work, and the work just moved.
-			if lv := r.binds.Level(m.ChannelID); lv != "" {
-				if err := r.binds.SetLevel(id, lv); err != nil {
-					fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
-				}
-			}
-			return id, true
+			r.inherit(m.ChannelID, id)
+			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 	}
 	// Name the channel. Discord answers a denied thread with "Missing Access",
@@ -214,7 +249,21 @@ func (r *router) conversation(ctx context.Context, m messageCreate) (conv string
 	// is nothing to go and look at.
 	fmt.Fprintf(os.Stderr, "discord gateway: private thread in channel %s: %v\n", m.ChannelID, err)
 	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé ici — il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
-	return m.ChannelID, false
+	return here
+}
+
+// inherit carries a channel's render level into a thread just opened off it: the
+// operator set that level for this work, and the work just walked into another
+// room. A channel on the configured default passes nothing on, so the thread
+// falls back on the same default.
+func (r *router) inherit(channel, thread string) {
+	lv := r.binds.Level(channel)
+	if lv == "" {
+		return
+	}
+	if err := r.binds.SetLevel(thread, lv); err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+	}
 }
 
 // fork moves a job out of a channel that already has a session and into a
@@ -231,16 +280,16 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 	if !ok {
 		return false
 	}
-	conv, thread := r.conversation(ctx, m)
-	if !thread {
+	j := r.conversation(ctx, m)
+	if !j.thread {
 		// The thread could not be opened, and conversation() already said so in
 		// the channel. The job stays on the session already bound here: the one
 		// fork would create is named after this same channel and would collide.
 		return false
 	}
-	r.sinks.at(conv).ack(m.ChannelID, m.ID)
-	if msg := r.bind(ctx, ctrl, conv, thread, value, m, true); msg != "" {
-		r.post(ctx, conv, msg)
+	r.sinks.at(j.conv).ack(m.ChannelID, m.ID)
+	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
+		r.post(ctx, j.conv, msg)
 	}
 	return true
 }
@@ -268,10 +317,10 @@ func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
 // bind creates the session on the chosen repo, adopting conv, remembers the
 // binding and replays the ping. It returns the text the operator should be told,
 // empty when the session started and the work speaks for itself.
-func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, conv string, thread bool, value string, m messageCreate, buffered bool) string {
+func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job, value string, m messageCreate, buffered bool) string {
 	spec := contracts.CreateSession{
-		Name:      sessionNameFor(conv),
-		ChannelID: conv,
+		Name:      sessionNameFor(j.conv),
+		ChannelID: j.conv,
 		Gateways:  []string{"discord"},
 	}
 	if target, ok := strings.CutPrefix(value, "local:"); ok {
@@ -285,14 +334,22 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, conv s
 		return "création de session impossible : " + err.Error()
 	}
 	save := r.binds.Bind
-	if thread {
+	if j.thread {
 		save = r.binds.BindThread
 	}
-	if err := save(conv, spec.Name); err != nil {
+	if err := save(j.conv, spec.Name); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 	}
+	// The room now knows what it works on, so the next ping opens its thread
+	// without asking again. Only in support mode: elsewhere a channel holds one
+	// conversation, and the answer it gave is already carried by the binding.
+	if r.binds.Mode(j.parent) == supportMode {
+		if err := r.binds.SetRepo(j.parent, value); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		}
+	}
 	if buffered {
-		r.submit(ctx, ctrl, spec.Name, conv, m, true)
+		r.submit(ctx, ctrl, spec.Name, j.conv, m, true)
 	}
 	return ""
 }
@@ -316,12 +373,18 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 	}
 	r.mu.Lock()
 	m, buffered := r.pending[channel]
-	thread := r.threads[channel]
+	j, known := r.jobs[channel]
 	delete(r.pending, channel)
-	delete(r.threads, channel)
+	delete(r.jobs, channel)
 	r.mu.Unlock()
+	if !known {
+		// The menu outlived the router's memory of it — a restart between the
+		// question and the click. The conversation the menu was posted in is still
+		// where the work belongs.
+		j = job{conv: channel, parent: channel}
+	}
 
-	if msg := r.bind(ctx, ctrl, channel, thread, value, m, buffered); msg != "" {
+	if msg := r.bind(ctx, ctrl, j, value, m, buffered); msg != "" {
 		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
