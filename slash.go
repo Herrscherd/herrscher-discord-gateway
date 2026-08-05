@@ -65,7 +65,7 @@ func (s *slash) start() {
 	// heard of. Retrying costs nothing, and the commands already registered keep
 	// working while it does.
 	go s.sync()
-	newWS(s.token, s.onInteraction, s.onMessage).run(s.ctx)
+	newWS(s.token, s.onInteraction, s.onMessage, s.onGone).run(s.ctx)
 }
 
 // syncBackoff is how long to wait between attempts at publishing the command
@@ -100,6 +100,14 @@ func syncWithRetry(ctx context.Context, sync func(context.Context) error) {
 func (s *slash) onMessage(ctx context.Context, m messageCreate) {
 	if s.router != nil {
 		s.router.onMessage(ctx, m)
+	}
+}
+
+// onGone hands a deleted channel or thread to the router, which closes whatever
+// session was driving it.
+func (s *slash) onGone(ctx context.Context, id string) {
+	if s.router != nil {
+		s.router.onChannelGone(ctx, id)
 	}
 }
 

@@ -36,6 +36,8 @@ type fakeRender struct {
 	posts     []string // final replies posted
 	reacted   []string // emojis added
 	unreacted []string // emojis removed
+	deleted   []msgRef // messages deleted
+	deleteErr error    // when set, every Delete fails
 	statusID  string
 
 	// postChans records the channel each post landed in, so a test can prove one
@@ -63,6 +65,13 @@ func (f *fakeRender) Unreact(_ context.Context, _, _, emoji string) error {
 	f.unreacted = append(f.unreacted, emoji)
 	return nil
 }
+func (f *fakeRender) Delete(_ context.Context, ch, id string) error {
+	if f.deleteErr != nil {
+		return f.deleteErr
+	}
+	f.deleted = append(f.deleted, msgRef{ch: ch, id: id})
+	return nil
+}
 
 // postsTo returns the contents posted into one channel, in order.
 func (f *fakeRender) postsTo(ch string) []string {
@@ -80,13 +89,13 @@ func newTestSink(f *fakeRender) *sink {
 	if ch == "" {
 		ch = "c1"
 	}
-	return newSink(context.Background(), f, ch, staticLevel("full"), "")
+	return newSink(context.Background(), f, ch, staticLevel("full"), "", false)
 }
 
 // An unconfigured sink renders at the level that leaks nothing: the operator
 // pings this bot in channels other people read.
 func TestSinkDefaultsToSilent(t *testing.T) {
-	if s := newSink(context.Background(), &fakeRender{}, "c1", staticLevel(""), ""); s.level() != levelSilent {
+	if s := newSink(context.Background(), &fakeRender{}, "c1", staticLevel(""), "", false); s.level() != levelSilent {
 		t.Fatalf("default level = %q, want %q", s.level(), levelSilent)
 	}
 }
@@ -96,7 +105,7 @@ func TestSinkDefaultsToSilent(t *testing.T) {
 // daemon restart, and a sink outlives every turn it renders.
 func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 	level := levelSilent
-	s := newSink(context.Background(), &fakeRender{channel: "c1"}, "c1", func() string { return level }, "")
+	s := newSink(context.Background(), &fakeRender{channel: "c1"}, "c1", func() string { return level }, "", false)
 
 	s.handle(contracts.Event{T: "human"})
 	if s.pv != nil {
@@ -114,7 +123,7 @@ func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 // of tool calls following every request.
 func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "")
+	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
 	s.noteUser("c1", "u1")
 
 	s.handle(contracts.Event{T: "human"})
@@ -138,7 +147,7 @@ func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 // as pending forever.
 func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "")
+	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
 	s.noteUser("c1", "u1")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
@@ -156,7 +165,7 @@ func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 // post that Discord notifies nobody about.
 func TestReplyPingsTheOwner(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42")
+	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "reply", Text: "c'est corrigé", Done: true})
 
@@ -169,7 +178,7 @@ func TestReplyPingsTheOwner(t *testing.T) {
 // fits Discord's limit.
 func TestReplyPingKeepsChunksWithinTheLimit(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42")
+	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
 	s.handle(contracts.Event{T: "reply", Text: strings.Repeat("x", gatewayMaxLen), Done: true})
 
 	for i, p := range f.posts {
@@ -186,7 +195,7 @@ func TestReplyPingKeepsChunksWithinTheLimit(t *testing.T) {
 // vanishing with no message, which reads as a bot that died mid-turn.
 func TestEmptyReplyStillAnswers(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42")
+	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "reply", Done: true})
 
@@ -197,7 +206,7 @@ func TestEmptyReplyStillAnswers(t *testing.T) {
 
 func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(context.Background(), f, staticLevels("full"), "")
+	set := newSinks(context.Background(), f, staticLevels("full"), "", false)
 
 	set.at("chanA").noteUser("chanA", "mA")
 	set.at("chanB").noteUser("chanB", "mB")
@@ -218,7 +227,7 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 
 func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 	f := &fakeRender{}
-	g := &Gateway{sinks: newSinks(context.Background(), f, staticLevels("full"), "")}
+	g := &Gateway{sinks: newSinks(context.Background(), f, staticLevels("full"), "", false)}
 
 	g.EmitTo(contracts.Conversation{ID: "chanA"}, contracts.Event{T: "reply", Text: "hello A", Done: true})
 	// An unrouted event has no conversation to render into and must be dropped

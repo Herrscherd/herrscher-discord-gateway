@@ -134,7 +134,7 @@ func TestGatewayImplementsEventSink(t *testing.T) {
 func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
 	f := &fakeRender{}
 	g := NewGateway(&fakeClient{})
-	g.sinks = newSinks(context.Background(), f, staticLevels("full"), "")
+	g.sinks = newSinks(context.Background(), f, staticLevels("full"), "", false)
 	conv := contracts.Conversation{ID: "c1"}
 	g.EmitTo(conv, contracts.Event{T: "human"})
 	g.EmitTo(conv, contracts.Event{T: "reply", Text: "ok", Done: true})

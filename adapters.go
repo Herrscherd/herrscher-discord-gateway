@@ -233,6 +233,12 @@ func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
 	}
 	return nil
 }
+func (r renderAdapter) Delete(ctx context.Context, ch, id string) error {
+	if err := r.p.c.Messages().Delete(ctx, ch, id); err != nil {
+		return fmt.Errorf("discord delete: %w", err)
+	}
+	return nil
+}
 
 var _ renderClient = (*renderAdapter)(nil)
 
