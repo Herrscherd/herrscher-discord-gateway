@@ -126,6 +126,12 @@ turn nobody will read and failing every reply it posts. That is why the gateway
 takes the `GUILDS` intent: it is what carries `CHANNEL_DELETE` and
 `THREAD_DELETE`.
 
+Deleting a channel takes its threads with it, and Discord announces only the
+channel — so the gateway remembers which channel each thread it opened hangs off
+and closes those sessions too. Without that the rule would miss the case it
+exists for, since a job asked to run "dans un fil" lives in exactly such a
+thread.
+
 The close prefers the non-destructive form. If it is refused because the agent
 left uncommitted changes in its worktree, the forcing one is taken and said out
 loud in the daemon log — there is nobody left to ask to commit, since the
@@ -142,6 +148,9 @@ is deliberately narrow:
 
 - Only for a turn that produced an answer. A turn that died keeps its ping — it
   is the only remaining record of what was wanted.
+- Only for a message the configured owner wrote. A turn can be acked on
+  somebody else's message — the channel reader records the last non-bot one
+  whoever sent it — and deleting that is not tidying, it is moderating.
 - Only for a ping written in the very conversation the answer landed in. This is
   not caution but correctness: a support channel starts its thread **on** the
   ping, and Discord deletes a thread along with the message it hangs off. The

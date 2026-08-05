@@ -173,7 +173,7 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 		if !r.bot && p.sinks != nil {
 			// Newest non-bot id wins (messages are oldest→newest), recorded on the
 			// sink of the channel the message actually came from.
-			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id)
+			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id, r.msg.AuthorID)
 		}
 	}
 	return out, nil

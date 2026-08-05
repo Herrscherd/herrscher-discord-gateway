@@ -74,3 +74,26 @@ func TestDeletedUnboundConversationClosesNothing(t *testing.T) {
 		t.Fatalf("pending=%v jobs=%v, want both dropped", r.pending, r.jobs)
 	}
 }
+
+// Deleting a channel deletes its threads, but Discord announces only the
+// channel. A job the gateway moved into a private thread is the common case, so
+// a sweep that missed it would leave the feature useless where it matters most.
+func TestDeletedChannelClosesTheSessionsOfItsThreads(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	ctrl.live["ch-t1"] = true
+
+	r.onChannelGone(context.Background(), "c1")
+
+	if len(ctrl.closed) != 1 || ctrl.closed[0] != (closeCall{name: "ch-t1"}) {
+		t.Fatalf("closed = %+v, want the thread's session closed with its channel", ctrl.closed)
+	}
+	if s := r.binds.Session("t1"); s != "" {
+		t.Fatalf("t1 still bound to %q", s)
+	}
+	if len(r.binds.Children("c1")) != 0 {
+		t.Fatal("the parent link outlived both the thread and its channel")
+	}
+}

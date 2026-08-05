@@ -151,7 +151,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// The ping is taken. Mark it now, in the channel it was written in: behind a
 	// question, or at the silent level, there is nothing else to show, and an
 	// unmarked ping reads as ignored.
-	r.sinks.at(j.conv).ack(m.ChannelID, m.ID)
+	r.sinks.at(j.conv).ack(m.ChannelID, m.ID, m.Author.ID)
 
 	// The room has already answered the repo question — a support channel asks it
 	// once and every conversation opened in it inherits the answer.
@@ -287,7 +287,7 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 		// fork would create is named after this same channel and would collide.
 		return false
 	}
-	r.sinks.at(j.conv).ack(m.ChannelID, m.ID)
+	r.sinks.at(j.conv).ack(m.ChannelID, m.ID, m.Author.ID)
 	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
 		r.post(ctx, j.conv, msg)
 	}
@@ -333,9 +333,9 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 	if _, err := ctrl.Create(ctx, spec); err != nil {
 		return "création de session impossible : " + err.Error()
 	}
-	save := r.binds.Bind
+	save := func(conv, session string) error { return r.binds.Bind(conv, session) }
 	if j.thread {
-		save = r.binds.BindThread
+		save = func(conv, session string) error { return r.binds.BindThread(conv, j.parent, session) }
 	}
 	if err := save(j.conv, spec.Name); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
@@ -441,7 +441,7 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 	// that message lives in — the poller used to do this from Read. The sink is
 	// the one rendering the answer, which is a different channel once the job
 	// moved into a thread.
-	r.sinks.at(conv).noteUser(m.ChannelID, m.ID)
+	r.sinks.at(conv).noteUser(m.ChannelID, m.ID, m.Author.ID)
 	return true
 }
 

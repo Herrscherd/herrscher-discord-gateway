@@ -40,10 +40,15 @@ type bindStore struct {
 	// every asker which repo — a question they often cannot answer — is friction
 	// the first answer already resolved for the room.
 	Repos map[string]string `json:"repos,omitempty"`
+	// Parents holds the channel a thread the gateway opened hangs off. Discord
+	// announces a deleted channel but not the deletion of the threads that went
+	// with it, so without this a job running in a thread under a deleted channel
+	// would be the one case the close-on-delete rule misses.
+	Parents map[string]string `json:"parents,omitempty"`
 }
 
 func newBindStore(path string) *bindStore {
-	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}, Modes: map[string]string{}, Repos: map[string]string{}}
+	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}, Modes: map[string]string{}, Repos: map[string]string{}, Parents: map[string]string{}}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently resolve to a wrong session: report
@@ -53,7 +58,7 @@ func newBindStore(path string) *bindStore {
 			// plain message needs no @mention to make the bot act.
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store %s is corrupt, ignoring: %v\n", path, err)
 			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}
-			s.Modes, s.Repos = map[string]string{}, map[string]string{}
+			s.Modes, s.Repos, s.Parents = map[string]string{}, map[string]string{}, map[string]string{}
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
@@ -73,6 +78,9 @@ func newBindStore(path string) *bindStore {
 		}
 		if s.Repos == nil {
 			s.Repos = map[string]string{}
+		}
+		if s.Parents == nil {
+			s.Parents = map[string]string{}
 		}
 	}
 	return s
@@ -170,11 +178,44 @@ func (s *bindStore) Bind(channel, session string) error {
 	return s.persist(func() { s.Channels[channel] = session })
 }
 
-// BindThread binds a conversation the gateway opened for this job alone.
-func (s *bindStore) BindThread(channel, session string) error {
+// BindThread binds a conversation the gateway opened for this job alone,
+// remembering the channel it hangs off so deleting that channel also ends this
+// job.
+func (s *bindStore) BindThread(channel, parent, session string) error {
 	return s.persist(func() {
 		s.Channels[channel] = session
 		s.Threads[channel] = true
+		if parent != "" {
+			s.Parents[channel] = parent
+		}
+	})
+}
+
+// Children returns the threads the gateway opened off a channel.
+func (s *bindStore) Children(parent string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for child, p := range s.Parents {
+		if p == parent {
+			out = append(out, child)
+		}
+	}
+	return out
+}
+
+// Forget drops everything remembered about a conversation. Unlike Unbind it
+// clears the flags too: those say what the conversation *is*, and a conversation
+// that no longer exists is nothing. Keeping them would grow the store by one
+// dead entry per deleted channel, forever.
+func (s *bindStore) Forget(channel string) error {
+	return s.persist(func() {
+		delete(s.Channels, channel)
+		delete(s.Threads, channel)
+		delete(s.Levels, channel)
+		delete(s.Modes, channel)
+		delete(s.Repos, channel)
+		delete(s.Parents, channel)
 	})
 }
 
