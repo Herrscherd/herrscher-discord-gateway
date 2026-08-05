@@ -24,6 +24,7 @@ type renderClient interface {
 	Post(ctx context.Context, channelID, content string) error
 	React(ctx context.Context, channelID, messageID, emoji string) error
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
+	Delete(ctx context.Context, channelID, messageID string) error
 }
 
 // sink renders the live turn-event stream into ONE Discord conversation: one
@@ -38,6 +39,10 @@ type sink struct {
 	// sink is alive, and a sink outlives every turn it renders.
 	level func() string
 	owner string // the operator every answer pings
+	// tidy turns on deleting the ping once its answer is posted, so a channel
+	// keeps the work and not the requests for it. Off by default: deleting
+	// somebody's message is not undoable.
+	tidy bool
 
 	mu       sync.Mutex
 	pv       *progressView
@@ -49,13 +54,17 @@ type sink struct {
 // does not always render where its trigger lives: a job moved into a private
 // thread renders there, while the ping that opened it stays in the channel it
 // was written in, and reacting to it in the wrong channel is a 404.
-type msgRef struct{ ch, id string }
+// author is the platform id of who wrote it. It travels too because not every
+// message recorded here belongs to the operator: the polling reader records the
+// last non-bot message whoever wrote it, and tidy must never delete a bystander's
+// message.
+type msgRef struct{ ch, id, author string }
 
-func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string) *sink {
+func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string, tidy bool) *sink {
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner}
+	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner, tidy: tidy}
 }
 
 // staticLevel resolves to one fixed render level, normalized. It is what a
@@ -85,16 +94,17 @@ type sinks struct {
 	// at any moment (see sink.level).
 	level func(conv string) string
 	owner string
+	tidy  bool
 
 	mu sync.Mutex
 	m  map[string]*sink
 }
 
-func newSinks(ctx context.Context, rc renderClient, level func(conv string) string, owner string) *sinks {
+func newSinks(ctx context.Context, rc renderClient, level func(conv string) string, owner string, tidy bool) *sinks {
 	if level == nil {
 		level = staticLevels("")
 	}
-	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, m: map[string]*sink{}}
+	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, tidy: tidy, m: map[string]*sink{}}
 }
 
 // at returns the renderer for one conversation, creating it on first use.
@@ -104,16 +114,27 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	v := newSink(s.ctx, s.rc, convID, func() string { return s.level(convID) }, s.owner)
+	v := newSink(s.ctx, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy)
 	s.m[convID] = v
 	return v
 }
 
+// drop forgets one conversation's renderer. Sinks are otherwise kept for the
+// process's life — a conversation the bot has spoken in is cheap, and its
+// ack/progress ids must survive between turns — but a deleted conversation will
+// never have another turn, and a bot that opens a thread per ping would
+// accumulate one dead sink per job forever.
+func (s *sinks) drop(convID string) {
+	s.mu.Lock()
+	delete(s.m, convID)
+	s.mu.Unlock()
+}
+
 // noteUser records the latest user (non-bot) message, so the next turn's ACK
 // reaction lands on it.
-func (s *sink) noteUser(ch, id string) {
+func (s *sink) noteUser(ch, id, author string) {
 	s.mu.Lock()
-	s.lastUser = msgRef{ch: ch, id: id}
+	s.lastUser = msgRef{ch: ch, id: id, author: author}
 	s.mu.Unlock()
 }
 
@@ -121,10 +142,10 @@ func (s *sink) noteUser(ch, id string) {
 // Some pings are answered by a question rather than by work — the repo menu —
 // and there is no "human" event to hang the ⏳ on, so the ping would sit
 // unmarked while the operator decides, reading as ignored.
-func (s *sink) ack(ch, id string) {
+func (s *sink) ack(ch, id, author string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ref := msgRef{ch: ch, id: id}
+	ref := msgRef{ch: ch, id: id, author: author}
 	s.lastUser = ref
 	if id == "" || s.acked == ref {
 		return
@@ -206,8 +227,53 @@ func (s *sink) handle(e contracts.Event) {
 			s.pv.finish()
 			s.pv = nil
 		}
+		if s.tidyPing(ch) {
+			return
+		}
 		s.clearAck(ch)
 	}
+}
+
+// tidyPing deletes the message that opened this turn, now that its answer is
+// posted, and reports whether it did. The ping has served its purpose — the
+// answer quotes nothing from it but says everything about it — and a channel
+// that keeps only the answers reads as a log of work rather than of requests.
+//
+// It is deliberately narrow. Deleting a message is not undoable, so it happens
+// only when the operator asked for it (tidy), only for a turn that produced an
+// answer — "abandoned" never comes through here, so a turn that died leaves the
+// ping that explains what was wanted — and only for a ping written in the very
+// conversation the answer landed in. That last condition is not caution but
+// correctness: a support channel starts its thread ON the ping, and Discord
+// deletes a thread along with the message it hangs off, so tidying there would
+// delete the answer and the whole conversation with it. The same test excludes
+// a job forked into a private thread, whose ping stays in the public channel.
+//
+// And only ever the operator's own message. A channel driven by polling rather
+// than by the router records the last non-bot message whoever wrote it, so
+// without this the bot would delete a bystander's message on their behalf —
+// which is not tidying, it is moderating.
+func (s *sink) tidyPing(ch string) bool {
+	if !s.tidy || s.acked.id == "" || s.acked.chOr(ch) != ch {
+		return false
+	}
+	if s.owner == "" || s.acked.author != s.owner {
+		return false
+	}
+	if err := s.rc.Delete(s.ctx, ch, s.acked.id); err != nil {
+		// The ⏳ is still on a message that is still there; let the caller clear it
+		// rather than leaving the turn looking pending.
+		return false
+	}
+	// The reaction went with the message, so there is nothing left to unreact.
+	gone := s.acked
+	s.acked = msgRef{}
+	// Only when it is still the same message: a ping that arrived mid-turn is
+	// already recorded here and is waiting for its own ⏳.
+	if s.lastUser == gone {
+		s.lastUser = msgRef{}
+	}
+	return true
 }
 
 // answer prepares the text a finished turn is posted as. It opens with the

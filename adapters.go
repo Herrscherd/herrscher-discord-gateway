@@ -173,7 +173,7 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 		if !r.bot && p.sinks != nil {
 			// Newest non-bot id wins (messages are oldest→newest), recorded on the
 			// sink of the channel the message actually came from.
-			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id)
+			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id, r.msg.AuthorID)
 		}
 	}
 	return out, nil
@@ -230,6 +230,12 @@ func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
 func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
 	if err := r.p.c.Reactions().Add(ctx, ch, id, emoji); err != nil {
 		return fmt.Errorf("discord react: %w", err)
+	}
+	return nil
+}
+func (r renderAdapter) Delete(ctx context.Context, ch, id string) error {
+	if err := r.p.c.Messages().Delete(ctx, ch, id); err != nil {
+		return fmt.Errorf("discord delete: %w", err)
 	}
 	return nil
 }
