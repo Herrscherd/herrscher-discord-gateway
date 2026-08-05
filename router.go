@@ -198,11 +198,12 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	}
 }
 
-// conversation decides where this job happens, and reports whether that is a
-// thread the gateway opened. A ping that asks for a thread gets a private one:
-// no trace in the channel, and the operator added as its only human member.
+// conversation decides where this job happens. A support channel gives every
+// ping a public thread of its own; elsewhere, a ping that asks for a thread gets
+// a private one — no trace in the channel, and the operator added as its only
+// human member.
 //
-// Creating it can fail — a missing permission, a channel type with no threads —
+// Creating either can fail — a missing permission, a channel type with no threads —
 // and the ping must still be answered, so the job falls back to the channel it
 // was asked in. That fallback is said out loud rather than taken silently: work
 // asked for in private landing in a room other people read is the one outcome
@@ -223,11 +224,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	if r.binds.Mode(m.ChannelID) == supportMode {
 		id, err := r.c.StartThread(ctx, m.ChannelID, m.ID, threadName(m.Content))
 		if err == nil && id != "" {
-			if lv := r.binds.Level(m.ChannelID); lv != "" {
-				if err := r.binds.SetLevel(id, lv); err != nil {
-					fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
-				}
-			}
+			r.inherit(m.ChannelID, id)
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 		fmt.Fprintf(os.Stderr, "discord gateway: support thread in channel %s: %v\n", m.ChannelID, err)
@@ -242,13 +239,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 		// A thread the operator is not a member of is a room only the bot can
 		// read, which is no better than not having one.
 		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
-			// The thread inherits the render level of the channel the job was asked
-			// in: the operator set it there for this work, and the work just moved.
-			if lv := r.binds.Level(m.ChannelID); lv != "" {
-				if err := r.binds.SetLevel(id, lv); err != nil {
-					fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
-				}
-			}
+			r.inherit(m.ChannelID, id)
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 	}
@@ -259,6 +250,20 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	fmt.Fprintf(os.Stderr, "discord gateway: private thread in channel %s: %v\n", m.ChannelID, err)
 	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé ici — il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
 	return here
+}
+
+// inherit carries a channel's render level into a thread just opened off it: the
+// operator set that level for this work, and the work just walked into another
+// room. A channel on the configured default passes nothing on, so the thread
+// falls back on the same default.
+func (r *router) inherit(channel, thread string) {
+	lv := r.binds.Level(channel)
+	if lv == "" {
+		return
+	}
+	if err := r.binds.SetLevel(thread, lv); err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+	}
 }
 
 // fork moves a job out of a channel that already has a session and into a
