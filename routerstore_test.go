@@ -110,7 +110,7 @@ func TestUnbindKeepsTheRenderLevel(t *testing.T) {
 func TestUnbindKeepsTheThreadFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	s := newBindStore(path)
-	if err := s.BindThread("t1", "ch-t1"); err != nil {
+	if err := s.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Unbind("t1"); err != nil {

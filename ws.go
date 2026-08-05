@@ -14,42 +14,52 @@ import (
 )
 
 // gatewayURL is the Discord Gateway v10 endpoint (JSON encoding). Interactions
-// are delivered regardless of intents; messages need the two non-privileged
-// message intents (see wsIntents).
+// are delivered regardless of intents; everything else needs the non-privileged
+// intents in wsIntents.
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
 
 // Gateway opcodes (v10) we handle.
 const (
-	opDispatch          = 0
-	opHeartbeat         = 1
-	opIdentify          = 2
-	opReconnect         = 7
-	opInvalidSession    = 9
-	opHello             = 10
-	opHeartbeatACK      = 11
-	readLimit           = 1 << 20
+	opDispatch       = 0
+	opHeartbeat      = 1
+	opIdentify       = 2
+	opReconnect      = 7
+	opInvalidSession = 9
+	opHello          = 10
+	opHeartbeatACK   = 11
+	// readLimit caps one gateway frame. It is well above what a dispatch we act on
+	// needs: it is sized for GUILD_CREATE, which the GUILDS intent delivers once
+	// per guild on connect carrying every channel, role and emoji. Exceeding the
+	// limit fails the read, which drops the connection — so a guild too big for
+	// the cap would not degrade, it would reconnect forever.
+	readLimit           = 8 << 20
 	maxReconnectBackoff = 30 * time.Second
 	// maxInFlight bounds concurrent dispatch handlers so a burst of
 	// INTERACTION_CREATE / MESSAGE_CREATE dispatches cannot spawn arbitrarily many
 	// goroutines / in-flight REST calls; the read loop back-pressures once it is
 	// saturated.
 	maxInFlight = 64
-	// wsIntents is GUILD_MESSAGES | DIRECT_MESSAGES. Both are non-privileged.
-	// MESSAGE_CONTENT (1<<15) is deliberately absent: without it Discord still
-	// populates content and attachments for messages that mention the app (and for
-	// DMs), which is exactly the set the trigger filter keeps — and channel context
-	// is read over REST, which the intent does not gate.
-	wsIntents = (1 << 9) | (1 << 12)
+	// wsIntents is GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES. All three are
+	// non-privileged. GUILDS is what delivers CHANNEL_DELETE and THREAD_DELETE,
+	// which is how the gateway learns a conversation it drives no longer exists;
+	// without it those dispatches never arrive and a deleted room leaves its
+	// session running forever. MESSAGE_CONTENT (1<<15) is deliberately absent:
+	// without it Discord still populates content and attachments for messages that
+	// mention the app (and for DMs), which is exactly the set the trigger filter
+	// keeps — and channel context is read over REST, which the intent does not gate.
+	wsIntents = 1 | (1 << 9) | (1 << 12)
 )
 
 // ws is the Discord Gateway websocket client. It connects, identifies, keeps the
 // connection alive with heartbeats, and forwards every INTERACTION_CREATE to
-// handle and every MESSAGE_CREATE to onMessage. It reconnects with exponential
-// backoff until its context is cancelled.
+// handle, every MESSAGE_CREATE to onMessage and every deleted channel or thread
+// to onGone. It reconnects with exponential backoff until its context is
+// cancelled.
 type ws struct {
 	token     string
 	handle    func(context.Context, dctl.Interaction)
 	onMessage func(context.Context, messageCreate)
+	onGone    func(context.Context, string)
 
 	mu    sync.Mutex // serializes writes (only one Write may be in flight)
 	acked atomic.Bool
@@ -67,8 +77,8 @@ type gwPayload struct {
 	T  string          `json:"t"`
 }
 
-func newWS(token string, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate)) *ws {
-	return &ws{token: token, handle: handle, onMessage: onMessage, sem: make(chan struct{}, maxInFlight)}
+func newWS(token string, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
+	return &ws{token: token, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
 }
 
 // run is the supervised connect loop: it keeps a session up, reconnecting with
@@ -179,8 +189,8 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 }
 
 // dispatch fans one gateway dispatch out to the right decoder. Unknown event
-// types are dropped: the two intents we identify with deliver a handful of
-// events we do not act on, and they must cost nothing.
+// types are dropped: the intents we identify with deliver a good many events we
+// do not act on, and they must cost nothing.
 func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 	switch t {
 	case "INTERACTION_CREATE":
@@ -203,6 +213,23 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 			return
 		}
 		w.bounded(ctx, func() { w.onMessage(ctx, m) })
+	case "CHANNEL_DELETE", "THREAD_DELETE":
+		// Both carry the same thing worth reading — the id of what is gone — so
+		// they share a decoder. A thread is a channel as far as this gateway is
+		// concerned: either can be the conversation a session drives.
+		if w.onGone == nil {
+			return
+		}
+		var c channelDelete
+		if err := json.Unmarshal(d, &c); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bad %s: %v\n", t, err)
+			return
+		}
+		if c.ID == "" {
+			// Nothing to close, and an empty id would be looked up as a conversation.
+			return
+		}
+		w.bounded(ctx, func() { w.onGone(ctx, c.ID) })
 	}
 }
 

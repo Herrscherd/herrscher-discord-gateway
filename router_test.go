@@ -20,6 +20,17 @@ type fakeCtrl struct {
 	live        map[string]bool
 	picked      map[string][]string
 	interrupted []string
+	closed      []closeCall
+	// closeErr fails every non-forcing close, standing in for the worktree the
+	// agent left uncommitted.
+	closeErr error
+}
+
+// closeCall is one Close, with the force flag that decides whether uncommitted
+// worktree changes are discarded.
+type closeCall struct {
+	name  string
+	force bool
 }
 
 func newFakeCtrl() *fakeCtrl {
@@ -36,10 +47,17 @@ func (f *fakeCtrl) Create(_ context.Context, s contracts.CreateSession) (string,
 	f.live[s.Name] = true
 	return "created", nil
 }
-func (f *fakeCtrl) Close(context.Context, string, bool) (string, error) { return "", nil }
-func (f *fakeCtrl) Sessions() []contracts.SessionInfo                   { return f.sessions }
-func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine        { return nil }
-func (f *fakeCtrl) Resume(string) error                                 { return nil }
+func (f *fakeCtrl) Close(_ context.Context, name string, force bool) (string, error) {
+	f.closed = append(f.closed, closeCall{name: name, force: force})
+	if f.closeErr != nil && !force {
+		return "", f.closeErr
+	}
+	delete(f.live, name)
+	return "", nil
+}
+func (f *fakeCtrl) Sessions() []contracts.SessionInfo            { return f.sessions }
+func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine { return nil }
+func (f *fakeCtrl) Resume(string) error                          { return nil }
 func (f *fakeCtrl) Interrupt(name string) bool {
 	f.interrupted = append(f.interrupted, name)
 	return f.live[name]
@@ -73,7 +91,7 @@ func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fak
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), f, staticLevels("full"), ""),
+		newSinks(context.Background(), f, staticLevels("full"), "", false),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }
@@ -379,7 +397,7 @@ func TestThreadRequestOpensAPrivateThreadAndWorksThere(t *testing.T) {
 		t.Fatal("the thread was not remembered as a bound conversation of ours")
 	}
 	// The ⏳ still belongs on the ping, which lives in the parent channel.
-	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1"}) {
+	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1", author: "owner1"}) {
 		t.Fatalf("lastUser = %+v, want the ping in its own channel", got)
 	}
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
@@ -410,7 +428,7 @@ func TestThreadInheritsTheChannelRenderLevel(t *testing.T) {
 func TestThreadMessagesNeedNoMention(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.live["ch-t1"] = true
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	r.onMessage(context.Background(), messageCreate{
@@ -429,7 +447,7 @@ func TestThreadMessagesNeedNoMention(t *testing.T) {
 func TestBlankedThreadMessageIsReadBack(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.live["ch-t1"] = true
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	c.read = []dctl.Message{{ID: "m2", ChannelID: "t1", Content: "et les tests ?"}}
@@ -481,7 +499,7 @@ func TestThreadWithoutItsMemberIsNotUsed(t *testing.T) {
 func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	// The session is gone: Submit fails, the binding is dropped, the router asks
@@ -617,7 +635,7 @@ func TestThreadWordInsideAThreadDoesNotForkAgain(t *testing.T) {
 	ctrl.live["ch-t1"] = true
 	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-t1", ChannelID: "t1", Project: "enderbot"}}
 	c.nextThreadID = "t2"
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 
