@@ -2,10 +2,12 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -286,5 +288,68 @@ func TestAnUnknownModeIsRefused(t *testing.T) {
 	}
 	if got := binds.Mode("c1"); got != "" {
 		t.Fatalf("mode(c1) = %q, want nothing stored", got)
+	}
+}
+
+// Discord rate-limits the command catalog hard. A boot that lands on a 429 used
+// to give up for the lifetime of the process, so a command added in a release
+// was never published and the operator typed a name Discord had never heard of.
+func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
+	restore := syncBackoff
+	syncBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	defer func() { syncBackoff = restore }()
+
+	calls := 0
+	syncWithRetry(context.Background(), func(context.Context) error {
+		calls++
+		if calls < 3 {
+			return errors.New("429: You are being rate limited")
+		}
+		return nil
+	})
+
+	if calls != 3 {
+		t.Fatalf("calls = %d, want the sync retried until it landed", calls)
+	}
+}
+
+// Past a few minutes the answer is not a rate limit but something the operator
+// has to look at, and a loop that never stops would hide it.
+func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
+	restore := syncBackoff
+	syncBackoff = []time.Duration{time.Millisecond}
+	defer func() { syncBackoff = restore }()
+
+	calls := 0
+	syncWithRetry(context.Background(), func(context.Context) error {
+		calls++
+		return errors.New("nope")
+	})
+
+	if calls != len(syncBackoff)+1 {
+		t.Fatalf("calls = %d, want %d attempts then a report", calls, len(syncBackoff)+1)
+	}
+}
+
+// A daemon shutting down must not be held by a sync waiting out a backoff.
+func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
+	restore := syncBackoff
+	syncBackoff = []time.Duration{time.Hour}
+	defer func() { syncBackoff = restore }()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		syncWithRetry(ctx, func(context.Context) error {
+			cancel()
+			return errors.New("429")
+		})
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the sync outlived the daemon it belongs to")
 	}
 }
