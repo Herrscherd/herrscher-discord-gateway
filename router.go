@@ -208,8 +208,12 @@ func (r *router) conversation(ctx context.Context, m messageCreate) (conv string
 			return id, true
 		}
 	}
-	fmt.Fprintf(os.Stderr, "discord gateway: private thread: %v\n", err)
-	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé (permissions ?) — je réponds ici")
+	// Name the channel. Discord answers a denied thread with "Missing Access",
+	// which reads like the bot cannot see the channel at all — it is usually one
+	// channel overriding a permission the role does hold, and without the id there
+	// is nothing to go and look at.
+	fmt.Fprintf(os.Stderr, "discord gateway: private thread in channel %s: %v\n", m.ChannelID, err)
+	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé ici — il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
 	return m.ChannelID, false
 }
 
