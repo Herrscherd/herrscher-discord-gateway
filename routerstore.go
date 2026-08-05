@@ -29,10 +29,21 @@ type bindStore struct {
 	// the room it speaks in — often a channel other people read — not to whatever
 	// job happens to be running there.
 	Levels map[string]string `json:"levels,omitempty"`
+	// Modes holds the `/mode` a channel is in. Only "support" is a mode; an
+	// absent entry is the ordinary channel, where one conversation is bound to
+	// the channel itself. It is keyed by channel and never by thread: the mode
+	// describes a room where independent questions arrive, and the threads it
+	// opens are ordinary conversations once opened.
+	Modes map[string]string `json:"modes,omitempty"`
+	// Repos holds the repo a support channel works on, as the menu value the
+	// operator picked. A support channel opens a session per ping, and asking
+	// every asker which repo — a question they often cannot answer — is friction
+	// the first answer already resolved for the room.
+	Repos map[string]string `json:"repos,omitempty"`
 }
 
 func newBindStore(path string) *bindStore {
-	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}}
+	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}, Modes: map[string]string{}, Repos: map[string]string{}}
 	if data, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently resolve to a wrong session: report
@@ -42,6 +53,7 @@ func newBindStore(path string) *bindStore {
 			// plain message needs no @mention to make the bot act.
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store %s is corrupt, ignoring: %v\n", path, err)
 			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}
+			s.Modes, s.Repos = map[string]string{}, map[string]string{}
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
@@ -53,6 +65,14 @@ func newBindStore(path string) *bindStore {
 		// Likewise for every store written before /verbosity existed.
 		if s.Levels == nil {
 			s.Levels = map[string]string{}
+		}
+		// Likewise for every store written before /mode existed. A nil map here
+		// would panic the first time a channel is put in support mode.
+		if s.Modes == nil {
+			s.Modes = map[string]string{}
+		}
+		if s.Repos == nil {
+			s.Repos = map[string]string{}
 		}
 	}
 	return s
@@ -96,6 +116,46 @@ func (s *bindStore) SetLevel(channel, level string) error {
 			return
 		}
 		s.Levels[channel] = level
+	})
+}
+
+// Mode returns the mode a channel is in, or "" for the ordinary one.
+func (s *bindStore) Mode(channel string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Modes[channel]
+}
+
+// SetMode puts a channel in a mode. An empty mode drops the entry, putting the
+// channel back to the ordinary behaviour rather than storing a second name for
+// it.
+func (s *bindStore) SetMode(channel, mode string) error {
+	return s.persist(func() {
+		if mode == "" {
+			delete(s.Modes, channel)
+			return
+		}
+		s.Modes[channel] = mode
+	})
+}
+
+// Repo returns the repo a channel works on, as a menu value, or "" when the
+// question has not been answered here yet.
+func (s *bindStore) Repo(channel string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Repos[channel]
+}
+
+// SetRepo remembers what a channel works on, so the question is asked once for
+// the room rather than once per conversation opened in it.
+func (s *bindStore) SetRepo(channel, value string) error {
+	return s.persist(func() {
+		if value == "" {
+			delete(s.Repos, channel)
+			return
+		}
+		s.Repos[channel] = value
 	})
 }
 

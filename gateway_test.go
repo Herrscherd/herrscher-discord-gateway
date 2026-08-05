@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
@@ -23,9 +24,12 @@ type fakeClient struct {
 
 	threads      []outMsg // channel the thread was opened in, and its name
 	members      []outMsg // thread id, and the user added to it
+	public       []outMsg // message a public thread was started on, and its name
 	threadErr    error    // fails CreatePrivateThread
+	publicErr    error    // fails StartThread
 	memberErr    error    // fails AddThreadMember
 	nextThreadID string
+	started      int // public threads opened so far, so each gets its own id
 
 	got    []outMsg      // channel and id of every GetMessage call
 	getMsg *dctl.Message // what GetMessage answers
@@ -67,6 +71,14 @@ func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (st
 		return "thread1", nil
 	}
 	return f.nextThreadID, nil
+}
+func (f *fakeClient) StartThread(_ context.Context, ch, msg, name string) (string, error) {
+	if f.publicErr != nil {
+		return "", f.publicErr
+	}
+	f.public = append(f.public, outMsg{msg, name})
+	f.started++
+	return fmt.Sprintf("%s-t%d", ch, f.started), nil
 }
 func (f *fakeClient) AddThreadMember(_ context.Context, thread, user string) error {
 	if f.memberErr != nil {

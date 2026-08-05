@@ -643,3 +643,124 @@ func TestPickOnADeadSessionReportsIt(t *testing.T) {
 		t.Fatal("a pick on a dead session must tell the operator, not fail silently")
 	}
 }
+
+// supportPing is a ping with its own message id, so two of them in a row are two
+// distinct messages — which is the whole point of a support channel.
+func supportPing(id, text string) messageCreate {
+	m := ownerPing(text)
+	m.ID = id
+	return m
+}
+
+// The channel a support room is: every ping gets a conversation of its own, and
+// the room itself is never bound — which is what lets two of them run at once.
+func TestASupportChannelOpensAThreadPerPing(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
+	r.onMessage(context.Background(), supportPing("m2", "et herrscher plante au boot"))
+
+	if len(c.public) != 2 || c.public[0].channel != "m1" || c.public[1].channel != "m2" {
+		t.Fatalf("public = %+v, want one thread hanging off each ping", c.public)
+	}
+	if len(ctrl.created) != 2 || ctrl.created[0].ChannelID == ctrl.created[1].ChannelID {
+		t.Fatalf("created = %+v, want two sessions in two conversations", ctrl.created)
+	}
+	if got := r.binds.Session("c1"); got != "" {
+		t.Fatalf("session(c1) = %q — a support channel must stay unbound, or the second ping lands on the first job", got)
+	}
+	for _, spec := range ctrl.created {
+		if r.binds.Session(spec.ChannelID) != spec.Name || !r.binds.IsThread(spec.ChannelID) {
+			t.Fatalf("%q was not remembered as a thread of ours", spec.ChannelID)
+		}
+	}
+}
+
+// The asker of a support ticket often does not know which repo it belongs to,
+// and asking every one of them is the friction the mode exists to remove.
+func TestTheSupportRepoIsAskedOnceForTheRoom(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
+	r.onMessage(context.Background(), supportPing("m2", "ça plante au boot"))
+
+	if len(c.menus) != 0 {
+		t.Fatalf("menus = %+v, want the named repo to answer for the room", c.menus)
+	}
+	if len(ctrl.created) != 2 || ctrl.created[1].Project != "herrscher" {
+		t.Fatalf("created = %+v, want the second ticket on the repo the first one settled", ctrl.created)
+	}
+}
+
+// Falling back into the channel binds it, so the room stops being a support room
+// until the permission is fixed. Saying nothing would leave the operator with a
+// mode that silently does nothing.
+func TestASupportThreadThatCannotOpenAnswersInTheChannelOutLoud(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.publicErr = errors.New("403: Missing Permissions")
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
+
+	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1" {
+		t.Fatalf("created = %+v, want the job to happen in the channel", ctrl.created)
+	}
+	if len(c.sent) == 0 || !strings.Contains(c.sent[0].content, "fil") {
+		t.Fatalf("sent = %+v, want the fallback said out loud", c.sent)
+	}
+}
+
+// A ticket's own thread is an ordinary conversation once opened — the mode
+// belongs to the room, not to what it opens.
+func TestAPingInsideASupportThreadStaysThere(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
+	thread := ctrl.created[0].ChannelID
+	opened := len(c.public)
+
+	r.onMessage(context.Background(), messageCreate{
+		ID: "m2", ChannelID: thread, Content: "et aussi le login",
+		Author: dctl.Author{ID: "owner1", Username: "leo"},
+	})
+
+	if len(c.public) != opened {
+		t.Fatalf("public = %+v, want no thread opened inside a thread", c.public)
+	}
+	if got := ctrl.submitted[ctrl.created[0].Name]; len(got) != 2 {
+		t.Fatalf("submitted = %d, want the follow-up answered by the ticket's own session", len(got))
+	}
+}
+
+// The room's render level follows the work into the ticket, as it does for a
+// private thread: the operator set it here, and the work just moved.
+func TestASupportThreadInheritsTheChannelRenderLevel(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.binds.SetLevel("c1", levelSilent); err != nil {
+		t.Fatal(err)
+	}
+
+	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
+
+	if got := r.binds.Level(ctrl.created[0].ChannelID); got != levelSilent {
+		t.Fatalf("level = %q, want %q carried into the ticket", got, levelSilent)
+	}
+}
