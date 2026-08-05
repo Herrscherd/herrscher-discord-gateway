@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -57,10 +58,41 @@ func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token stri
 // until the daemon context is cancelled. It is called once the session
 // controller is bound, so dispatch always has a live ctrl.
 func (s *slash) start() {
-	if err := s.reg.Sync(s.ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: command sync: %v\n", err)
-	}
+	// The sync runs beside the websocket, not before it: Discord rate-limits the
+	// command catalog hard, and a boot that lands on a 429 used to give up for the
+	// lifetime of the process — which means a command added in a release is simply
+	// never published, silently, and the operator types a name Discord has never
+	// heard of. Retrying costs nothing, and the commands already registered keep
+	// working while it does.
+	go s.sync()
 	newWS(s.token, s.onInteraction, s.onMessage).run(s.ctx)
+}
+
+// syncBackoff is how long to wait between attempts at publishing the command
+// catalog. It grows because a 429 here is Discord saying the whole route is
+// spent, and it stops: past a few minutes the answer is not a rate limit but
+// something the operator has to look at.
+var syncBackoff = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
+
+func (s *slash) sync() { syncWithRetry(s.ctx, s.reg.Sync) }
+
+func syncWithRetry(ctx context.Context, sync func(context.Context) error) {
+	for attempt := 0; ; attempt++ {
+		err := sync(ctx)
+		if err == nil {
+			return
+		}
+		if attempt == len(syncBackoff) {
+			fmt.Fprintf(os.Stderr, "discord gateway: command sync gave up after %d attempts: %v\n", attempt+1, err)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "discord gateway: command sync: %v (retrying in %s)\n", err, syncBackoff[attempt])
+		select {
+		case <-time.After(syncBackoff[attempt]):
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // onMessage hands every MESSAGE_CREATE to the router, which decides whether it
