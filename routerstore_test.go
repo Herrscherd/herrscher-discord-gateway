@@ -121,3 +121,27 @@ func TestUnbindKeepsTheThreadFlag(t *testing.T) {
 			got.Session("t1"), got.IsThread("t1"))
 	}
 }
+
+// Every store written before /mode existed has neither map. Reading one must not
+// leave a nil map behind for the first write to panic on.
+func TestAStoreFromBeforeModesReadsAndWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	if err := os.WriteFile(path, []byte(`{"channels":{"c1":"ch-c1"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := newBindStore(path)
+	if got := s.Mode("c1"); got != "" {
+		t.Fatalf("mode(c1) = %q, want the ordinary channel", got)
+	}
+	if err := s.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetRepo("c1", "local:herrscher"); err != nil {
+		t.Fatal(err)
+	}
+	if got := newBindStore(path); got.Mode("c1") != supportMode || got.Repo("c1") != "local:herrscher" {
+		t.Fatalf("mode = %q, repo = %q, want both persisted alongside the old binding",
+			got.Mode("c1"), got.Repo("c1"))
+	}
+}

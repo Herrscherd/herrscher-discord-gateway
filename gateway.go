@@ -27,6 +27,11 @@ type client interface {
 	// channel rather than off a message, so the channel keeps no trace of it.
 	CreatePrivateThread(ctx context.Context, channelID, name string) (string, error)
 	AddThreadMember(ctx context.Context, threadID, userID string) error
+	// StartThread opens a public thread hanging off a message. Everyone who reads
+	// the channel sees it and its author is a member without being added, which
+	// is what a support room wants — and it is the one kind of thread that does
+	// not need the "create private threads" permission.
+	StartThread(ctx context.Context, channelID, messageID, name string) (string, error)
 }
 
 var (
@@ -154,6 +159,17 @@ func (d discordClient) GetMessage(ctx context.Context, channelID, messageID stri
 
 func (d discordClient) CreatePrivateThread(ctx context.Context, channelID, name string) (string, error) {
 	ch, err := d.c.Threads().StartPrivate(ctx, channelID, name)
+	if err != nil {
+		return "", err
+	}
+	if ch == nil {
+		return "", nil
+	}
+	return ch.ID, nil
+}
+
+func (d discordClient) StartThread(ctx context.Context, channelID, messageID, name string) (string, error) {
+	ch, err := d.c.Threads().Start(ctx, channelID, messageID, name)
 	if err != nil {
 		return "", err
 	}

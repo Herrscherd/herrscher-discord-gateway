@@ -48,6 +48,7 @@ func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token stri
 		Add(commandAllow(), s.handleAllow).
 		Add(commandStop(), s.handleStop).
 		Add(commandVerbosity(), s.handleVerbosity).
+		Add(commandMode(), s.handleMode).
 		Autocomplete("session", s.autoSession)
 	return s
 }
@@ -238,6 +239,42 @@ func (s *slash) setVerbosity(channel, level string) string {
 		return "le store de conversations n'est pas disponible"
 	}
 	return saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
+}
+
+func (s *slash) handleMode(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, ix) {
+		return dctl.Response{}, nil
+	}
+	mode, _ := ix.Data.Opt("mode")
+	s.respond(ctx, ix, s.setMode(ix.ChannelID, mode))
+	return dctl.Response{}, nil
+}
+
+// normalMode is the ordinary channel, which holds one conversation of its own.
+// It is stored as no mode at all: an absent entry is what every channel written
+// before /mode existed already means.
+const normalMode = "normal"
+
+// setMode puts a channel in support mode, or takes it back out. Turning support
+// on also drops the channel's binding: a channel bound before the mode was set
+// would keep sending every ping to that one session, and the mode would look
+// like it did nothing. The session itself is left running — it may hold work,
+// and `/session close` is how that is decided.
+func (s *slash) setMode(channel, mode string) string {
+	if s.binds == nil {
+		return "le store de conversations n'est pas disponible"
+	}
+	switch mode {
+	case supportMode:
+		if err := s.binds.Unbind(channel); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		}
+		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
+			"mode support : chaque ping ouvre son propre fil ici. La session déjà liée à ce salon continue de tourner — `/session close` si tu n'en veux plus.")
+	case normalMode:
+		return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : ce salon porte une seule conversation")
+	}
+	return "mode inconnu : " + mode
 }
 
 // autoSession suggests existing session names for any `name` option that opts
@@ -474,6 +511,18 @@ func commandVerbosity() *dctl.Command {
 					dctl.NewChoice("quiet — adds a live list of tool names", levelQuiet),
 					dctl.NewChoice("actions — adds each tool's detail", levelActions),
 					dctl.NewChoice("full — adds the assistant's text", levelFull),
+				),
+		)
+}
+
+func commandMode() *dctl.Command {
+	return dctl.NewCommand("mode", "set how this channel handles pings").
+		Perms(dctl.PermManageGuild).
+		With(
+			dctl.String("mode", "how pings are handled here", true).
+				Choices(
+					dctl.NewChoice("support — every ping opens its own thread", supportMode),
+					dctl.NewChoice("normal — this channel holds one conversation", normalMode),
 				),
 		)
 }
