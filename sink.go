@@ -54,7 +54,11 @@ type sink struct {
 // does not always render where its trigger lives: a job moved into a private
 // thread renders there, while the ping that opened it stays in the channel it
 // was written in, and reacting to it in the wrong channel is a 404.
-type msgRef struct{ ch, id string }
+// author is the platform id of who wrote it. It travels too because not every
+// message recorded here belongs to the operator: the polling reader records the
+// last non-bot message whoever wrote it, and tidy must never delete a bystander's
+// message.
+type msgRef struct{ ch, id, author string }
 
 func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string, tidy bool) *sink {
 	if level == nil {
@@ -128,9 +132,9 @@ func (s *sinks) drop(convID string) {
 
 // noteUser records the latest user (non-bot) message, so the next turn's ACK
 // reaction lands on it.
-func (s *sink) noteUser(ch, id string) {
+func (s *sink) noteUser(ch, id, author string) {
 	s.mu.Lock()
-	s.lastUser = msgRef{ch: ch, id: id}
+	s.lastUser = msgRef{ch: ch, id: id, author: author}
 	s.mu.Unlock()
 }
 
@@ -138,10 +142,10 @@ func (s *sink) noteUser(ch, id string) {
 // Some pings are answered by a question rather than by work — the repo menu —
 // and there is no "human" event to hang the ⏳ on, so the ping would sit
 // unmarked while the operator decides, reading as ignored.
-func (s *sink) ack(ch, id string) {
+func (s *sink) ack(ch, id, author string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ref := msgRef{ch: ch, id: id}
+	ref := msgRef{ch: ch, id: id, author: author}
 	s.lastUser = ref
 	if id == "" || s.acked == ref {
 		return
@@ -244,8 +248,16 @@ func (s *sink) handle(e contracts.Event) {
 // deletes a thread along with the message it hangs off, so tidying there would
 // delete the answer and the whole conversation with it. The same test excludes
 // a job forked into a private thread, whose ping stays in the public channel.
+//
+// And only ever the operator's own message. A channel driven by polling rather
+// than by the router records the last non-bot message whoever wrote it, so
+// without this the bot would delete a bystander's message on their behalf —
+// which is not tidying, it is moderating.
 func (s *sink) tidyPing(ch string) bool {
 	if !s.tidy || s.acked.id == "" || s.acked.chOr(ch) != ch {
+		return false
+	}
+	if s.owner == "" || s.acked.author != s.owner {
 		return false
 	}
 	if err := s.rc.Delete(s.ctx, ch, s.acked.id); err != nil {

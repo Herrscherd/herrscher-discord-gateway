@@ -397,7 +397,7 @@ func TestThreadRequestOpensAPrivateThreadAndWorksThere(t *testing.T) {
 		t.Fatal("the thread was not remembered as a bound conversation of ours")
 	}
 	// The ⏳ still belongs on the ping, which lives in the parent channel.
-	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1"}) {
+	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1", author: "owner1"}) {
 		t.Fatalf("lastUser = %+v, want the ping in its own channel", got)
 	}
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
@@ -428,7 +428,7 @@ func TestThreadInheritsTheChannelRenderLevel(t *testing.T) {
 func TestThreadMessagesNeedNoMention(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.live["ch-t1"] = true
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	r.onMessage(context.Background(), messageCreate{
@@ -447,7 +447,7 @@ func TestThreadMessagesNeedNoMention(t *testing.T) {
 func TestBlankedThreadMessageIsReadBack(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.live["ch-t1"] = true
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	c.read = []dctl.Message{{ID: "m2", ChannelID: "t1", Content: "et les tests ?"}}
@@ -499,7 +499,7 @@ func TestThreadWithoutItsMemberIsNotUsed(t *testing.T) {
 func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	// The session is gone: Submit fails, the binding is dropped, the router asks
@@ -635,7 +635,7 @@ func TestThreadWordInsideAThreadDoesNotForkAgain(t *testing.T) {
 	ctrl.live["ch-t1"] = true
 	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-t1", ChannelID: "t1", Project: "enderbot"}}
 	c.nextThreadID = "t2"
-	if err := r.binds.BindThread("t1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 

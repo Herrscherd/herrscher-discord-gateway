@@ -124,7 +124,7 @@ func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
-	s.noteUser("c1", "u1")
+	s.noteUser("c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Bash go test ./..."})
@@ -148,7 +148,7 @@ func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
-	s.noteUser("c1", "u1")
+	s.noteUser("c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "abandoned"})
@@ -208,8 +208,8 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(context.Background(), f, staticLevels("full"), "", false)
 
-	set.at("chanA").noteUser("chanA", "mA")
-	set.at("chanB").noteUser("chanB", "mB")
+	set.at("chanA").noteUser("chanA", "mA", "42")
+	set.at("chanB").noteUser("chanB", "mB", "42")
 	set.at("chanA").handle(contracts.Event{T: "human"})
 	set.at("chanB").handle(contracts.Event{T: "human"})
 	set.at("chanA").handle(contracts.Event{T: "reply", Text: "answer A", Done: true})
@@ -245,7 +245,7 @@ func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1")
+	s.noteUser("c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human", Who: "alice", Text: "hi"})
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
@@ -272,7 +272,7 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 func TestSinkAbandonedClearsAck(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1")
+	s.noteUser("c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	// First status flushes immediately (lastEdit zero); the second is coalesced
 	// inside the throttle window and stays unflushed until abandon forces it.
@@ -314,7 +314,7 @@ func TestSinkChunksLongReply(t *testing.T) {
 func TestSinkResetDiscardsAndContinues(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1")
+	s.noteUser("c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "reset"})

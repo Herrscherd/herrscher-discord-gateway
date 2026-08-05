@@ -19,7 +19,7 @@ func tidySink(f *fakeRender, ch string) *sink {
 func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1")
+	s.ack("c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 1 || f.deleted[0] != (msgRef{ch: "c1", id: "m1"}) {
@@ -38,7 +38,7 @@ func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 func TestTidyOffKeepsThePing(t *testing.T) {
 	f := &fakeRender{}
 	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
-	s.ack("c1", "m1")
+	s.ack("c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 0 {
@@ -55,7 +55,7 @@ func TestTidyOffKeepsThePing(t *testing.T) {
 func TestTidyKeepsThePingOnAbandonedTurn(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1")
+	s.ack("c1", "m1", "42")
 	s.handle(contracts.Event{T: "abandoned"})
 
 	if len(f.deleted) != 0 {
@@ -73,7 +73,7 @@ func TestTidyKeepsThePingOnAbandonedTurn(t *testing.T) {
 func TestTidyNeverDeletesAPingOutsideItsOwnConversation(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "thread1")
-	s.ack("c1", "m1") // the ping stayed in the channel; the job moved to the thread
+	s.ack("c1", "m1", "42") // the ping stayed in the channel; the job moved to the thread
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 0 {
@@ -89,7 +89,7 @@ func TestTidyNeverDeletesAPingOutsideItsOwnConversation(t *testing.T) {
 func TestTidyFallsBackToClearingTheAckWhenDeleteFails(t *testing.T) {
 	f := &fakeRender{deleteErr: errors.New("missing permissions")}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1")
+	s.ack("c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.unreacted) != 1 {
@@ -102,14 +102,32 @@ func TestTidyFallsBackToClearingTheAckWhenDeleteFails(t *testing.T) {
 func TestTidyKeepsAPingThatArrivedMidTurn(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1")
-	s.noteUser("c1", "m2")
+	s.ack("c1", "m1", "42")
+	s.noteUser("c1", "m2", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 1 || f.deleted[0].id != "m1" {
 		t.Fatalf("deleted = %+v, want only the ping this turn answered", f.deleted)
 	}
-	if s.lastUser != (msgRef{ch: "c1", id: "m2"}) {
+	if s.lastUser != (msgRef{ch: "c1", id: "m2", author: "42"}) {
 		t.Fatalf("lastUser = %+v, want the mid-turn ping still queued for its ack", s.lastUser)
+	}
+}
+
+// The polling reader records the last non-bot message whoever wrote it, so the
+// ref a turn acks is not always the operator's. Tidy deletes the operator's own
+// ping and nothing else: removing a bystander's message is not tidying, it is
+// moderating.
+func TestTidyNeverDeletesABystandersMessage(t *testing.T) {
+	f := &fakeRender{}
+	s := tidySink(f, "c1")
+	s.ack("c1", "m1", "99")
+	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
+
+	if len(f.deleted) != 0 {
+		t.Fatalf("deleted = %+v, want a message written by somebody else left alone", f.deleted)
+	}
+	if len(f.unreacted) != 1 {
+		t.Fatalf("unreacted = %v, want the ⏳ cleared the ordinary way", f.unreacted)
 	}
 }

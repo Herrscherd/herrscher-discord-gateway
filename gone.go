@@ -30,13 +30,30 @@ type channelDelete struct {
 // succeeds or not — a stale binding is the worse outcome, silently routing a
 // reused id's messages into a session that does not serve it.
 func (r *router) onChannelGone(ctx context.Context, id string) {
+	// Deleting a channel takes its threads with it, but Discord announces only the
+	// channel. A job the gateway moved into a private thread would otherwise be
+	// the one case this whole path misses — and it is the common case, since that
+	// is where jobs are asked to run.
+	for _, child := range r.binds.Children(id) {
+		r.endConversation(ctx, child)
+		// endConversation only writes the store for a thread that had a session;
+		// this drops the parent link of one that no longer did, which would
+		// otherwise outlive both the thread and its channel.
+		if err := r.binds.Forget(child); err != nil {
+			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		}
+	}
+	r.endConversation(ctx, id)
+}
+
+func (r *router) endConversation(ctx context.Context, id string) {
 	session := r.binds.Session(id)
 	r.forget(id)
 	r.sinks.drop(id)
 	if session == "" {
 		return
 	}
-	if err := r.binds.Unbind(id); err != nil {
+	if err := r.binds.Forget(id); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 	}
 	ctrl := r.ctrl()
