@@ -71,7 +71,10 @@ question rather than by a turn. That ping decides two things:
 
 - **Which repo.** Name it in the message ("le bug d'auth de *herrscher*", by bare
   name or as `owner/repo`) and the work starts immediately. Name none or two, and
-  a select menu asks — once.
+  a select menu asks — once, and only the first time ever. After that the last
+  repo you picked carries over to the next room, named out loud when it does, so
+  a wrong carry-over is visible immediately (`/session close` starts over). A repo
+  that has since disappeared brings the menu back rather than binding blind.
 - **Where.** Ask for a thread ("dans un fil", "ouvre un thread", "en privé") and
   the job gets a **private** thread: created off the channel so it leaves no trace
   there, `invitable: false`, with you added as its only human member. Everything

@@ -45,6 +45,11 @@ type bindStore struct {
 	// with it, so without this a job running in a thread under a deleted channel
 	// would be the one case the close-on-delete rule misses.
 	Parents map[string]string `json:"parents,omitempty"`
+	// Last is the repo most recently bound, in any room, as a menu value. A scalar
+	// and not a map: it stands for "what this operator is working on", which the
+	// next conversation inherits when its own room has nothing to say. Losing it
+	// costs one question.
+	Last string `json:"lastRepo,omitempty"`
 }
 
 func newBindStore(path string) *bindStore {
@@ -59,6 +64,9 @@ func newBindStore(path string) *bindStore {
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store %s is corrupt, ignoring: %v\n", path, err)
 			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}
 			s.Modes, s.Repos, s.Parents = map[string]string{}, map[string]string{}, map[string]string{}
+			// A half-decoded Last would silently put the next conversation on a
+			// repo the operator never picked.
+			s.Last = ""
 		}
 		if s.Channels == nil {
 			s.Channels = map[string]string{}
@@ -165,6 +173,22 @@ func (s *bindStore) SetRepo(channel, value string) error {
 		}
 		s.Repos[channel] = value
 	})
+}
+
+// LastRepo returns the repo most recently bound anywhere, as a menu value, or ""
+// before the operator has ever answered the question. It is the default for a
+// conversation opening in a room that has no answer of its own.
+func (s *bindStore) LastRepo() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Last
+}
+
+// SetLastRepo records the repo just bound. The menu promises to ask once, and an
+// operator who works in more than one room heard it once per room — so the last
+// answer stands in for the next question rather than repeating it.
+func (s *bindStore) SetLastRepo(value string) error {
+	return s.persist(func() { s.Last = value })
 }
 
 // IsThread reports whether this conversation is a thread the gateway opened.

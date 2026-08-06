@@ -170,6 +170,23 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 		return
 	}
 
+	// Still nothing to go on here — but the operator has answered this question
+	// before, somewhere else. Asking again for every new room turns a promise to
+	// ask once into a toll on every conversation, and it is levied hardest on the
+	// pings that are not about code at all: a plain question cannot name a repo,
+	// so it always pays. Reuse the last answer and say which one, out loud, so a
+	// wrong guess is visible in the same breath rather than discovered later.
+	if last := r.binds.LastRepo(); last != "" && knownRepo(last, repos) {
+		if msg := r.bind(ctx, ctrl, j, last, m, true); msg != "" {
+			r.post(ctx, j.conv, msg)
+			return
+		}
+		r.post(ctx, j.conv, fmt.Sprintf(
+			"je repars sur **%s**, le dernier repo sur lequel tu m'as mis — `/session close` ici pour repartir d'ailleurs",
+			repoLabel(last)))
+		return
+	}
+
 	conv := j.conv
 	r.mu.Lock()
 	r.pending[conv] = m
@@ -348,10 +365,37 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 		}
 	}
+	// And the operator now has a current repo, which the next room inherits
+	// instead of asking again.
+	if err := r.binds.SetLastRepo(value); err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+	}
 	if buffered {
 		r.submit(ctx, ctrl, spec.Name, j.conv, m, true)
 	}
 	return ""
+}
+
+// knownRepo reports whether a remembered menu value is still one of the repos on
+// offer. A repo that was renamed, moved, or lost with its host must fall back to
+// the question: binding a session to a target that no longer resolves would fail
+// somewhere deeper, with an error about a path instead of a menu.
+func knownRepo(value string, repos []contracts.RepoRef) bool {
+	for _, repo := range repos {
+		if repoValue(repo) == value {
+			return true
+		}
+	}
+	return false
+}
+
+// repoLabel renders a menu value as the operator wrote it — the encoding prefix
+// is an internal detail and reads as noise in a channel.
+func repoLabel(value string) string {
+	if _, name, found := strings.Cut(value, ":"); found {
+		return name
+	}
+	return value
 }
 
 // repoValue encodes a RepoRef into a menu value that survives the round trip and
