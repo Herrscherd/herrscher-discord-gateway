@@ -16,6 +16,12 @@ const gatewayMaxLen = 2000
 // the turn finishes.
 const ackEmoji = "⏳"
 
+// failEmoji replaces the ⏳ when a ping ends without ever becoming a turn. The
+// hourglass says "taken, working"; if the work never starts, nothing else in the
+// flow ever comes back to it, and the ping sits pending forever while the reason
+// goes to the daemon's stderr where the operator will never read it.
+const failEmoji = "❌"
+
 // renderClient is the narrow Discord surface the sink needs (faked in tests).
 // It has no DefaultChannel: a sink is told which conversation it renders into,
 // so nothing here can fall back to a single global channel.
@@ -152,6 +158,36 @@ func (s *sink) ack(ch, id, author string) {
 	}
 	if err := s.rc.React(s.ctx, ch, id, ackEmoji); err == nil {
 		s.acked = ref
+	}
+}
+
+// fail resolves the ⏳ into a ❌ and says why, in the channel the ping was
+// written in. It is the counterpart of the ack: every path that marks a ping as
+// taken must end either in a turn — which clears the ⏳ — or here.
+//
+// The reason goes where the reaction goes, not into the sink's own conversation:
+// a job that moved into a thread is answered there, but the operator is still
+// looking at the message they wrote, and a failure they cannot see is the same
+// as no failure at all. An empty reason marks the ping and posts nothing, for
+// callers that already answer through another surface (an interaction reply).
+func (s *sink) fail(reason string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pv != nil {
+		s.pv.flush(true)
+		s.pv = nil
+	}
+	ch := s.acked.chOr(s.ch)
+	if s.acked.id != "" {
+		_ = s.rc.Unreact(s.ctx, ch, s.acked.id, ackEmoji)
+		_ = s.rc.React(s.ctx, ch, s.acked.id, failEmoji)
+		s.acked = msgRef{}
+	}
+	if reason == "" {
+		return
+	}
+	for _, part := range chunkText(s.answer(failEmoji+" "+reason), gatewayMaxLen) {
+		_ = s.rc.Post(s.ctx, ch, part)
 	}
 }
 

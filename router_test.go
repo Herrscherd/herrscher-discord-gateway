@@ -24,6 +24,9 @@ type fakeCtrl struct {
 	// closeErr fails every non-forcing close, standing in for the worktree the
 	// agent left uncommitted.
 	closeErr error
+	// createErr fails every session creation, standing in for a daemon that
+	// cannot mint the channel or start the backend.
+	createErr error
 }
 
 // closeCall is one Close, with the force flag that decides whether uncommitted
@@ -43,6 +46,9 @@ func newFakeCtrl() *fakeCtrl {
 
 func (f *fakeCtrl) Dispatch(context.Context, []string) (string, error) { return "", nil }
 func (f *fakeCtrl) Create(_ context.Context, s contracts.CreateSession) (string, error) {
+	if f.createErr != nil {
+		return "", f.createErr
+	}
 	f.created = append(f.created, s)
 	f.live[s.Name] = true
 	return "created", nil
@@ -140,6 +146,72 @@ func TestAskAcksThePingItIsAnswering(t *testing.T) {
 	s.handle(contracts.Event{T: "reply", Text: "done", Done: true})
 	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
 		t.Fatalf("unreacted = %v, want the ack cleared once at turn end", f.unreacted)
+	}
+}
+
+// The ⏳ says "taken, working". Every path that puts it there must end in a turn
+// or in a ❌: a ping marked taken by a flow that then died silently is the one
+// state the operator cannot tell apart from a slow answer.
+func TestAckResolvesToAFailureWhenTheMenuCannotBePosted(t *testing.T) {
+	r, ctrl, c, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.menuErr = errors.New("missing permissions")
+
+	r.onMessage(context.Background(), ownerPing("une question générale"))
+
+	if len(f.reacted) != 2 || f.reacted[0] != ackEmoji || f.reacted[1] != failEmoji {
+		t.Fatalf("reacted = %v, want the %s replaced by a %s", f.reacted, ackEmoji, failEmoji)
+	}
+	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+		t.Fatalf("unreacted = %v, want the pending mark cleared", f.unreacted)
+	}
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "menu des repos") {
+		t.Fatalf("posts = %v, want the reason said in the channel", f.posts)
+	}
+	// The ping must not stay buffered: no menu was posted, so no click will ever
+	// come to replay it.
+	r.mu.Lock()
+	_, still := r.pending["c1"]
+	r.mu.Unlock()
+	if still {
+		t.Error("a ping buffered for a menu that was never posted can never be replayed")
+	}
+}
+
+func TestAckResolvesToAFailureWhenTheSessionCannotBeCreated(t *testing.T) {
+	r, ctrl, _, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	ctrl.createErr = errors.New("no home set")
+
+	// The repo is named in the ping, so this binds straight away and never asks.
+	r.onMessage(context.Background(), ownerPing("répare le login sur herrscher"))
+
+	if len(f.reacted) != 2 || f.reacted[1] != failEmoji {
+		t.Fatalf("reacted = %v, want a %s once the session failed to start", f.reacted, failEmoji)
+	}
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "no home set") {
+		t.Fatalf("posts = %v, want the daemon's own reason surfaced", f.posts)
+	}
+}
+
+// Work that walks into a private thread leaves the channel showing a ping and a
+// ⏳ and nothing else. The operator is a member of that thread; they still have
+// to be told it exists.
+func TestForkingIntoAThreadSaysWhereTheWorkWent(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.nextThreadID = "t1"
+
+	r.onMessage(context.Background(), ownerPing("ouvre un thread privé pour herrscher"))
+
+	var said bool
+	for _, s := range c.sent {
+		if s.channel == "c1" && strings.Contains(s.content, "<#t1>") {
+			said = true
+		}
+	}
+	if !said {
+		t.Fatalf("sent = %+v, want a line in c1 linking the thread", c.sent)
 	}
 }
 

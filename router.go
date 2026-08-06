@@ -157,7 +157,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// once and every conversation opened in it inherits the answer.
 	if value := r.binds.Repo(j.parent); value != "" {
 		if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-			r.post(ctx, j.conv, msg)
+			r.sinks.at(j.conv).fail(msg)
 		}
 		return
 	}
@@ -165,7 +165,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// The repo is usually named in the ping itself; asking anyway is friction.
 	if repo, ok := matchRepo(m.Content, repos); ok {
 		if msg := r.bind(ctx, ctrl, j, repoValue(repo), m, true); msg != "" {
-			r.post(ctx, j.conv, msg)
+			r.sinks.at(j.conv).fail(msg)
 		}
 		return
 	}
@@ -178,7 +178,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// wrong guess is visible in the same breath rather than discovered later.
 	if last := r.binds.LastRepo(); last != "" && knownRepo(last, repos) {
 		if msg := r.bind(ctx, ctrl, j, last, m, true); msg != "" {
-			r.post(ctx, j.conv, msg)
+			r.sinks.at(j.conv).fail(msg)
 			return
 		}
 		r.post(ctx, j.conv, fmt.Sprintf(
@@ -212,13 +212,22 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	}
 	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), opts); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: repo menu: %v\n", err)
+		// The ping is marked taken and the question that was supposed to follow it
+		// never arrived. Without this the ⏳ is the only thing the operator ever
+		// gets: no menu, no answer, and no way to tell a slow turn from a dead one.
+		r.mu.Lock()
+		delete(r.pending, conv)
+		delete(r.jobs, conv)
+		r.mu.Unlock()
+		r.sinks.at(conv).fail("je n'ai pas pu poster le menu des repos ici — reformule en nommant le repo, ou vérifie mes permissions dans ce salon")
 	}
 }
 
 // conversation decides where this job happens. A support channel gives every
 // ping a public thread of its own; elsewhere, a ping that asks for a thread gets
-// a private one — no trace in the channel, and the operator added as its only
-// human member.
+// a private one, with the operator added as its only human member and one line
+// in the channel pointing at it — a room nobody can find is a room the work got
+// lost in.
 //
 // Creating either can fail — a missing permission, a channel type with no threads —
 // and the ping must still be answered, so the job falls back to the channel it
@@ -257,6 +266,12 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 		// read, which is no better than not having one.
 		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
 			r.inherit(m.ChannelID, id)
+			// Say where the work went. The answer will be posted in the thread, so
+			// without a line here the channel shows a ping, a ⏳ that clears minutes
+			// later, and nothing else — the operator has to guess that a room they
+			// cannot see from here is where it happened. The link resolves only for
+			// members of the thread, which is the operator and the bot.
+			r.post(ctx, m.ChannelID, "je continue en privé dans <#"+id+">")
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 	}
@@ -306,7 +321,7 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 	}
 	r.sinks.at(j.conv).ack(m.ChannelID, m.ID, m.Author.ID)
 	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-		r.post(ctx, j.conv, msg)
+		r.sinks.at(j.conv).fail(msg)
 	}
 	return true
 }
@@ -429,6 +444,9 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 	}
 
 	if msg := r.bind(ctx, ctrl, j, value, m, buffered); msg != "" {
+		// The click is answered with the reason, so the ping only needs its ⏳
+		// turned into a ❌ — repeating the text under it would say it twice.
+		r.sinks.at(j.conv).fail("")
 		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
