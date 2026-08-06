@@ -33,6 +33,12 @@ decoration — a turn runs for minutes and its answer is a plain post, which
 notifies nobody. A turn that ends with nothing to say still posts a line, because
 a ⏳ that merely vanishes reads like a bot that died.
 
+The ⏳ is a state, never a destination. Every path that marks a ping as taken
+ends either in a turn — which clears it — or in a ❌ on the same message plus one
+line saying why, in the channel the ping was written in. A repo menu that could
+not be posted, a session the daemon refused to create: those used to reach only
+the daemon's stderr, leaving an hourglass that nothing would ever come back to.
+
 Above the default level it also draws one live-updating progress message per turn
 (15 lines, trimmed further if they would exceed the message limit, one edit per
 1.5 s) collapsed to a ✅ summary at the end; a mid-turn backend reset discards the
@@ -76,8 +82,9 @@ question rather than by a turn. That ping decides two things:
   a wrong carry-over is visible immediately (`/session close` starts over). A repo
   that has since disappeared brings the menu back rather than binding blind.
 - **Where.** Ask for a thread ("dans un fil", "ouvre un thread", "en privé") and
-  the job gets a **private** thread: created off the channel so it leaves no trace
-  there, `invitable: false`, with you added as its only human member. Everything
+  the job gets a **private** thread: `invitable: false`, with you added as its
+  only human member, and a single line in the channel linking it — the answer is
+  going to land somewhere the channel cannot show. Everything
   after that — questions, progress, the answer — happens inside it, and a plain
   message there needs no @mention. Server moderators holding `Manage Threads` can
   still see it; nobody else can. If the thread cannot be created, the job falls
