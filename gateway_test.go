@@ -20,6 +20,7 @@ type fakeClient struct {
 	replied []outMsg
 	reacted []string
 	menus   []outMenu
+	menuErr error // fails SendSelectMenu
 	read    []dctl.Message
 
 	threads      []outMsg // channel the thread was opened in, and its name
@@ -49,6 +50,9 @@ func (f *fakeClient) React(_ context.Context, _, _, emoji string) error {
 	return nil
 }
 func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
+	if f.menuErr != nil {
+		return nil, f.menuErr
+	}
 	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
 }
