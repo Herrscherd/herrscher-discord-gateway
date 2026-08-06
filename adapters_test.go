@@ -35,3 +35,22 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 func TestPlatformSatisfiesRenderClientViaAdapter(t *testing.T) {
 	var _ renderClient = (*renderAdapter)(nil)
 }
+
+// TestReadIsSuppressedForPushDrivenChannels covers the guard firing. This covers
+// it not firing: the guard is per channel, not global, and an unbound channel
+// still has the poller as its only inbound path. Silencing it there would trade
+// a bot that answers twice for a bot that never answers at all.
+func TestPlatformStillReadsAnUnboundChannel(t *testing.T) {
+	p := &Platform{binds: newBindStore(t.TempDir() + "/router.json")}
+	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
+		return []rawMsg{{id: "1", bot: false, msg: contracts.Message{ChannelID: "c9"}}}, nil
+	}
+
+	msgs, err := p.Read(context.Background(), "c9", 100, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("Read returned %d messages for an unbound channel, want 1", len(msgs))
+	}
+}
