@@ -105,7 +105,6 @@ func (g *Gateway) Commands() []contracts.Cmd {
 				}
 				return "edited", nil
 			}),
-
 	}
 
 	// Delete is the one verb here nothing undoes, and it is reachable from the
