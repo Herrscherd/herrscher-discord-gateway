@@ -27,7 +27,7 @@ const readCap = 100
 func (g *Gateway) Commands() []contracts.Cmd {
 	return []contracts.Cmd{
 		contracts.New("channel", "read").
-			Help("read a conversation: the recent messages of a channel").
+			Help("read a conversation: the recent messages of a channel, oldest first").
 			Param("id", "channel id", true).
 			ValueParam("limit", fmt.Sprintf("how many messages, capped at %d", readCap), false).
 			ValueParam("after", "message id to read forward from, for paging", false).
