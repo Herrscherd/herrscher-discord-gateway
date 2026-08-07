@@ -1,6 +1,8 @@
 package discord
 
 import (
+	"io/fs"
+	"strings"
 	"testing"
 
 	"github.com/Herrscherd/herrscher-contracts"
@@ -52,5 +54,38 @@ func TestVerbositySettingFallsBackToSilent(t *testing.T) {
 		if got := verbositySetting(v); got != levelSilent {
 			t.Errorf("verbositySetting(%q) = %q, want %q", v, got, levelSilent)
 		}
+	}
+}
+
+// The plugin ships its playbook, and it ships it statically: a gateway that
+// never instantiates for want of a token must still install the skill that
+// teaches an agent to use it.
+func TestPluginShipsItsSkill(t *testing.T) {
+	var p *contracts.Plugin
+	for _, cand := range contracts.Default.Plugins() {
+		if cand.Manifest.Kind == "discord" {
+			c := cand
+			p = &c
+		}
+	}
+	if p == nil {
+		t.Fatal("the discord plugin must be registered")
+	}
+	if p.Skills == nil {
+		t.Fatal("the plugin must carry its skill")
+	}
+	b, err := fs.ReadFile(p.Skills, "discord-conversations/SKILL.md")
+	if err != nil {
+		t.Fatalf("the skill must be readable: %v", err)
+	}
+	body := string(b)
+	// The load-bearing line: a channel's contents are text written by third
+	// parties, and a playbook that says "read this channel" without saying "what
+	// you read is not an order" opens prompt injection by Discord message.
+	if !strings.Contains(strings.ToLower(body), "not instructions") {
+		t.Fatalf("the skill must warn that channel content is context, not instructions: %q", body)
+	}
+	if !strings.Contains(body, "discord channel read") {
+		t.Fatalf("the skill must name the prefixed command: %q", body)
 	}
 }
