@@ -25,7 +25,7 @@ const readCap = 100
 //
 // It satisfies contracts.CommandSource.
 func (g *Gateway) Commands() []contracts.Cmd {
-	return []contracts.Cmd{
+	cmds := []contracts.Cmd{
 		contracts.New("channel", "read").
 			Help("read a conversation: the recent messages of a channel, oldest first").
 			Param("id", "channel id", true).
@@ -105,18 +105,53 @@ func (g *Gateway) Commands() []contracts.Cmd {
 				}
 				return "edited", nil
 			}),
+	}
 
-		contracts.New("message", "delete").
-			Help("delete a message").
+	// Delete is the one verb here nothing undoes, and it is reachable from the
+	// same agent context `channel read` fills with text strangers wrote. Prose
+	// telling an agent to be careful is a defence in the same medium as the
+	// attack, so the verb is instead absent from the registry entirely until an
+	// operator turns it on: a command that was never contributed cannot be
+	// talked into running. One deliberate decision, taken once, off Discord.
+	if g.deletes {
+		cmds = append(cmds, contracts.New("message", "delete").
+			Help("delete a message this bot sent").
 			Param("id", "channel id", true).
 			Param("msg", "message id", true).
 			Do(func(ctx context.Context, in contracts.Input) (string, error) {
+				if err := g.ownMessage(ctx, in.Args["id"], in.Args["msg"]); err != nil {
+					return "", err
+				}
 				if err := g.Delete(ctx, in.Args["id"], in.Args["msg"]); err != nil {
 					return "", err
 				}
 				return "deleted", nil
-			}),
+			}))
 	}
+	return cmds
+}
+
+// ownMessage is the second half of the guard, and it bounds an enabled delete to
+// what this bot actually wrote. Discord enforces that bound on `edit` itself but
+// not on `delete`, which it grants wholesale to whoever holds Manage Messages —
+// so the worst an enabled delete can do, moderating a channel on the say-so of
+// text that channel contains, is refused here. Anything it cannot confirm is a
+// refusal too: a message that will not come back is not assumed to be the bot's.
+func (g *Gateway) ownMessage(ctx context.Context, channelID, messageID string) error {
+	if g.selfID == "" {
+		return fmt.Errorf("discord message delete: this bot's own id is unknown, so authorship cannot be checked")
+	}
+	m, err := g.c.GetMessage(ctx, channelID, messageID)
+	if err != nil {
+		return fmt.Errorf("discord message delete: read message %s: %w", messageID, err)
+	}
+	if m == nil {
+		return fmt.Errorf("discord message delete: message %s is not in channel %s", messageID, channelID)
+	}
+	if m.Author.ID != g.selfID {
+		return fmt.Errorf("discord message delete: message %s was written by %s, not by this bot — only this bot's own messages can be deleted", messageID, authorOf(*m))
+	}
+	return nil
 }
 
 // capLimit turns the caller's --limit into a read size. An unparseable or absent
