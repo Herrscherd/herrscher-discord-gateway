@@ -32,6 +32,11 @@ type client interface {
 	// is what a support room wants — and it is the one kind of thread that does
 	// not need the "create private threads" permission.
 	StartThread(ctx context.Context, channelID, messageID, name string) (string, error)
+	// EditMessage and DeleteMessage back the optional MessageEditor port. They
+	// are on the narrow client interface like everything else here, so the tests
+	// can drive them without a Discord.
+	EditMessage(ctx context.Context, channelID, messageID, content string) (*dctl.Message, error)
+	DeleteMessage(ctx context.Context, channelID, messageID string) error
 }
 
 var (
@@ -39,6 +44,7 @@ var (
 	_ contracts.SessionControlReceiver = (*Gateway)(nil)
 	_ contracts.EventSink              = (*Gateway)(nil)
 	_ contracts.RoutedEventSink        = (*Gateway)(nil)
+	_ contracts.MessageEditor          = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
@@ -129,6 +135,22 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	return nil
 }
 
+// Edit rewrites a message already sent. It satisfies contracts.MessageEditor.
+func (g *Gateway) Edit(ctx context.Context, channelID, messageID, content string) error {
+	if _, err := g.c.EditMessage(ctx, channelID, messageID, content); err != nil {
+		return fmt.Errorf("discord edit: %w", err)
+	}
+	return nil
+}
+
+// Delete removes a message already sent. It satisfies contracts.MessageEditor.
+func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error {
+	if err := g.c.DeleteMessage(ctx, channelID, messageID); err != nil {
+		return fmt.Errorf("discord delete: %w", err)
+	}
+	return nil
+}
+
 // discordClient adapts *dctl.Client's sub-clients to the narrow client seam the
 // Gateway needs (and that tests fake).
 type discordClient struct{ c *dctl.Client }
@@ -181,6 +203,14 @@ func (d discordClient) StartThread(ctx context.Context, channelID, messageID, na
 
 func (d discordClient) AddThreadMember(ctx context.Context, threadID, userID string) error {
 	return d.c.Threads().AddMember(ctx, threadID, userID)
+}
+
+func (d discordClient) EditMessage(ctx context.Context, channelID, messageID, content string) (*dctl.Message, error) {
+	return d.c.Messages().Edit(ctx, channelID, messageID, content)
+}
+
+func (d discordClient) DeleteMessage(ctx context.Context, channelID, messageID string) error {
+	return d.c.Messages().Delete(ctx, channelID, messageID)
 }
 
 func msgID(m *dctl.Message) contracts.MessageID {

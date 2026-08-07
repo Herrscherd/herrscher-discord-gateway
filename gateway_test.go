@@ -15,6 +15,8 @@ type outMsg struct{ channel, content string }
 
 type outMenu struct{ channel, content, customID string }
 
+type outEdit struct{ channel, id, content string }
+
 type fakeClient struct {
 	sent    []outMsg
 	replied []outMsg
@@ -35,6 +37,9 @@ type fakeClient struct {
 	got    []outMsg      // channel and id of every GetMessage call
 	getMsg *dctl.Message // what GetMessage answers
 	getErr error         // fails GetMessage
+
+	edited  []outEdit
+	deleted []string
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -92,6 +97,16 @@ func (f *fakeClient) AddThreadMember(_ context.Context, thread, user string) err
 	return nil
 }
 
+func (f *fakeClient) EditMessage(_ context.Context, ch, id, content string) (*dctl.Message, error) {
+	f.edited = append(f.edited, outEdit{ch, id, content})
+	return &dctl.Message{ID: id}, nil
+}
+
+func (f *fakeClient) DeleteMessage(_ context.Context, ch, id string) error {
+	f.deleted = append(f.deleted, ch+"/"+id)
+	return nil
+}
+
 var _ contracts.Gateway = (*Gateway)(nil)
 
 func TestGatewayManifest(t *testing.T) {
@@ -133,6 +148,28 @@ func TestGatewayTranslatesActions(t *testing.T) {
 
 func TestGatewayImplementsEventSink(t *testing.T) {
 	var _ contracts.EventSink = (*Gateway)(nil)
+}
+
+// The gateway satisfies the optional editor port, and each call reaches the
+// client with the ids it was given — a delete aimed at the wrong message is not
+// something a retry fixes.
+func TestGatewayEditsAndDeletes(t *testing.T) {
+	var _ contracts.MessageEditor = (*Gateway)(nil)
+
+	f := &fakeClient{}
+	g := NewGateway(f)
+	if err := g.Edit(context.Background(), "c1", "m1", "fixed"); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if len(f.edited) != 1 || f.edited[0] != (outEdit{"c1", "m1", "fixed"}) {
+		t.Fatalf("edit must reach the client unchanged: %v", f.edited)
+	}
+	if err := g.Delete(context.Background(), "c1", "m1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if len(f.deleted) != 1 || f.deleted[0] != "c1/m1" {
+		t.Fatalf("delete must reach the client unchanged: %v", f.deleted)
+	}
 }
 
 func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
