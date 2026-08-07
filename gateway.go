@@ -13,6 +13,9 @@ type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
+	// Unreact removes a reaction this bot added. It backs the contributed
+	// `message unreact` verb; the rendering path reaches it through Platform.
+	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
 	// ReadMessages backs the router's channel context. REST reads are not gated by
 	// the message-content intent, which is how the bot sees what everyone said
@@ -165,6 +168,10 @@ func (d discordClient) Reply(ctx context.Context, channelID, replyTo, content st
 
 func (d discordClient) React(ctx context.Context, channelID, messageID, emoji string) error {
 	return d.c.Reactions().Add(ctx, channelID, messageID, emoji)
+}
+
+func (d discordClient) Unreact(ctx context.Context, channelID, messageID, emoji string) error {
+	return d.c.Reactions().Remove(ctx, channelID, messageID, emoji)
 }
 
 func (d discordClient) SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error) {
