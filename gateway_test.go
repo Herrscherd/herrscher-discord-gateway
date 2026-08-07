@@ -24,6 +24,10 @@ type fakeClient struct {
 	menus   []outMenu
 	menuErr error // fails SendSelectMenu
 	read    []dctl.Message
+	// readLimit is the size the last read asked for, which is how the cap is
+	// checked: the caller's --limit never reaches Discord unbounded.
+	readLimit int
+	unreacted []string
 
 	threads      []outMsg // channel the thread was opened in, and its name
 	members      []outMsg // thread id, and the user added to it
@@ -61,8 +65,13 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
 }
-func (f *fakeClient) ReadMessages(context.Context, string, int, string) ([]dctl.Message, error) {
+func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ string) ([]dctl.Message, error) {
+	f.readLimit = limit
 	return f.read, nil
+}
+func (f *fakeClient) Unreact(_ context.Context, _, _, emoji string) error {
+	f.unreacted = append(f.unreacted, emoji)
+	return nil
 }
 func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message, error) {
 	f.got = append(f.got, outMsg{ch, id})
