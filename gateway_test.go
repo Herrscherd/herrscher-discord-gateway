@@ -17,17 +17,28 @@ type outMenu struct{ channel, content, customID string }
 
 type outEdit struct{ channel, id, content string }
 
+// outReply records which message a reply was aimed at, not just its content: a
+// reply landing on the wrong message id is not something a retry fixes either.
+type outReply struct{ channel, to, content string }
+
+// outReact records the channel and message id a reaction call was aimed at, so
+// a handler that read the wrong arg (e.g. "msg" swapped for "id") is caught.
+type outReact struct{ channel, msg, emoji string }
+
 type fakeClient struct {
 	sent    []outMsg
-	replied []outMsg
-	reacted []string
+	replied []outReply
+	reacted []outReact
 	menus   []outMenu
 	menuErr error // fails SendSelectMenu
 	read    []dctl.Message
 	// readLimit is the size the last read asked for, which is how the cap is
 	// checked: the caller's --limit never reaches Discord unbounded.
-	readLimit int
-	unreacted []string
+	readLimit  int
+	readErr    error // fails ReadMessages
+	unreacted  []outReact
+	reactErr   error // fails React
+	unreactErr error // fails Unreact
 
 	threads      []outMsg // channel the thread was opened in, and its name
 	members      []outMsg // thread id, and the user added to it
@@ -50,12 +61,15 @@ func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message,
 	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
-func (f *fakeClient) Reply(_ context.Context, ch, _, content string) (*dctl.Message, error) {
-	f.replied = append(f.replied, outMsg{ch, content})
+func (f *fakeClient) Reply(_ context.Context, ch, to, content string) (*dctl.Message, error) {
+	f.replied = append(f.replied, outReply{ch, to, content})
 	return &dctl.Message{ID: "m2"}, nil
 }
-func (f *fakeClient) React(_ context.Context, _, _, emoji string) error {
-	f.reacted = append(f.reacted, emoji)
+func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
+	if f.reactErr != nil {
+		return f.reactErr
+	}
+	f.reacted = append(f.reacted, outReact{ch, msg, emoji})
 	return nil
 }
 func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
@@ -67,10 +81,16 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 }
 func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ string) ([]dctl.Message, error) {
 	f.readLimit = limit
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	return f.read, nil
 }
-func (f *fakeClient) Unreact(_ context.Context, _, _, emoji string) error {
-	f.unreacted = append(f.unreacted, emoji)
+func (f *fakeClient) Unreact(_ context.Context, ch, msg, emoji string) error {
+	if f.unreactErr != nil {
+		return f.unreactErr
+	}
+	f.unreacted = append(f.unreacted, outReact{ch, msg, emoji})
 	return nil
 }
 func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message, error) {
