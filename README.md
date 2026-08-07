@@ -14,7 +14,7 @@ anything Discord-specific.
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
 | **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
-| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `tidy_pings` / `DISCORD_TIDY_PINGS` (default off — see below), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
+| **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `tidy_pings` / `DISCORD_TIDY_PINGS` (default off — see below), `message_deletes` / `DISCORD_MESSAGE_DELETES` (default off — see below), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
 
@@ -171,6 +171,25 @@ So in a support-mode channel, and for a forked job, nothing is ever deleted. It
 applies to an ordinary channel holding one conversation, where the ping and the
 answer live side by side. The bot role needs `Manage Messages`; without it the
 delete is refused and the ⏳ is cleared the ordinary way instead.
+
+## Letting an agent delete a message
+
+The gateway contributes a handful of verbs to the daemon's command registry —
+`discord channel read`, `channel post`, `message reply`, `react`, `unreact`,
+`edit`. Those are visible, small and undoable. `discord message delete` is
+none of those things, and it is reachable from the same agent context that
+`discord channel read` fills with text other people wrote.
+
+So it is not contributed at all unless `DISCORD_MESSAGE_DELETES=true`. Off — the
+default — the verb is absent from the command list rather than present and
+failing: a command that was never registered cannot be talked into running by a
+message asking for it. Turning it on is one deliberate decision an operator
+takes once, in config, off Discord.
+
+On, the verb still refuses any message this bot did not write. Discord bounds
+`edit` to the bot's own messages itself but hands `delete` to anyone holding
+`Manage Messages`, so the gateway checks the author before it deletes, and
+refuses rather than guesses when it cannot read the message back.
 
 ## The slash surface
 
