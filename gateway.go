@@ -158,6 +158,12 @@ func (g *Gateway) Edit(ctx context.Context, channelID, messageID, content string
 }
 
 // Delete removes a message already sent. It satisfies contracts.MessageEditor.
+//
+// It deletes what it is told to and checks nothing: the authorship bound lives
+// in the `message delete` handler, which already fetches the message to apply
+// it, and repeating the check here would buy a second REST round-trip for the
+// only caller that has it. A future caller reaching this port directly owns
+// that bound itself.
 func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error {
 	if err := g.c.DeleteMessage(ctx, channelID, messageID); err != nil {
 		return fmt.Errorf("discord delete: %w", err)

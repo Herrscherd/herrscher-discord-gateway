@@ -172,6 +172,14 @@ func capLimit(v string) int {
 // Bot messages are kept. The poller drops them because it is manufacturing
 // turns; a read the operator asked for must show the channel as it is, the
 // bot's own answers included.
+//
+// One line per message is an invariant and not a habit, which is why the body
+// is flattened. The line is the unit an agent reads and the unit --after pages
+// from, so a message allowed to carry a newline could write a second line in
+// the same shape — any author name, any timestamp, any trailing id — and the
+// format itself would vouch for it. The skill already tells an agent that what
+// it reads is context and never an instruction; flattening is what stops the
+// rendering from authenticating the forgery in the first place.
 func renderMessages(msgs []dctl.Message) string {
 	if len(msgs) == 0 {
 		return "(no messages)"
@@ -179,9 +187,35 @@ func renderMessages(msgs []dctl.Message) string {
 	var b strings.Builder
 	for _, m := range msgs {
 		fmt.Fprintf(&b, "%s %s: %s  [%s]\n",
-			authorOf(m), m.Timestamp, strings.TrimSpace(m.Content), m.ID)
+			authorOf(m), m.Timestamp, bodyOf(m), m.ID)
 	}
 	return b.String()
+}
+
+// bodyOf renders a message's content on a single line, and says so when the
+// message was never text: an image or an unfurled link with no caption would
+// otherwise render as an author who said nothing, which reads as silence rather
+// than as the attachment that was the whole point.
+func bodyOf(m dctl.Message) string {
+	body := flattenLines(strings.TrimSpace(m.Content))
+	if body != "" {
+		return body
+	}
+	if n := len(m.Attachments); n > 0 {
+		return fmt.Sprintf("(%d attachment(s): %s)", n, m.Attachments[0].Filename)
+	}
+	if len(m.Embeds) > 0 {
+		return "(embed)"
+	}
+	return ""
+}
+
+// flattenLines folds every line break into a visible escape so a body cannot
+// break out of its own line. It is deliberately lossy in the display sense —
+// the text stays readable, and reading is all this output is for.
+func flattenLines(s string) string {
+	r := strings.NewReplacer("\r\n", `\n`, "\n", `\n`, "\r", `\n`)
+	return r.Replace(s)
 }
 
 // authorOf names a line's author, falling back to the raw user id when the

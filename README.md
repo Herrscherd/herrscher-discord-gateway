@@ -13,7 +13,7 @@ anything Discord-specific.
 |--------|-------|
 | **Role** | Receives Discord mentions and slash interactions, posts replies, and renders turn progress in-channel |
 | **Category** | Gateway (inbound edge) |
-| **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober` |
+| **Ports implemented** | `Gateway`, `EventSink`, `RoutedEventSink`, `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`, `Prober`, `CommandSource`, `MessageEditor` |
 | **Config & env** | `token` / `DISCORD_BOT_TOKEN` (**required**), `owner` / `DISCORD_USER_ID` (**required**, the user the bot obeys), `verbosity` / `DISCORD_VERBOSITY` (`silent` default / `quiet` / `actions` / `full` — see below), `context_messages` / `DISCORD_CONTEXT_MESSAGES` (default 30), `playbook` / `DISCORD_PLAYBOOK` (default `pr-job`), `tidy_pings` / `DISCORD_TIDY_PINGS` (default off — see below), `message_deletes` / `DISCORD_MESSAGE_DELETES` (default off — see below), `DCTL_STATE_DIR` (default: `~/.config/dctl`) |
 | **Status** | live |
 | **Repo** | [herrscher-discord-gateway](https://github.com/Herrscherd/herrscher-discord-gateway) |
@@ -171,6 +171,21 @@ So in a support-mode channel, and for a forked job, nothing is ever deleted. It
 applies to an ordinary channel holding one conversation, where the ping and the
 answer live side by side. The bot role needs `Manage Messages`; without it the
 delete is refused and the ⏳ is cleared the ordinary way instead.
+
+## What the plugin adds to the daemon
+
+Compiling this gateway in adds two things beyond the Discord edge itself. The
+verbs below join the daemon's command registry, namespaced by the host under
+this plugin's kind — the plugin declares `channel read`, an operator types
+`discord channel read`. And the playbook `skills/discord-conversations/SKILL.md`
+is installed into `~/.claude/skills` the first time the binary runs, so an agent
+learns when to reach for those verbs on a machine that actually has them; an
+existing file of the same name is never overwritten.
+
+A read renders one line per message — author, timestamp, body, message id last
+so a follow-up can page with `--after`. The body is flattened onto that line on
+purpose: the line is the unit the agent reads, and a message allowed to carry a
+newline could otherwise forge a second one in the same shape.
 
 ## Letting an agent delete a message
 
