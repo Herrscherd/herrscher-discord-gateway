@@ -34,8 +34,111 @@ func TestCommandsAreDeclaredUnprefixed(t *testing.T) {
 			t.Fatalf("the host owns the prefix; %v must not carry it", c.Path)
 		}
 	}
+	if len(g.Commands()) != 6 {
+		t.Fatalf("six verbs are contributed without the delete opt-in, got %d", len(g.Commands()))
+	}
+}
+
+// deleting builds a gateway whose operator turned the delete opt-in on, with the
+// bot's own id resolved as the real factory resolves it.
+func deleting(f *fakeClient) *Gateway {
+	g := NewGateway(f)
+	g.deletes = true
+	g.selfID = "app1"
+	return g
+}
+
+// hasCmd reports whether the gateway contributes a verb at all — the property
+// the opt-in turns, since an absent verb is one no channel text can talk an
+// agent into running.
+func hasCmd(g *Gateway, path ...string) bool {
+	want := strings.Join(path, " ")
+	for _, c := range g.Commands() {
+		if strings.Join(c.Path, " ") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// The one irreversible verb is not contributed at all until an operator asks for
+// it. Absent beats present-and-failing: a verb missing from the registry cannot
+// be reached by third-party text that an agent read out of a channel.
+func TestDeleteIsAbsentWithoutTheOptIn(t *testing.T) {
+	g := NewGateway(&fakeClient{})
+	if hasCmd(g, "message", "delete") {
+		t.Fatal("message delete must not be contributed without the operator's opt-in")
+	}
+	// The reversible verbs are unaffected by the switch.
+	for _, p := range [][]string{{"channel", "read"}, {"channel", "post"}, {"message", "reply"}, {"message", "react"}, {"message", "unreact"}, {"message", "edit"}} {
+		if !hasCmd(g, p...) {
+			t.Fatalf("%v must be contributed regardless of the delete opt-in", p)
+		}
+	}
+}
+
+// With the opt-in set, the verb appears — one deliberate operator decision, not
+// a per-call prompt.
+func TestDeleteIsContributedWithTheOptIn(t *testing.T) {
+	g := deleting(&fakeClient{})
+	if !hasCmd(g, "message", "delete") {
+		t.Fatal("message delete must be contributed once the operator opted in")
+	}
 	if len(g.Commands()) != 7 {
-		t.Fatalf("seven verbs are contributed, got %d", len(g.Commands()))
+		t.Fatalf("seven verbs are contributed with the opt-in, got %d", len(g.Commands()))
+	}
+}
+
+// Even opted in, delete is bounded to what this bot wrote. Discord bounds `edit`
+// that way itself; `delete` it grants to anyone holding Manage Messages, so the
+// bound has to be enforced here.
+func TestDeleteRefusesAnotherAuthorsMessage(t *testing.T) {
+	f := &fakeClient{getMsg: &dctl.Message{ID: "m1", Author: dctl.Author{ID: "u9", Username: "ana"}}}
+	g := deleting(f)
+	_, err := cmdNamed(t, g, "message", "delete").Run(context.Background(),
+		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1"}})
+	if err == nil {
+		t.Fatal("deleting a message this bot did not write must be refused")
+	}
+	if !strings.Contains(err.Error(), "ana") {
+		t.Fatalf("the refusal must name the actual author, got %v", err)
+	}
+	if len(f.deleted) != 0 {
+		t.Fatalf("nothing may reach the client on a refusal: %v", f.deleted)
+	}
+}
+
+// The bot's own message still deletes.
+func TestDeleteAcceptsTheBotsOwnMessage(t *testing.T) {
+	f := &fakeClient{getMsg: &dctl.Message{ID: "m1", Author: dctl.Author{ID: "app1", Username: "bot"}}}
+	g := deleting(f)
+	if _, err := cmdNamed(t, g, "message", "delete").Run(context.Background(),
+		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1"}}); err != nil {
+		t.Fatalf("delete of the bot's own message: %v", err)
+	}
+	if len(f.deleted) != 1 || f.deleted[0] != "c1/m1" {
+		t.Fatalf("delete must reach the client with its channel and message id: %v", f.deleted)
+	}
+}
+
+// A message the lookup cannot produce — deleted meanwhile, or in a channel the
+// bot cannot read — is not deleted on the assumption it was the bot's.
+func TestDeleteRefusesWhenAuthorshipCannotBeChecked(t *testing.T) {
+	f := &fakeClient{getErr: errors.New("discord says no")}
+	g := deleting(f)
+	if _, err := cmdNamed(t, g, "message", "delete").Run(context.Background(),
+		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1"}}); err == nil {
+		t.Fatal("an unreadable message must not be deleted")
+	}
+
+	f = &fakeClient{}
+	g = deleting(f)
+	if _, err := cmdNamed(t, g, "message", "delete").Run(context.Background(),
+		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1"}}); err == nil {
+		t.Fatal("a message that does not come back must not be deleted")
+	}
+	if len(f.deleted) != 0 {
+		t.Fatalf("nothing may reach the client on a refusal: %v", f.deleted)
 	}
 }
 
@@ -153,14 +256,6 @@ func TestWriteCommandsReachTheClient(t *testing.T) {
 	}
 	if len(f.sent) != 1 || f.sent[0] != (outMsg{"c1", "yo"}) {
 		t.Fatalf("post must reach the client with its channel: %v", f.sent)
-	}
-
-	if _, err := cmdNamed(t, g, "message", "delete").Run(ctx,
-		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1"}}); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-	if len(f.deleted) != 1 || f.deleted[0] != "c1/m1" {
-		t.Fatalf("delete must reach the client with its channel and message id: %v", f.deleted)
 	}
 
 	if _, err := cmdNamed(t, g, "message", "edit").Run(ctx,

@@ -58,6 +58,17 @@ type Gateway struct {
 	c     client
 	slash *slash
 	sinks *sinks
+
+	// deletes is the operator's opt-in for the `message delete` verb, and it
+	// gates whether that verb is contributed at all. Everything an agent reads
+	// out of a channel is text other people wrote, and delete is the only verb
+	// it could ask for that nothing undoes — so the deployment where nobody
+	// wants it does not merely refuse it, it never offers it.
+	deletes bool
+	// selfID is the bot's own user id, which is what makes "did this bot write
+	// that message" answerable at all. Empty outside the real factory, and a
+	// delete refuses rather than guesses when it is.
+	selfID string
 }
 
 func NewGateway(c client) *Gateway { return &Gateway{c: c} }
