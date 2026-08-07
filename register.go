@@ -53,6 +53,7 @@ func init() {
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so a channel keeps the work and not the requests (default off; never applies where the answer lives in a thread started off the ping)"},
+				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "contribute the `message delete` verb, so an agent can delete messages this bot sent (default off; the verb is absent entirely until this is set, and even then it refuses any message another author wrote)"},
 			},
 		},
 		Gateway: NewGatewaySet,
@@ -99,6 +100,12 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	if err != nil {
 		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: resolve application id: %w", err)
 	}
+
+	// The delete verb is contributed only where an operator asked for it, and it
+	// needs the bot's own id to tell its own messages from everyone else's — the
+	// same id the mention trigger matches on.
+	gw.deletes = boolSetting(cfg.Get("message_deletes"))
+	gw.selfID = appID
 
 	// The slash surface lives entirely in the plugin: it builds its own dctl
 	// command catalog + allow store and only crosses the boundary through the
