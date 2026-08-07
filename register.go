@@ -2,7 +2,9 @@ package discord
 
 import (
 	"context"
+	"embed"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,6 +13,27 @@ import (
 	"github.com/Herrscherd/dctl"
 	"github.com/Herrscherd/herrscher-contracts"
 )
+
+// skills carries the playbook that teaches an agent when to reach for the verbs
+// this gateway contributes. It is embedded, and hung on the static Plugin rather
+// than on a built GatewaySet, on purpose: the skill installs on a machine where
+// this gateway is compiled in, token or no token, and nowhere else. A Discord
+// playbook on a host with no Discord is noise in every agent's context forever,
+// for a capability that does not exist there.
+//
+//go:embed skills
+var skillsFS embed.FS
+
+// skills is that tree rooted at the skills dir, so its entries are the skill
+// names the host installs ("discord-conversations/SKILL.md") and not a "skills/"
+// prefix leaking this repo's layout into ~/.claude/skills.
+var skills = func() fs.FS {
+	sub, err := fs.Sub(skillsFS, "skills")
+	if err != nil {
+		panic("discord gateway: embedded skills tree: " + err.Error())
+	}
+	return sub
+}()
 
 // init self-registers the Discord gateway into the global plugin registry. A
 // blank import of this package (in the host's generated plugins.go) is enough to
@@ -33,6 +56,7 @@ func init() {
 			},
 		},
 		Gateway: NewGatewaySet,
+		Skills:  skills,
 	})
 }
 
