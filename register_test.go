@@ -2,6 +2,7 @@ package discord
 
 import (
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -87,5 +88,11 @@ func TestPluginShipsItsSkill(t *testing.T) {
 	}
 	if !strings.Contains(body, "discord channel read") {
 		t.Fatalf("the skill must name the prefixed command: %q", body)
+	}
+	// Cheap sync guard: the skill documents the read cap as a literal number, so
+	// nothing catches it silently drifting from the readCap const in
+	// commands.go except this string check.
+	if !strings.Contains(body, strconv.Itoa(readCap)) {
+		t.Fatalf("the skill must document the actual readCap (%d): %q", readCap, body)
 	}
 }
