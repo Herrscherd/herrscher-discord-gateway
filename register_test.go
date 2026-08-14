@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"context"
 	"io/fs"
 	"strconv"
 	"strings"
@@ -58,9 +59,9 @@ func TestVerbositySettingFallsBackToSilent(t *testing.T) {
 	}
 }
 
-// The plugin ships its playbook, and it ships it statically: a gateway that
-// never instantiates for want of a token must still install the skill that
-// teaches an agent to use it.
+// The plugin ships its playbook, and it ships it apart from the gateway: one
+// that never instantiates for want of a token must still install the skill that
+// teaches an agent to use it, so the tree comes out of a config carrying nothing.
 func TestPluginShipsItsSkill(t *testing.T) {
 	var p *contracts.Plugin
 	for _, cand := range contracts.Default.Plugins() {
@@ -75,7 +76,11 @@ func TestPluginShipsItsSkill(t *testing.T) {
 	if p.Skills == nil {
 		t.Fatal("the plugin must carry its skill")
 	}
-	b, err := fs.ReadFile(p.Skills, "discord-conversations/SKILL.md")
+	tree, err := p.Skills(context.Background(), contracts.PluginConfig{})
+	if err != nil {
+		t.Fatalf("the skill must ship without any config: %v", err)
+	}
+	b, err := fs.ReadFile(tree, "discord-conversations/SKILL.md")
 	if err != nil {
 		t.Fatalf("the skill must be readable: %v", err)
 	}
