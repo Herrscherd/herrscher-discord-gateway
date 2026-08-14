@@ -4,3 +4,7 @@
 
 # per-session git worktrees created by `dctl serve`
 /.dctl-sessions/
+
+# local-dev Go workspace; never committed
+/go.work
+/go.work.sum

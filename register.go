@@ -15,11 +15,11 @@ import (
 )
 
 // skills carries the playbook that teaches an agent when to reach for the verbs
-// this gateway contributes. It is embedded, and hung on the static Plugin rather
-// than on a built GatewaySet, on purpose: the skill installs on a machine where
-// this gateway is compiled in, token or no token, and nowhere else. A Discord
-// playbook on a host with no Discord is noise in every agent's context forever,
-// for a capability that does not exist there.
+// this gateway contributes. It is embedded, and hung on the Plugin rather than on
+// a built GatewaySet, on purpose: the skill installs on a machine where this
+// gateway is compiled in, token or no token, and nowhere else. A Discord playbook
+// on a host with no Discord is noise in every agent's context forever, for a
+// capability that does not exist there.
 //
 //go:embed skills
 var skillsFS embed.FS
@@ -57,9 +57,14 @@ func init() {
 			},
 		},
 		Gateway: NewGatewaySet,
-		Skills:  skills,
+		Skills:  shipSkills,
 	})
 }
+
+// shipSkills hands the embedded tree over unconditionally. The contract asks for
+// a factory so a plugin can look at the machine and decline; this one has nothing
+// to look at — where the gateway is compiled in, its playbook belongs.
+func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return skills, nil }
 
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
