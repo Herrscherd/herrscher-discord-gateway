@@ -214,10 +214,11 @@ it is invited to and no server has to be named in config. Discord takes up to an
 hour to propagate a change to a global command. Commands the
 core owns become neutral argv through `SessionControl.Dispatch`; `/allow` and
 `/session allow` mutate a plugin-local store the core never sees
-(`discord-allow.json`, mode 0600, under `DCTL_STATE_DIR`). Two gates stack: Discord's
-`default_member_permissions = Manage Server`, plus that store — empty means everyone
-who can see the command (so the first operator can bootstrap), populated means
-listed users only. Treat the store as the real policy; the Discord default is
+(`discord-allow.json`, mode 0600, under `DCTL_STATE_DIR`). Three gates stack: Discord's
+`default_member_permissions = Manage Server`, that store (empty means everyone
+who can see the command, so the first operator can bootstrap; populated means
+listed users only), and the daemon's own role table, described below. Treat the
+store as the real policy for who reaches the gateway; the Discord default is
 overridable by a guild admin.
 
 `/stop` cancels the turn running in the conversation it is typed in — it takes no
@@ -226,6 +227,26 @@ session name, because the room already says which session that is. It reaches
 conversation: the next message picks up where it left off. Without it the only
 way out of a turn gone wrong is `/session close`, which also throws away the
 worktree and everything in it.
+
+## Who is asking
+
+Every slash command carries its caller to the daemon as `discord:<user id>`. The
+gateway names the human, because Discord is the only side that knows, and the
+daemon decides what that name may run. The two answers stay separate on purpose:
+the allow store says who may talk to this gateway at all, and the role says what
+the daemon will do for them once they can.
+
+Until somebody holds a role the daemon decides nothing about humans, and this
+changes nothing about how the bot behaves. The first grant ends that for everyone
+at once: from then on every account without a role is an `observer`, so name the
+others before they find out.
+
+```bash
+herrscher role grant discord:1234 operator --label leo
+```
+
+The id is Discord's own, the same one `/allow add` takes. A refusal spells the
+principal out, so you can copy it back rather than look it up.
 
 ## Reconnection
 

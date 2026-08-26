@@ -21,6 +21,8 @@ type fakeCtrl struct {
 	picked      map[string][]string
 	interrupted []string
 	closed      []closeCall
+	// principals records who the core was told is asking, one entry per Create.
+	principals []string
 	// closeErr fails every non-forcing close, standing in for the worktree the
 	// agent left uncommitted.
 	closeErr error
@@ -45,7 +47,8 @@ func newFakeCtrl() *fakeCtrl {
 }
 
 func (f *fakeCtrl) Dispatch(context.Context, []string) (string, error) { return "", nil }
-func (f *fakeCtrl) Create(_ context.Context, s contracts.CreateSession) (string, error) {
+func (f *fakeCtrl) Create(ctx context.Context, s contracts.CreateSession) (string, error) {
+	f.principals = append(f.principals, contracts.PrincipalFrom(ctx))
 	if f.createErr != nil {
 		return "", f.createErr
 	}
