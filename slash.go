@@ -142,6 +142,18 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 // routes command interactions through the registry (whose handlers respond
 // themselves) and autocomplete interactions through the autocomplete dispatcher.
 func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
+	// Who is asking rides the context, named once here, ahead of every branch.
+	// The daemon decides what a caller may run from that name, so this line is
+	// what makes `role grant discord:1234 operator` reach the verbs this gateway
+	// forwards. The allow list still runs and answers a different question: it
+	// says who may talk to this gateway at all, and the role says what the
+	// daemon will do once they have.
+	//
+	// Only this path is named, because only this path crosses ctrl.Dispatch. A
+	// mention in a channel reaches the core through the typed seam instead
+	// (Create, Submit), which decides nothing from a principal, so naming one
+	// there would be a value nothing reads.
+	ctx = contracts.WithPrincipal(ctx, principalOf(ix))
 	// A component click is not a command: it answers a menu this gateway posted,
 	// and the custom_id says which one. Route it before the command registry,
 	// which has no handler for it.
