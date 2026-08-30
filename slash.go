@@ -302,31 +302,40 @@ func (s *slash) handleMode(ctx context.Context, ix dctl.Interaction) (dctl.Respo
 	return dctl.Response{}, nil
 }
 
-// normalMode is the ordinary channel, which holds one conversation of its own.
-// It is stored as no mode at all: an absent entry is what every channel written
-// before /mode existed already means.
-const normalMode = "normal"
-
-// setMode puts a channel in support mode, or takes it back out. Turning support
-// on also drops the channel's binding: a channel bound before the mode was set
-// would keep sending every ping to that one session, and the mode would look
-// like it did nothing. The session itself is left running — it may hold work,
-// and `/session close` is how that is decided.
 func (s *slash) setMode(channel, mode string) string {
 	if s.binds == nil {
 		return "le store de conversations n'est pas disponible"
 	}
-	switch mode {
-	case supportMode:
+	if !knownMode(mode) {
+		return "mode inconnu : " + mode
+	}
+	if mode == ambientMode && s.agent() == "" {
+		return "mode ambient refusé : il fait répondre le bot à tout le monde sans qu'on l'appelle, et rien ne borne ce qu'il peut faire tant qu'aucune persona n'est configurée. Renseigne DISCORD_AGENT puis réessaie."
+	}
+	if mode != normalMode {
 		if err := s.binds.Unbind(channel); err != nil {
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 		}
-		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
-			"mode support : chaque ping ouvre son propre fil ici. La session déjà liée à ce salon continue de tourner — `/session close` si tu n'en veux plus.")
-	case normalMode:
-		return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : ce salon porte une seule conversation")
 	}
-	return "mode inconnu : " + mode
+	switch mode {
+	case supportMode:
+		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
+			"mode support : chaque ping ouvre son propre fil ici. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+	case ambientMode:
+		return saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
+			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+	case offMode:
+		return saveNote(s.binds.SetMode(channel, offMode), "bind store",
+			"mode off : je ne réponds plus rien ici, même appelé. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+	}
+	return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : ce salon porte une seule conversation, et il faut m'appeler")
+}
+
+func (s *slash) agent() string {
+	if s.router == nil {
+		return ""
+	}
+	return s.router.cfg.agent
 }
 
 // autoSession suggests existing session names for any `name` option that opts
@@ -573,8 +582,10 @@ func commandMode() *dctl.Command {
 		With(
 			dctl.String("mode", "how pings are handled here", true).
 				Choices(
-					dctl.NewChoice("support — every ping opens its own thread", supportMode),
-					dctl.NewChoice("normal — this channel holds one conversation", normalMode),
+					dctl.NewChoice("normal: the bot answers when it is mentioned", normalMode),
+					dctl.NewChoice("support: every ping opens its own thread", supportMode),
+					dctl.NewChoice("ambient: the bot answers here without being mentioned", ambientMode),
+					dctl.NewChoice("off: the bot ignores this channel entirely", offMode),
 				),
 		)
 }

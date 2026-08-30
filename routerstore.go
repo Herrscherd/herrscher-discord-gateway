@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"sync"
 )
 
@@ -114,6 +115,25 @@ func (s *bindStore) Session(channel string) string {
 	return s.Channels[channel]
 }
 
+func (s *bindStore) SessionsIn(conv string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for slot, session := range s.Channels {
+		if convOfSlot(slot) == conv {
+			out = append(out, session)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func (s *bindStore) Parent(conv string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Parents[conv]
+}
+
 // Level returns the render level set on a conversation, or "" when none is — the
 // caller then falls back on the configured default.
 func (s *bindStore) Level(channel string) string {
@@ -205,12 +225,12 @@ func (s *bindStore) Bind(channel, session string) error {
 // BindThread binds a conversation the gateway opened for this job alone,
 // remembering the channel it hangs off so deleting that channel also ends this
 // job.
-func (s *bindStore) BindThread(channel, parent, session string) error {
+func (s *bindStore) BindThread(slot, conv, parent, session string) error {
 	return s.persist(func() {
-		s.Channels[channel] = session
-		s.Threads[channel] = true
+		s.Channels[slot] = session
+		s.Threads[conv] = true
 		if parent != "" {
-			s.Parents[channel] = parent
+			s.Parents[conv] = parent
 		}
 	})
 }
@@ -234,7 +254,11 @@ func (s *bindStore) Children(parent string) []string {
 // dead entry per deleted channel, forever.
 func (s *bindStore) Forget(channel string) error {
 	return s.persist(func() {
-		delete(s.Channels, channel)
+		for slot := range s.Channels {
+			if convOfSlot(slot) == channel {
+				delete(s.Channels, slot)
+			}
+		}
 		delete(s.Threads, channel)
 		delete(s.Levels, channel)
 		delete(s.Modes, channel)

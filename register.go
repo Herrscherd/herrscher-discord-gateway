@@ -48,7 +48,19 @@ func init() {
 			Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 			Config: []contracts.Setting{
 				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
-				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id the bot obeys (it reads everyone, acts only for this user)", Required: true},
+				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id that is always allowed, whatever the allowlists say"},
+				{Key: "allowed_users", Env: "DISCORD_ALLOWED_USERS", Help: "comma-separated Discord user ids allowed to make the bot act (`*` for everyone)"},
+				{Key: "allowed_roles", Env: "DISCORD_ALLOWED_ROLES", Help: "comma-separated Discord role ids allowed to make the bot act (guild messages only; a DM carries no role)"},
+				{Key: "allowed_channels", Env: "DISCORD_ALLOWED_CHANNELS", Help: "comma-separated channel ids the bot answers in, ignoring every other one (empty = every channel it can read)"},
+				{Key: "ignored_channels", Env: "DISCORD_IGNORED_CHANNELS", Help: "comma-separated channel ids the bot never answers in, whatever the rest allows"},
+				{Key: "allow_all_users", Env: "DISCORD_ALLOW_ALL_USERS", Help: "let anyone who can reach the bot make it act (default off; the allowlists are what a deployment is normally gated on)"},
+				{Key: "allow_bots", Env: "DISCORD_ALLOW_BOTS", Help: "whether other bots may make this one act: none (default) | mentions (only when they @mention it) | all"},
+				{Key: "require_mention", Env: "DISCORD_REQUIRE_MENTION", Help: "require an @mention in a channel (default true; a DM and a thread the gateway opened never need one)"},
+				{Key: "thread_require_mention", Env: "DISCORD_THREAD_REQUIRE_MENTION", Help: "require an @mention inside a thread the gateway opened too (default false)"},
+				{Key: "free_response_channels", Env: "DISCORD_FREE_RESPONSE_CHANNELS", Help: "comma-separated channel ids where the bot answers without being @mentioned (`*` for every channel; who may then make it act is still the allowlists)"},
+				{Key: "sessions_per_user", Env: "DISCORD_SESSIONS_PER_USER", Help: "give each participant of a channel their own session (default true; false puts the whole room in one shared session)"},
+				{Key: "thread_sessions_per_user", Env: "DISCORD_THREAD_SESSIONS_PER_USER", Help: "give each participant of a thread their own session (default false; a thread is one piece of work everyone in it shares)"},
+				{Key: "agent", Env: "DISCORD_AGENT", Help: "persona every session this gateway opens runs as, which is what gates its tools (required by /mode ambient)"},
 				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default for how much of a turn shows in-channel, overridable per conversation with /verbosity: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
@@ -71,9 +83,6 @@ func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
-	if owner == "" {
-		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: owner (DISCORD_USER_ID) is required — without it the bot would obey everyone")
-	}
 	// No default channel: the bot is bound to an operator, not to a room, and it
 	// always answers in the conversation it was addressed in. Global commands for
 	// the same reason — the bot follows its owner across every server it is in,
@@ -126,6 +135,25 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 			appID:           appID,
 			contextMessages: intSetting(cfg.Get("context_messages"), 30),
 			playbook:        strSetting(cfg.Get("playbook"), "pr-job"),
+			agent:           cfg.Get("agent"),
+			access: accessSettings{
+				users:    newIDSet(cfg.Get("allowed_users")),
+				roles:    newIDSet(cfg.Get("allowed_roles")),
+				channels: newIDSet(cfg.Get("allowed_channels")),
+				ignored:  newIDSet(cfg.Get("ignored_channels")),
+				allowAll: boolSetting(cfg.Get("allow_all_users")),
+				bots:     botsSetting(cfg.Get("allow_bots")),
+			},
+			address: addressPolicy{
+				appID:                appID,
+				requireMention:       switchSetting(cfg.Get("require_mention"), true),
+				threadRequireMention: switchSetting(cfg.Get("thread_require_mention"), false),
+				free:                 newIDSet(cfg.Get("free_response_channels")),
+			},
+			scope: sessionScope{
+				groupPerUser:  switchSetting(cfg.Get("sessions_per_user"), true),
+				threadPerUser: switchSetting(cfg.Get("thread_sessions_per_user"), false),
+			},
 		},
 	)
 	return contracts.GatewaySet{
@@ -196,6 +224,23 @@ func boolSetting(v string) bool {
 		return true
 	}
 	return false
+}
+
+func switchSetting(v string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	case "0", "false", "no", "off":
+		return false
+	}
+	return def
+}
+
+func botsSetting(v string) string {
+	if lower := strings.ToLower(strings.TrimSpace(v)); knownBotPolicy(lower) {
+		return lower
+	}
+	return botsNone
 }
 
 func strSetting(v, def string) string {
