@@ -21,4 +21,18 @@ type messageCreate struct {
 	// it is whatever the operator scrolled back to rather than something recent,
 	// so it is a name to re-read rather than content — see router.reference.
 	Referenced *dctl.Message `json:"referenced_message"`
+	Member     *guildMember  `json:"member"`
+}
+
+type guildMember struct {
+	Roles []string `json:"roles"`
+}
+
+func (m messageCreate) direct() bool { return m.GuildID == "" }
+
+func (m messageCreate) roleIDs() []string {
+	if m.Member == nil {
+		return nil
+	}
+	return m.Member.Roles
 }

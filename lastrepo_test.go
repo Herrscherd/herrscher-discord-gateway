@@ -23,7 +23,7 @@ func TestASecondRoomReusesTheLastRepoInsteadOfAsking(t *testing.T) {
 
 	// The operator answers the question once, in c1.
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	menusBefore := len(c.menus)
 	r.onMessage(context.Background(), pingIn("c2", "tu as accès au skill ?"))
@@ -45,7 +45,7 @@ func TestReusingTheLastRepoSaysWhichOne(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	r.onMessage(context.Background(), pingIn("c2", "une question"))
 
@@ -71,7 +71,7 @@ func TestTheReusedRepoStillReplaysThePing(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	r.onMessage(context.Background(), pingIn("c2", "la vraie question"))
 
@@ -102,7 +102,7 @@ func TestAVanishedRepoFallsBackToTheQuestion(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	ctrl.repos = []contracts.RepoRef{{Name: "autre-chose", Local: true}}
 	menusBefore := len(c.menus)
@@ -122,7 +122,7 @@ func TestANamedRepoStillBeatsTheRemembered(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "dctl", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	r.onMessage(context.Background(), pingIn("c2", "regarde dctl stp"))
 

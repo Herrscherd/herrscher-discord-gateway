@@ -24,7 +24,19 @@ interchangeable.
 | Key | Environment | Default | What it is |
 |---|---|---|---|
 | `token` | `DISCORD_BOT_TOKEN` | **required** | the bot token |
-| `owner` | `DISCORD_USER_ID` | **required** | the user the bot obeys |
+| `owner` | `DISCORD_USER_ID` | | the user the bot always obeys, whatever the allowlists say |
+| `allowed_users` | `DISCORD_ALLOWED_USERS` | | user ids allowed to make the bot act (`*` for anyone) |
+| `allowed_roles` | `DISCORD_ALLOWED_ROLES` | | role ids allowed to, guild messages only |
+| `allowed_channels` | `DISCORD_ALLOWED_CHANNELS` | every channel | the only channels it answers in |
+| `ignored_channels` | `DISCORD_IGNORED_CHANNELS` | | channels it never answers in, whatever the rest allows |
+| `allow_all_users` | `DISCORD_ALLOW_ALL_USERS` | off | let anyone who can reach the bot make it act |
+| `allow_bots` | `DISCORD_ALLOW_BOTS` | `none` | whether other bots count as people: `none`, `mentions`, `all` |
+| `require_mention` | `DISCORD_REQUIRE_MENTION` | on | need an @mention in a channel |
+| `thread_require_mention` | `DISCORD_THREAD_REQUIRE_MENTION` | off | need one inside a thread the gateway opened too |
+| `free_response_channels` | `DISCORD_FREE_RESPONSE_CHANNELS` | | channels it answers in unprompted (`*` for all) |
+| `sessions_per_user` | `DISCORD_SESSIONS_PER_USER` | on | each participant of a channel gets their own session |
+| `thread_sessions_per_user` | `DISCORD_THREAD_SESSIONS_PER_USER` | off | same inside a thread |
+| `agent` | `DISCORD_AGENT` | | the persona every session runs as, which is what gates its tools |
 | `verbosity` | `DISCORD_VERBOSITY` | `silent` | how much of a turn the channel sees, see below |
 | `context_messages` | `DISCORD_CONTEXT_MESSAGES` | `30` | how many messages of channel history a turn carries |
 | `playbook` | `DISCORD_PLAYBOOK` | `pr-job` | the playbook a session opens with |
@@ -81,11 +93,74 @@ nothing but the answer in a channel his team reads, and the env var can only say
 one of those, daemon-wide, until the next restart. A job that moves into a
 private thread takes its channel's level with it.
 
-## Owner-bound, not channel-bound
+## Who it answers, and when
 
 The gateway identifies with `GUILDS`, `GUILD_MESSAGES` and `DIRECT_MESSAGES`, all
-three non-privileged, and acts on a message only when the configured owner
-@mentions the bot or replies to it.
+three non-privileged. Every message it sees passes three gates, in this order,
+and a message that clears all three becomes a turn.
+
+**1. The mode of the room.** `/mode` puts one channel in one of four:
+
+| Mode | What the room does |
+|------|--------------------|
+| `normal` (default) | one session per room, pings answered under the ordinary rule |
+| `support` | every ping opens its own private thread, so the channel stays a queue |
+| `ambient` | the bot answers without being addressed at all |
+| `off` | the bot answers nothing here, even when @mentioned |
+
+A thread the gateway opened inherits the mode of the channel it hangs off. The
+mode survives a restart, in `discord-router.json` with everything else the room
+is remembered by.
+
+`ambient` is refused unless `agent` / `DISCORD_AGENT` names a persona. A bot that
+answers everyone in a room without being called is bounded by exactly one thing:
+the persona its sessions run as, which is what carries the tool allowlist, the
+MCP servers and the approval hook. Without one, ambient is a bot with no guard.
+
+**2. Was it meant for the bot.** An @mention or a reply to one of its own
+messages always counts. A DM always counts. A thread the gateway opened counts
+without a mention, unless `thread_require_mention` is on. A channel listed in
+`free_response_channels` counts without one too. Everything else needs a mention,
+unless `require_mention` is off.
+
+**3. May this person make it act.** In order: `owner`, then `allowed_users`, then
+`allowed_roles` (guild messages only, since a DM carries no role), then
+`allow_all_users`. If none of those are configured but `allowed_channels` is, the
+channel is the policy and everyone who can write there is allowed. If nothing at
+all is configured the bot refuses and warns once in the daemon log, rather than
+obeying whoever found it first. `ignored_channels` overrides everything, and
+`allow_bots` (`none` by default, or `mentions`, or `all`) decides whether other
+bots count as people, because two bots that answer each other is a loop.
+
+All four id lists take a comma-separated list of ids and accept `*` for "anyone".
+
+Two things these lists do not cover. `allowed_channels` and `ignored_channels`
+match a thread through the parent the gateway itself recorded, so a thread
+somebody else created under an ignored channel is not seen as belonging to it:
+Discord does not carry a parent on the message event. List such a thread by its
+own id if it matters. And this is a different question from `/allow`, which says
+who may run the bot's slash commands. These lists say who may make the bot
+*work*; the allow store says who may *drive* it.
+
+## One session per person, or one per room
+
+A channel gives each participant their own session by default, so two people
+pinging the same room are two conversations that never see each other's work. A
+thread does the opposite: it is one piece of work, and everyone in it shares one
+session. `sessions_per_user` and `thread_sessions_per_user` flip either rule.
+
+In a shared session every turn is prefixed with `[author]` and the opening turn
+says so, so the agent answers whoever just spoke instead of assuming the room is
+one person. A DM is neither: it is a room with one person in it.
+
+Deleting a room closes every session it held, not just one.
+
+## What the first ping decides
+
+Everyone's messages are context: the last `context_messages` messages of the
+channel are read over REST and carried into the turn, whoever wrote them. The
+first ping in an unknown channel is acked with ⏳ right away, since it may be
+answered by a question rather than by a turn. That ping decides two things:
 
 Everyone else's messages are never triggers, but the last `context_messages`
 messages of the channel are read over REST and carried into the turn, so the
@@ -232,7 +307,7 @@ rather than guesses when it cannot read the message back.
 
 ## The slash surface
 
-`/set`, `/session`, `/service`, `/allow`, `/stop` and `/verbosity` are registered
+`/set`, `/session`, `/service`, `/allow`, `/stop`, `/mode` and `/verbosity` are registered
 **globally**, on the application rather than on a server, so the bot carries its
 commands into every server it is invited to and no server has to be named in
 config. Discord takes up to an hour to propagate a change to a global command.

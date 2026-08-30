@@ -43,11 +43,11 @@ func TestAnInteractionNamesItsCallerToTheCore(t *testing.T) {
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
 		ChannelID: "c1",
-		Member:    dctl.Member{User: dctl.Author{ID: "1234"}},
+		Member:    dctl.Member{User: dctl.Author{ID: "owner1"}},
 		Data:      dctl.InteractionData{CustomID: BindCustomID("c1"), Values: []string{"local:herrscher"}},
 	})
 
-	if !reflect.DeepEqual(ctrl.principals, []string{"discord:1234"}) {
-		t.Fatalf("principals = %v, want [discord:1234]", ctrl.principals)
+	if !reflect.DeepEqual(ctrl.principals, []string{"discord:owner1"}) {
+		t.Fatalf("principals = %v, want [discord:owner1]", ctrl.principals)
 	}
 }
