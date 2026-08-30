@@ -125,9 +125,9 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	}
 	var msg string
 	if channel, ok := ParseBindCustomID(ix.Data.CustomID); ok {
-		msg = s.router.onBindPick(ctx, channel, value)
+		msg = s.router.onBindPick(ctx, channel, ix.UserID(), value)
 	} else if session, ok := ParseChoiceCustomID(ix.Data.CustomID); ok {
-		if msg = s.router.onChoicePick(ctx, session, value); msg == "" {
+		if msg = s.router.onChoicePick(ctx, session, ix.UserID(), ix.GuildID == "", value); msg == "" {
 			msg = "choix enregistré : " + value
 		}
 	} else {
@@ -250,20 +250,20 @@ func (s *slash) handleStop(ctx context.Context, ix dctl.Interaction) (dctl.Respo
 	if !s.gate(ctx, ix) {
 		return dctl.Response{}, nil
 	}
-	s.respond(ctx, ix, s.stop(ix.ChannelID))
+	s.respond(ctx, ix, s.stop(ix.ChannelID, ix.UserID(), ix.GuildID == ""))
 	return dctl.Response{}, nil
 }
 
 // stop cancels the turn running in the conversation the command was typed in.
 // It takes no session name on purpose: the operator asks for it from the room
-// the runaway turn is talking in, and that room already says which session it
-// is. Without it the only way out of a turn gone wrong is `/session close`,
-// which also throws away the worktree and everything in it.
-func (s *slash) stop(channel string) string {
+// the runaway turn is talking in, and that room plus who typed it already says
+// which session it is. Without it the only way out of a turn gone wrong is
+// `/session close`, which also throws away the worktree and everything in it.
+func (s *slash) stop(channel, user string, direct bool) string {
 	if s.ctrl == nil || s.router == nil {
 		return "session control is not available yet"
 	}
-	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel)) {
+	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
 		return "aucun tour en cours ici"
 	}
 	return "⏹️ tour interrompu — la conversation est gardée, dis-moi la suite"
@@ -313,22 +313,22 @@ func (s *slash) setMode(channel, mode string) string {
 		return "mode ambient refusé : il fait répondre le bot à tout le monde sans qu'on l'appelle, et rien ne borne ce qu'il peut faire tant qu'aucune persona n'est configurée. Renseigne DISCORD_AGENT puis réessaie."
 	}
 	if mode != normalMode {
-		if err := s.binds.Unbind(channel); err != nil {
+		if err := s.binds.UnbindAll(channel); err != nil {
 			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 		}
 	}
 	switch mode {
 	case supportMode:
 		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
-			"mode support : chaque ping ouvre son propre fil ici. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+			"mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
 	case ambientMode:
 		return saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
-			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
 	case offMode:
 		return saveNote(s.binds.SetMode(channel, offMode), "bind store",
-			"mode off : je ne réponds plus rien ici, même appelé. La session déjà liée à ce salon continue de tourner, `/session close` si tu n'en veux plus.")
+			"mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
 	}
-	return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : ce salon porte une seule conversation, et il faut m'appeler")
+	return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session")
 }
 
 func (s *slash) agent() string {

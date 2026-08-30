@@ -498,13 +498,17 @@ func repoValue(r contracts.RepoRef) string {
 // onBindPick answers the repo question: create the session on the picked target,
 // adopting this channel, remember the binding, then replay the buffered ping. It
 // returns the text the click is acknowledged with.
-func (r *router) onBindPick(ctx context.Context, channel, value string) string {
+func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil {
 		return "le contrôleur de sessions n'est pas encore prêt"
 	}
 	r.mu.Lock()
 	m, buffered := r.pending[channel]
+	if buffered && user != "" && m.Author.ID != "" && m.Author.ID != user {
+		r.mu.Unlock()
+		return "ce menu répond à la question de <@" + m.Author.ID + ">"
+	}
 	j, known := r.jobs[channel]
 	delete(r.pending, channel)
 	delete(r.jobs, channel)
@@ -527,20 +531,18 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 
 // onChoicePick routes an agent's pending-choice answer back to its session. It
 // returns the acknowledgement text, empty when the pick landed.
-func (r *router) onChoicePick(_ context.Context, id, value string) string {
+func (r *router) onChoicePick(_ context.Context, id, user string, direct bool, value string) string {
 	ctrl := r.ctrl()
-	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id), value) {
+	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id, user, direct), value) {
 		return "cette session n'est plus active"
 	}
 	return ""
 }
 
-// sessionOf resolves a choice menu's custom_id payload to the session that must
-// receive the pick. Gateway.Menu stamps the conversation it posted into, so the
-// payload is usually a channel id: the binding store answers for channels this
-// router drives, the live session list for channels created by `/session
-// create`. An id that matches neither is already a session name.
-func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
+func (r *router) sessionOf(ctrl contracts.SessionControl, id, user string, direct bool) string {
+	if s := r.binds.Session(r.cfg.scope.slot(r.chatType(id, direct), id, user)); s != "" {
+		return s
+	}
 	if s := r.binds.Session(id); s != "" {
 		return s
 	}

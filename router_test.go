@@ -140,7 +140,7 @@ func TestAskAcksThePingItIsAnswering(t *testing.T) {
 	}
 	// The turn that follows the pick reuses that same ⏳ rather than adding one,
 	// and clears it exactly once when the turn ends.
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 	s := r.sinks.at("c1")
 	s.handle(contracts.Event{T: "human"})
 	if len(f.reacted) != 1 {
@@ -223,7 +223,7 @@ func TestPickCreatesBindsAndReplaysTheMessage(t *testing.T) {
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	if len(ctrl.created) != 1 {
 		t.Fatalf("created = %+v, want one session", ctrl.created)
@@ -248,7 +248,7 @@ func TestRemotePickClonesInsteadOfProject(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "Herrscherd/dctl"}}
 	r.onMessage(context.Background(), ownerPing("bug"))
-	r.onBindPick(context.Background(), "c1", "remote:Herrscherd/dctl")
+	r.onBindPick(context.Background(), "c1", "", "remote:Herrscherd/dctl")
 
 	if spec := ctrl.created[0]; spec.Clone != "Herrscherd/dctl" || spec.Project != "" {
 		t.Fatalf("spec = %+v, want a clone", spec)
@@ -343,7 +343,7 @@ func TestSecondPingReplacesTheBufferedMessage(t *testing.T) {
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("first"))
 	r.onMessage(context.Background(), ownerPing("second"))
-	r.onBindPick(context.Background(), "c1", "local:herrscher")
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	got := ctrl.submitted[ctrl.created[0].Name]
 	if len(got) != 1 || !strings.Contains(got[0].Text, "second") || strings.Contains(got[0].Text, "first") {
@@ -391,7 +391,7 @@ func TestChoicePickResolvesTheChannelToItsSession(t *testing.T) {
 	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
-	if msg := r.onChoicePick(context.Background(), "c1", "yes"); msg != "" {
+	if msg := r.onChoicePick(context.Background(), "c1", "", true, "yes"); msg != "" {
 		t.Fatalf("pick on a bound channel = %q, want it to land", msg)
 	}
 	if got := ctrl.picked["ch-c1"]; len(got) != 1 || got[0] != "yes" {
@@ -402,7 +402,7 @@ func TestChoicePickResolvesTheChannelToItsSession(t *testing.T) {
 	// is what maps its channel back to its name.
 	ctrl.live["demo"] = true
 	ctrl.sessions = []contracts.SessionInfo{{Name: "demo", ChannelID: "c9"}}
-	if msg := r.onChoicePick(context.Background(), "c9", "no"); msg != "" {
+	if msg := r.onChoicePick(context.Background(), "c9", "", true, "no"); msg != "" {
 		t.Fatalf("pick on a command-created session = %q, want it to land", msg)
 	}
 	if got := ctrl.picked["demo"]; len(got) != 1 || got[0] != "no" {
@@ -732,7 +732,7 @@ func TestPickOnADeadSessionReportsIt(t *testing.T) {
 	if err := r.binds.Bind("c1", "ch-dead"); err != nil {
 		t.Fatal(err)
 	}
-	if msg := r.onChoicePick(context.Background(), "ch-dead", "yes"); msg == "" {
+	if msg := r.onChoicePick(context.Background(), "ch-dead", "", true, "yes"); msg == "" {
 		t.Fatal("a pick on a dead session must tell the operator, not fail silently")
 	}
 }

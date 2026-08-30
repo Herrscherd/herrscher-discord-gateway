@@ -172,3 +172,59 @@ func TestDeletingAChannelClosesEveryonesSession(t *testing.T) {
 		t.Fatalf("bindings survived the room: %v", got)
 	}
 }
+
+func TestChoicePickGoesToTheSessionOfWhoeverClicked(t *testing.T) {
+	r, ctrl, _ := newGuildRouter(t, nil)
+	r.binds.SetLastRepo("local:herrscher")
+	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
+	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
+	for _, si := range ctrl.Sessions() {
+		ctrl.live[si.Name] = true
+	}
+
+	if msg := r.onChoicePick(context.Background(), "c1", "u2", false, "yes"); msg != "" {
+		t.Fatalf("onChoicePick = %q, want the pick to land", msg)
+	}
+	mine := r.binds.Session(r.cfg.scope.slot(chatChannel, "c1", "u2"))
+	if mine == "" {
+		t.Fatal("u2 holds no session in c1")
+	}
+	if got := ctrl.picked[mine]; len(got) != 1 || got[0] != "yes" {
+		t.Fatalf("picked = %v, want u2's own session to have received the answer", ctrl.picked)
+	}
+}
+
+func TestRepoMenuOnlyAnswersTheOneWhoAsked(t *testing.T) {
+	r, ctrl, _ := newGuildRouter(t, nil)
+	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
+
+	if msg := r.onBindPick(context.Background(), "c1", "u2", "local:herrscher"); !strings.Contains(msg, "u1") {
+		t.Fatalf("onBindPick = %q, want it to point back at who asked", msg)
+	}
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want a stranger's click to open nothing", ctrl.created)
+	}
+	if msg := r.onBindPick(context.Background(), "c1", "u1", "local:herrscher"); strings.Contains(msg, "u1") {
+		t.Fatalf("onBindPick = %q, want the asker's own click to go through", msg)
+	}
+	if len(ctrl.created) != 1 {
+		t.Fatalf("created = %+v, want the asker's click to open the session", ctrl.created)
+	}
+}
+
+func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
+	r, ctrl, _ := newGuildRouter(t, nil)
+	r.binds.SetLastRepo("local:herrscher")
+	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
+	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
+	if got := r.binds.SessionsIn("c1"); len(got) != 2 {
+		t.Fatalf("SessionsIn = %v, want one per participant", got)
+	}
+
+	s := &slash{ctx: context.Background(), binds: r.binds, router: r, ctrl: ctrl}
+	s.setMode("c1", supportMode)
+
+	if got := r.binds.SessionsIn("c1"); len(got) != 0 {
+		t.Fatalf("SessionsIn = %v, want the room unbound so the new mode routes fresh", got)
+	}
+}
