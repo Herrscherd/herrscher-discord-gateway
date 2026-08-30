@@ -17,6 +17,19 @@ type routerConfig struct {
 	appID           string // the bot's own application id
 	contextMessages int    // how many prior channel messages to carry as context
 	playbook        string // skill name the opening turn is told to follow
+	agent           string
+	access          accessSettings
+	address         addressPolicy
+	scope           sessionScope
+}
+
+type accessSettings struct {
+	users    idSet
+	roles    idSet
+	channels idSet
+	ignored  idSet
+	allowAll bool
+	bots     string
 }
 
 // selectMenuMax is Discord's hard cap on options in one select menu.
@@ -31,6 +44,9 @@ const selectMenuMax = 25
 const turnRule = "Rappel : ton travail s'arrête à la fin de ce tour, rien ne continue en tâche de fond. " +
 	"Fais le travail maintenant et rends le résultat, ou dis ce qui bloque — n'annonce jamais un travail « lancé » ou « en cours » pour plus tard.\n\n"
 
+const sharedRule = "Session partagée : plusieurs personnes écrivent dans cette conversation. " +
+	"Chaque message est préfixé par [auteur] ; réponds à qui vient de parler, sans supposer que c'est toujours la même personne.\n\n"
+
 // router turns a Discord message into a core turn. It owns every Discord-shaped
 // decision the flow needs — who may trigger, which session a channel belongs to,
 // what context to carry, how a repo question is asked and answered — so the core
@@ -41,7 +57,7 @@ type router struct {
 	binds *bindStore
 	sinks *sinks
 	cfg   routerConfig
-	trig  trigger
+	acl   *accessPolicy
 
 	mu      sync.Mutex
 	pending map[string]messageCreate // conversation id -> the ping awaiting a repo answer
@@ -56,37 +72,76 @@ type job struct {
 	conv   string
 	thread bool
 	parent string
+	slot   string
+	shared bool
 }
 
-// supportMode is the mode of a channel that opens a thread per ping instead of
-// holding one conversation of its own.
-const supportMode = "support"
-
 func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, cfg routerConfig) *router {
+	if cfg.address.appID == "" {
+		cfg.address.appID = cfg.appID
+	}
 	return &router{
-		ctrl:    ctrl,
-		c:       c,
-		binds:   binds,
-		sinks:   sinks,
-		cfg:     cfg,
-		trig:    trigger{owner: cfg.owner, appID: cfg.appID},
+		ctrl:  ctrl,
+		c:     c,
+		binds: binds,
+		sinks: sinks,
+		cfg:   cfg,
+		acl: &accessPolicy{
+			owner:    cfg.owner,
+			selfID:   cfg.appID,
+			users:    cfg.access.users,
+			roles:    cfg.access.roles,
+			channels: cfg.access.channels,
+			ignored:  cfg.access.ignored,
+			allowAll: cfg.access.allowAll,
+			bots:     cfg.access.bots,
+		},
 		pending: map[string]messageCreate{},
 		jobs:    map[string]job{},
 	}
 }
 
-// onMessage is the single entry point from the websocket. Everything that is not
-// the owner addressing the bot stops here, before any core call.
-func (r *router) onMessage(ctx context.Context, m messageCreate) {
-	if !r.trig.fires(m, r.binds.IsThread(m.ChannelID)) {
-		return
+func (r *router) chatType(conv string, direct bool) string {
+	switch {
+	case direct:
+		return chatDM
+	case r.binds.IsThread(conv):
+		return chatThread
+	default:
+		return chatChannel
 	}
+}
+
+func (r *router) mode(conv, parent string) string {
+	if v := r.binds.Mode(conv); v != "" {
+		return v
+	}
+	if parent != "" {
+		return r.binds.Mode(parent)
+	}
+	return normalMode
+}
+
+func (r *router) onMessage(ctx context.Context, m messageCreate) {
 	ctrl := r.ctrl()
 	if ctrl == nil {
 		return
 	}
+	parent := r.binds.Parent(m.ChannelID)
+	mode := r.mode(m.ChannelID, parent)
+	if mode == offMode {
+		return
+	}
+	chatType := r.chatType(m.ChannelID, m.direct())
+	if mode != ambientMode && !r.cfg.address.addressed(m, chatType, parent) {
+		return
+	}
+	if !r.acl.permits(m, parent, r.cfg.address.mentioned(m)) {
+		return
+	}
 	m = r.hydrate(ctx, m)
-	if session := r.binds.Session(m.ChannelID); session != "" {
+	slot := r.cfg.scope.slot(chatType, m.ChannelID, m.Author.ID)
+	if session := r.binds.Session(slot); session != "" {
 		// A ping that asks for a private thread gets one here too. Only ask()
 		// used to read that request, so a channel that already had a session
 		// swallowed it and answered in public — which is the one outcome asking
@@ -94,13 +149,13 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 		if r.fork(ctx, ctrl, session, m) {
 			return
 		}
-		if r.submit(ctx, ctrl, session, m.ChannelID, m, false) {
+		if r.submit(ctx, ctrl, session, m.ChannelID, m, false, r.cfg.scope.multiUser(chatType)) {
 			return
 		}
 		// The session is gone (daemon restarted, session closed out of band).
 		// Drop the stale binding and fall through to ask again, so a restart
 		// mid-conversation costs one question rather than silence.
-		_ = r.binds.Unbind(m.ChannelID)
+		_ = r.binds.Unbind(slot)
 	}
 	r.ask(ctx, ctrl, m)
 }
@@ -147,7 +202,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	// Where the job lives: this channel, or a private thread when the ping asks
 	// for one. Everything below is keyed on it — the binding, the menu, the
 	// session's own channel — so the whole job stays in one place.
-	j := r.conversation(ctx, m)
+	j := r.place(ctx, m)
 	// The ping is taken. Mark it now, in the channel it was written in: behind a
 	// question, or at the silent level, there is nothing else to show, and an
 	// unmarked ping reads as ignored.
@@ -234,6 +289,20 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 // was asked in. That fallback is said out loud rather than taken silently: work
 // asked for in private landing in a room other people read is the one outcome
 // the request was about.
+func (r *router) place(ctx context.Context, m messageCreate) job {
+	j := r.conversation(ctx, m)
+	chatType := chatChannel
+	switch {
+	case m.direct():
+		chatType = chatDM
+	case j.thread:
+		chatType = chatThread
+	}
+	j.slot = r.cfg.scope.slot(chatType, j.conv, m.Author.ID)
+	j.shared = r.cfg.scope.multiUser(chatType)
+	return j
+}
+
 func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	here := job{conv: m.ChannelID, parent: m.ChannelID}
 	// Already inside a thread the gateway opened — its session died and is being
@@ -264,7 +333,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	if err == nil && id != "" {
 		// A thread the operator is not a member of is a room only the bot can
 		// read, which is no better than not having one.
-		if err = r.c.AddThreadMember(ctx, id, r.cfg.owner); err == nil {
+		if err = r.c.AddThreadMember(ctx, id, m.Author.ID); err == nil {
 			r.inherit(m.ChannelID, id)
 			// Say where the work went. The answer will be posted in the thread, so
 			// without a line here the channel shows a ping, a ⏳ that clears minutes
@@ -312,7 +381,7 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 	if !ok {
 		return false
 	}
-	j := r.conversation(ctx, m)
+	j := r.place(ctx, m)
 	if !j.thread {
 		// The thread could not be opened, and conversation() already said so in
 		// the channel. The job stays on the session already bound here: the one
@@ -350,10 +419,14 @@ func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
 // binding and replays the ping. It returns the text the operator should be told,
 // empty when the session started and the work speaks for itself.
 func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job, value string, m messageCreate, buffered bool) string {
+	if j.slot == "" {
+		j.slot = j.conv
+	}
 	spec := contracts.CreateSession{
-		Name:      sessionNameFor(j.conv),
+		Name:      sessionNameFor(j.slot),
 		ChannelID: j.conv,
 		Gateways:  []string{"discord"},
+		Agent:     r.cfg.agent,
 	}
 	if target, ok := strings.CutPrefix(value, "local:"); ok {
 		spec.Project = target
@@ -365,11 +438,11 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 	if _, err := ctrl.Create(ctx, spec); err != nil {
 		return "création de session impossible : " + err.Error()
 	}
-	save := func(conv, session string) error { return r.binds.Bind(conv, session) }
+	save := func(slot, session string) error { return r.binds.Bind(slot, session) }
 	if j.thread {
-		save = func(conv, session string) error { return r.binds.BindThread(conv, j.parent, session) }
+		save = func(slot, session string) error { return r.binds.BindThread(slot, j.conv, j.parent, session) }
 	}
-	if err := save(j.conv, spec.Name); err != nil {
+	if err := save(j.slot, spec.Name); err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 	}
 	// The room now knows what it works on, so the next ping opens its thread
@@ -386,7 +459,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
 	}
 	if buffered {
-		r.submit(ctx, ctrl, spec.Name, j.conv, m, true)
+		r.submit(ctx, ctrl, spec.Name, j.conv, m, true, j.shared)
 	}
 	return ""
 }
@@ -425,13 +498,17 @@ func repoValue(r contracts.RepoRef) string {
 // onBindPick answers the repo question: create the session on the picked target,
 // adopting this channel, remember the binding, then replay the buffered ping. It
 // returns the text the click is acknowledged with.
-func (r *router) onBindPick(ctx context.Context, channel, value string) string {
+func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil {
 		return "le contrôleur de sessions n'est pas encore prêt"
 	}
 	r.mu.Lock()
 	m, buffered := r.pending[channel]
+	if buffered && user != "" && m.Author.ID != "" && m.Author.ID != user {
+		r.mu.Unlock()
+		return "ce menu répond à la question de <@" + m.Author.ID + ">"
+	}
 	j, known := r.jobs[channel]
 	delete(r.pending, channel)
 	delete(r.jobs, channel)
@@ -454,20 +531,18 @@ func (r *router) onBindPick(ctx context.Context, channel, value string) string {
 
 // onChoicePick routes an agent's pending-choice answer back to its session. It
 // returns the acknowledgement text, empty when the pick landed.
-func (r *router) onChoicePick(_ context.Context, id, value string) string {
+func (r *router) onChoicePick(_ context.Context, id, user string, direct bool, value string) string {
 	ctrl := r.ctrl()
-	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id), value) {
+	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id, user, direct), value) {
 		return "cette session n'est plus active"
 	}
 	return ""
 }
 
-// sessionOf resolves a choice menu's custom_id payload to the session that must
-// receive the pick. Gateway.Menu stamps the conversation it posted into, so the
-// payload is usually a channel id: the binding store answers for channels this
-// router drives, the live session list for channels created by `/session
-// create`. An id that matches neither is already a session name.
-func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
+func (r *router) sessionOf(ctrl contracts.SessionControl, id, user string, direct bool) string {
+	if s := r.binds.Session(r.cfg.scope.slot(r.chatType(id, direct), id, user)); s != "" {
+		return s
+	}
 	if s := r.binds.Session(id); s != "" {
 		return s
 	}
@@ -484,7 +559,7 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, id string) string {
 // into a private thread is driven by pings that may still land in the parent
 // channel. opening marks the first turn of a freshly created session, which is
 // where the playbook is named. It reports whether a live session accepted it.
-func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening bool) bool {
+func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening, shared bool) bool {
 	// Resolved once: the message this ping replies to feeds both the turn text
 	// and its attachments, and re-reading it for each would cost a second call.
 	ref := r.reference(ctx, m)
@@ -492,7 +567,7 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 		Conversation: contracts.Conversation{Gateway: "discord", ID: conv},
 		Author:       m.Author.Username,
 		AuthorID:     m.Author.ID,
-		Text:         r.compose(ctx, m, ref, opening),
+		Text:         r.compose(ctx, m, ref, opening, shared),
 		Attachments:  attachmentsOf(m, ref),
 		MessageID:    contracts.MessageID(m.ID),
 	}
@@ -512,8 +587,11 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 // instruction. Assembling context here is what keeps the core agnostic — it
 // receives one opaque string. The quote sits closest to the instruction because
 // that is what the instruction is usually about.
-func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message, opening bool) string {
+func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message, opening, shared bool) string {
 	var b strings.Builder
+	if shared && opening {
+		b.WriteString(sharedRule)
+	}
 	if lines := r.context(ctx, m); lines != "" {
 		b.WriteString("Contexte du salon (messages précédents, tous auteurs) :\n")
 		b.WriteString(lines)
@@ -527,6 +605,9 @@ func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message
 		fmt.Fprintf(&b, "Pour finir ce travail, suis la skill %q.\n\n", r.cfg.playbook)
 	}
 	b.WriteString(turnRule)
+	if shared {
+		fmt.Fprintf(&b, "[%s] ", m.Author.Username)
+	}
 	b.WriteString(m.Content)
 	return b.String()
 }
@@ -559,10 +640,6 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 	}
 	return b.String()
 }
-
-// sessionNameFor derives a stable session name from a channel id, so a restart
-// re-binds the same name and it can never collide with an operator-named session.
-func sessionNameFor(channel string) string { return "ch-" + channel }
 
 // post is a best-effort operator-facing message in a channel.
 func (r *router) post(ctx context.Context, channel, text string) {

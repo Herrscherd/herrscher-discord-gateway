@@ -174,7 +174,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 	ctrl.live["ch-c1"] = true
 	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
 
-	if got := s.stop("c1"); !strings.Contains(got, "interrompu") {
+	if got := s.stop("c1", "", true); !strings.Contains(got, "interrompu") {
 		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
 	}
 	if !reflect.DeepEqual(ctrl.interrupted, []string{"ch-c1"}) {
@@ -187,7 +187,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
-	if got := s.stop("c1"); !strings.Contains(got, "aucun tour") {
+	if got := s.stop("c1", "", true); !strings.Contains(got, "aucun tour") {
 		t.Fatalf("stop = %q, want it to report no live turn", got)
 	}
 }
