@@ -127,6 +127,20 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowStorePath()), binds)
 	// The router reads the controller through a closure because it is bound after
 	// the plugin is built (BindSessionControl), not before.
+	address := defaultAddress(appID)
+	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
+	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
+	address.free = newIDSet(cfg.Get("free_response_channels"))
+
+	scope := defaultScope()
+	scope.groupPerUser = switchSetting(cfg.Get("sessions_per_user"), scope.groupPerUser)
+	scope.threadPerUser = switchSetting(cfg.Get("thread_sessions_per_user"), scope.threadPerUser)
+
+	agent := cfg.Get("agent")
+	if !address.free.empty() && agent == "" {
+		fmt.Fprintln(os.Stderr, "discord gateway: free_response_channels is set with no agent configured, so the bot answers unprompted there with no persona gating its tools")
+	}
+
 	gw.slash.router = newRouter(
 		func() contracts.SessionControl { return gw.slash.ctrl },
 		discordClient{c}, binds, s,
@@ -135,7 +149,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 			appID:           appID,
 			contextMessages: intSetting(cfg.Get("context_messages"), 30),
 			playbook:        strSetting(cfg.Get("playbook"), "pr-job"),
-			agent:           cfg.Get("agent"),
+			agent:           agent,
 			access: accessSettings{
 				users:    newIDSet(cfg.Get("allowed_users")),
 				roles:    newIDSet(cfg.Get("allowed_roles")),
@@ -144,16 +158,8 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 				allowAll: boolSetting(cfg.Get("allow_all_users")),
 				bots:     botsSetting(cfg.Get("allow_bots")),
 			},
-			address: addressPolicy{
-				appID:                appID,
-				requireMention:       switchSetting(cfg.Get("require_mention"), true),
-				threadRequireMention: switchSetting(cfg.Get("thread_require_mention"), false),
-				free:                 newIDSet(cfg.Get("free_response_channels")),
-			},
-			scope: sessionScope{
-				groupPerUser:  switchSetting(cfg.Get("sessions_per_user"), true),
-				threadPerUser: switchSetting(cfg.Get("thread_sessions_per_user"), false),
-			},
+			address: address,
+			scope:   scope,
 		},
 	)
 	return contracts.GatewaySet{

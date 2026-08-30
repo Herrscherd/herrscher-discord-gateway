@@ -274,3 +274,13 @@ func (s *bindStore) Forget(channel string) error {
 func (s *bindStore) Unbind(channel string) error {
 	return s.persist(func() { delete(s.Channels, channel) })
 }
+
+func (s *bindStore) UnbindAll(conv string) error {
+	return s.persist(func() {
+		for slot := range s.Channels {
+			if convOfSlot(slot) == conv {
+				delete(s.Channels, slot)
+			}
+		}
+	})
+}

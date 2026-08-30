@@ -134,6 +134,14 @@ bots count as people, because two bots that answer each other is a loop.
 
 All four id lists take a comma-separated list of ids and accept `*` for "anyone".
 
+Two things these lists do not cover. `allowed_channels` and `ignored_channels`
+match a thread through the parent the gateway itself recorded, so a thread
+somebody else created under an ignored channel is not seen as belonging to it:
+Discord does not carry a parent on the message event. List such a thread by its
+own id if it matters. And this is a different question from `/allow`, which says
+who may run the bot's slash commands. These lists say who may make the bot
+*work*; the allow store says who may *drive* it.
+
 ## One session per person, or one per room
 
 A channel gives each participant their own session by default, so two people
