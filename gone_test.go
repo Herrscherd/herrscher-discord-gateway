@@ -80,7 +80,7 @@ func TestDeletedUnboundConversationClosesNothing(t *testing.T) {
 // a sweep that missed it would leave the feature useless where it matters most.
 func TestDeletedChannelClosesTheSessionsOfItsThreads(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
-	if err := r.binds.BindThread("t1", "c1", "ch-t1"); err != nil {
+	if err := r.binds.BindThread("t1", "t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	ctrl.live["ch-t1"] = true

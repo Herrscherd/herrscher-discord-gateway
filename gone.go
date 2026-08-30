@@ -47,10 +47,10 @@ func (r *router) onChannelGone(ctx context.Context, id string) {
 }
 
 func (r *router) endConversation(ctx context.Context, id string) {
-	session := r.binds.Session(id)
+	sessions := r.binds.SessionsIn(id)
 	r.forget(id)
 	r.sinks.drop(id)
-	if session == "" {
+	if len(sessions) == 0 {
 		return
 	}
 	if err := r.binds.Forget(id); err != nil {
@@ -60,11 +60,10 @@ func (r *router) endConversation(ctx context.Context, id string) {
 	if ctrl == nil {
 		return
 	}
-	// Stop the in-flight turn before closing. Its answer has nowhere to go, and a
-	// close that races a running backend is a close fighting a process that is
-	// still writing to the worktree it is trying to remove.
-	ctrl.Interrupt(session)
-	closeGone(ctx, ctrl, session, id)
+	for _, session := range sessions {
+		ctrl.Interrupt(session)
+		closeGone(ctx, ctrl, session, id)
+	}
 }
 
 // closeGone closes the session, preferring the non-destructive close and falling
