@@ -2,7 +2,9 @@ package discord
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -23,7 +25,11 @@ type allowStore struct {
 
 func newAllowStore(path string) *allowStore {
 	s := &allowStore{path: path, Session: map[string][]string{}}
-	if data, err := os.ReadFile(path); err == nil {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(os.Stderr, "discord gateway: allow store %s is unreadable, starting with an empty allowlist: %v\n", path, err)
+	}
+	if err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			// A corrupt store must not silently degrade to an empty (allow-everyone)
 			// store: surface it so the operator can fix the file, and keep the
