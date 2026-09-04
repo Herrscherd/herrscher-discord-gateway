@@ -87,6 +87,11 @@ func TestListUsers(t *testing.T) {
 	}
 }
 
+func testAllowStore(t *testing.T) *allowStore {
+	t.Helper()
+	return newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
+}
+
 // fakeAcker records the acknowledgement a component click is answered with.
 type fakeAcker struct{ acked []string }
 
@@ -99,7 +104,7 @@ func TestComponentInteractionRoutesToPickNotTheRegistry(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.live["ch-c1"] = true
 	ack := &fakeAcker{}
-	s := &slash{ctx: context.Background(), router: r, comp: ack}
+	s := &slash{ctx: context.Background(), router: r, comp: ack, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -119,7 +124,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix it"))
-	s := &slash{ctx: context.Background(), router: r, comp: &fakeAcker{}}
+	s := &slash{ctx: context.Background(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -137,7 +142,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 func TestUnknownComponentIsDropped(t *testing.T) {
 	r, _, _ := newTestRouter(t)
 	ack := &fakeAcker{}
-	s := &slash{ctx: context.Background(), router: r, comp: ack}
+	s := &slash{ctx: context.Background(), router: r, comp: ack, allow: testAllowStore(t)}
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type: dctl.InteractionComponent,
 		Data: dctl.InteractionData{CustomID: "someone-elses-menu", Values: []string{"x"}},
@@ -351,5 +356,43 @@ func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the sync outlived the daemon it belongs to")
+	}
+}
+
+func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
+	cases := []struct {
+		name    string
+		allowed string
+		caller  string
+		want    bool
+	}{
+		{"allowed caller answers the menu", "u1", "u1", true},
+		{"stranger is refused", "u1", "u2", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, ctrl, _ := newTestRouter(t)
+			ctrl.live["ch-c1"] = true
+			allow := testAllowStore(t)
+			if err := allow.AddGlobal(tc.allowed); err != nil {
+				t.Fatal(err)
+			}
+			ack := &fakeAcker{}
+			s := &slash{ctx: context.Background(), router: r, comp: ack, allow: allow}
+
+			s.onInteraction(context.Background(), dctl.Interaction{
+				Type:      dctl.InteractionComponent,
+				ChannelID: "c1",
+				Member:    dctl.Member{User: dctl.Author{ID: tc.caller}},
+				Data:      dctl.InteractionData{CustomID: ChoiceCustomID("ch-c1"), Values: []string{"yes"}},
+			})
+
+			if got := len(ctrl.picked["ch-c1"]) == 1; got != tc.want {
+				t.Fatalf("picked = %v, want answered = %v", ctrl.picked, tc.want)
+			}
+			if len(ack.acked) != 1 {
+				t.Fatalf("acked = %v, want the click acknowledged", ack.acked)
+			}
+		})
 	}
 }

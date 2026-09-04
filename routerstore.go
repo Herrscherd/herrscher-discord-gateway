@@ -218,6 +218,15 @@ func (s *bindStore) IsThread(channel string) bool {
 	return s.Threads[channel]
 }
 
+func (s *bindStore) MarkThread(conv, parent string) error {
+	return s.persist(func() {
+		s.Threads[conv] = true
+		if parent != "" {
+			s.Parents[conv] = parent
+		}
+	})
+}
+
 func (s *bindStore) Bind(channel, session string) error {
 	return s.persist(func() { s.Channels[channel] = session })
 }

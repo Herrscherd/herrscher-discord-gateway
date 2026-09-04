@@ -319,7 +319,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	if r.binds.Mode(m.ChannelID) == supportMode {
 		id, err := r.c.StartThread(ctx, m.ChannelID, m.ID, threadName(m.Content))
 		if err == nil && id != "" {
-			r.inherit(m.ChannelID, id)
+			r.adoptThread(m.ChannelID, id)
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 		fmt.Fprintf(os.Stderr, "discord gateway: support thread in channel %s: %v\n", m.ChannelID, err)
@@ -334,7 +334,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 		// A thread the operator is not a member of is a room only the bot can
 		// read, which is no better than not having one.
 		if err = r.c.AddThreadMember(ctx, id, m.Author.ID); err == nil {
-			r.inherit(m.ChannelID, id)
+			r.adoptThread(m.ChannelID, id)
 			// Say where the work went. The answer will be posted in the thread, so
 			// without a line here the channel shows a ping, a ⏳ that clears minutes
 			// later, and nothing else — the operator has to guess that a room they
@@ -353,11 +353,10 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 	return here
 }
 
-// inherit carries a channel's render level into a thread just opened off it: the
-// operator set that level for this work, and the work just walked into another
-// room. A channel on the configured default passes nothing on, so the thread
-// falls back on the same default.
-func (r *router) inherit(channel, thread string) {
+func (r *router) adoptThread(channel, thread string) {
+	if err := r.binds.MarkThread(thread, channel); err != nil {
+		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+	}
 	lv := r.binds.Level(channel)
 	if lv == "" {
 		return
@@ -505,19 +504,24 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 	}
 	r.mu.Lock()
 	m, buffered := r.pending[channel]
-	if buffered && user != "" && m.Author.ID != "" && m.Author.ID != user {
+	owner := ""
+	if buffered {
+		owner = m.Author.ID
+	}
+	if owner != "" && user != "" && owner != user {
 		r.mu.Unlock()
-		return "ce menu répond à la question de <@" + m.Author.ID + ">"
+		return "ce menu répond à la question de <@" + owner + ">"
+	}
+	if owner == "" && !r.acl.authorizes(messageCreate{Author: dctl.Author{ID: user}}) {
+		r.mu.Unlock()
+		return "tu n'es pas autorisé à répondre à ce menu"
 	}
 	j, known := r.jobs[channel]
 	delete(r.pending, channel)
 	delete(r.jobs, channel)
 	r.mu.Unlock()
 	if !known {
-		// The menu outlived the router's memory of it — a restart between the
-		// question and the click. The conversation the menu was posted in is still
-		// where the work belongs.
-		j = job{conv: channel, parent: channel}
+		j = r.replaceLostJob(channel, user)
 	}
 
 	if msg := r.bind(ctx, ctrl, j, value, m, buffered); msg != "" {
@@ -527,6 +531,25 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
+}
+
+func (r *router) replaceLostJob(channel, user string) job {
+	parent := r.binds.Parent(channel)
+	thread := r.binds.IsThread(channel)
+	if parent == "" {
+		parent = channel
+	}
+	chatType := chatChannel
+	if thread {
+		chatType = chatThread
+	}
+	return job{
+		conv:   channel,
+		parent: parent,
+		thread: thread,
+		slot:   r.cfg.scope.slot(chatType, channel, user),
+		shared: r.cfg.scope.multiUser(chatType),
+	}
 }
 
 // onChoicePick routes an agent's pending-choice answer back to its session. It
@@ -631,7 +654,7 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 		}
 		// A message with no text is not an empty message: a bot reports through
 		// embeds, and skipping those made a whole channel of them invisible.
-		if body := strings.TrimSpace(prev.Content); body != "" {
+		if body := flattenLines(strings.TrimSpace(prev.Content)); body != "" {
 			fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, body)
 		}
 		for _, line := range describe(prev) {
