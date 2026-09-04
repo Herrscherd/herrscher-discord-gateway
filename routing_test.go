@@ -228,3 +228,66 @@ func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
 		t.Fatalf("SessionsIn = %v, want the room unbound so the new mode routes fresh", got)
 	}
 }
+
+func TestRepoMenuOutlivingItsPendingPingStaysOwned(t *testing.T) {
+	cases := []struct {
+		name       string
+		clicker    string
+		wantCreate int
+	}{
+		{"stranger clicks the orphaned menu", "u2", 0},
+		{"an authorized user clicks it", "u1", 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, ctrl, _ := newGuildRouter(t, func(cfg *routerConfig) {
+				cfg.access = accessSettings{users: newIDSet("u1")}
+			})
+			r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
+			r.mu.Lock()
+			r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+			r.mu.Unlock()
+
+			r.onBindPick(context.Background(), "c1", tc.clicker, "local:herrscher")
+
+			if len(ctrl.created) != tc.wantCreate {
+				t.Fatalf("created = %+v, want %d session(s)", ctrl.created, tc.wantCreate)
+			}
+		})
+	}
+}
+
+func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
+	r, ctrl, _ := newGuildRouter(t, func(cfg *routerConfig) {
+		cfg.access = accessSettings{users: newIDSet("u1")}
+	})
+	if err := r.binds.SetMode("c1", supportMode); err != nil {
+		t.Fatal(err)
+	}
+	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
+	thread := ""
+	for conv := range r.jobs {
+		thread = conv
+	}
+	if thread == "" || thread == "c1" {
+		t.Fatalf("thread = %q, want the menu posted in a thread of its own", thread)
+	}
+	if !r.binds.IsThread(thread) {
+		t.Fatal("the thread the menu was posted in is not registered as one")
+	}
+	r.mu.Lock()
+	r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+	r.mu.Unlock()
+
+	r.onBindPick(context.Background(), thread, "u1", "local:herrscher")
+
+	if len(ctrl.created) != 1 {
+		t.Fatalf("created = %+v, want the click to open the session", ctrl.created)
+	}
+	if got := r.binds.Parent(thread); got != "c1" {
+		t.Fatalf("Parent(%s) = %q, want c1", thread, got)
+	}
+	if !r.binds.IsThread(thread) {
+		t.Fatal("the binding lost the thread flag")
+	}
+}
