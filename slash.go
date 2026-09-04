@@ -119,6 +119,12 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	if s.router == nil {
 		return
 	}
+	if !s.allow.Allowed(ix.UserID()) {
+		if s.comp != nil {
+			_ = s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), "tu n'es pas autorisé à utiliser ce menu")
+		}
+		return
+	}
 	value := ""
 	if len(ix.Data.Values) > 0 {
 		value = ix.Data.Values[0]
