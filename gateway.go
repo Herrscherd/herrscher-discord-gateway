@@ -49,6 +49,9 @@ type Gateway struct {
 	selfID  string
 }
 
+// NewGateway returns a Gateway that sends through c, runs its slash surface on the
+// lifetime run and logs to log. It starts no work: that begins when the host calls
+// BindSessionControl.
 func NewGateway(c client, run lifetime, log *slog.Logger) *Gateway {
 	return &Gateway{c: c, run: run, log: log}
 }
@@ -65,6 +68,8 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	go g.slash.start(g.run())
 }
 
+// Manifest describes the gateway to the host: its kind, its category, the
+// capabilities Discord offers and the attachment hosts it accepts.
 func (g *Gateway) Manifest() contracts.Manifest {
 	return contracts.Manifest{
 		Kind:            gatewayKind,
@@ -90,6 +95,8 @@ func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
 // a channel. It satisfies contracts.EventSink.
 func (g *Gateway) Emit(contracts.Event) {}
 
+// Post sends text as a new message in conv. It returns the id Discord gave the
+// message, and an error that wraps the Discord failure.
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
 	m, err := g.c.Send(ctx, conv.ID, text)
 	if err != nil {
@@ -98,6 +105,8 @@ func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text st
 	return msgID(m), nil
 }
 
+// Reply sends text as an answer to replyTo in conv. It returns the id Discord gave
+// the answer, and an error that wraps the Discord failure.
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
 	m, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
 	if err != nil {
@@ -106,6 +115,8 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 	return msgID(m), nil
 }
 
+// React adds emoji to msg in conv. It returns an error that wraps the Discord
+// failure.
 func (g *Gateway) React(ctx context.Context, conv contracts.Conversation, msg contracts.MessageID, emoji string) error {
 	if err := g.c.React(ctx, conv.ID, string(msg), emoji); err != nil {
 		return fmt.Errorf("discord react: %w", err)
@@ -113,6 +124,9 @@ func (g *Gateway) React(ctx context.Context, conv contracts.Conversation, msg co
 	return nil
 }
 
+// Menu sends prompt in reply to replyTo with a select menu of opts. The menu carries
+// the choice custom id of conv, so a pick is routed back to conv's session. It
+// returns an error that wraps the Discord failure.
 func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, prompt string, opts []contracts.Choice) error {
 	out := make([]dctl.SelectOption, 0, len(opts))
 	for _, o := range opts {

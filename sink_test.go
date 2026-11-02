@@ -39,7 +39,7 @@ type fakeRender struct {
 	postChans []string
 }
 
-func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, id, content string) (string, error) {
+func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string) (string, error) {
 	f.upserts = append(f.upserts, content)
 	if f.statusID == "" {
 		f.statusID = "status1"

@@ -148,7 +148,7 @@ func TestGatewayManifest(t *testing.T) {
 	if !m.Capabilities.Reactions || !m.Capabilities.SelectMenus || !m.Capabilities.Replies {
 		t.Fatalf("discord should announce all capabilities: %+v", m.Capabilities)
 	}
-	hosts := map[string]bool{}
+	hosts := make(map[string]bool)
 	for _, h := range m.AttachmentHosts {
 		hosts[h] = true
 	}
@@ -175,7 +175,7 @@ func TestGatewayTranslatesActions(t *testing.T) {
 	}
 }
 
-func TestGatewayImplementsEventSink(t *testing.T) {
+func TestGatewayImplementsEventSink(_ *testing.T) {
 	var _ contracts.EventSink = (*Gateway)(nil)
 }
 

@@ -74,7 +74,7 @@ func newSinks(run lifetime, rc renderClient, level func(conv string) string, own
 	if level == nil {
 		level = staticLevels("")
 	}
-	return &sinks{run: run, rc: rc, level: level, owner: owner, tidy: tidy, log: log, m: map[string]*sink{}}
+	return &sinks{run: run, rc: rc, level: level, owner: owner, tidy: tidy, log: log, m: make(map[string]*sink)}
 }
 
 func (s *sinks) at(convID string) *sink {
@@ -177,8 +177,7 @@ func (s *sink) onStatus(text string) {
 	if s.pv == nil {
 		return
 	}
-	tool, detail := splitTool(text)
-	s.pv.add(contracts.BackendEvent{Kind: "tool", Tool: tool, Detail: detail})
+	s.pv.add(toolEvent(text))
 }
 
 func (s *sink) onChunk(text string) {
@@ -273,20 +272,17 @@ func (m msgRef) chOr(def string) string {
 	return m.ch
 }
 
-func splitTool(s string) (string, string) {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, ' '); i >= 0 {
-		return s[:i], strings.TrimSpace(s[i+1:])
-	}
-	return s, ""
+func toolEvent(text string) contracts.BackendEvent {
+	name, detail, _ := strings.Cut(strings.TrimSpace(text), " ")
+	return contracts.BackendEvent{Kind: "tool", Tool: name, Detail: strings.TrimSpace(detail)}
 }
 
-func chunkText(s string, max int) []string {
+func chunkText(s string, limit int) []string {
 	var out []string
 	r := []rune(s)
-	for len(r) > max {
-		cut := max
-		for i := max - 1; i > max/2; i-- {
+	for len(r) > limit {
+		cut := limit
+		for i := limit - 1; i > limit/2; i-- {
 			if r[i] == '\n' {
 				cut = i
 				break

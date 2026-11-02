@@ -47,7 +47,7 @@ type progressView struct {
 }
 
 func newProgressView(post func(string, string) (string, error), level string, start time.Time, log *slog.Logger) *progressView {
-	return &progressView{post: post, level: level, start: start, now: time.Now, log: log, counts: map[string]int{}}
+	return &progressView{post: post, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int)}
 }
 
 func (p *progressView) add(ev contracts.BackendEvent) {
@@ -121,7 +121,7 @@ func (p *progressView) reset() {
 	p.lines = nil
 	p.elided = false
 	p.lastLine, p.lastCount = "", 0
-	p.counts = map[string]int{}
+	p.counts = make(map[string]int)
 	p.order = nil
 	p.cost = 0
 	p.actions = 0
@@ -135,18 +135,20 @@ func (p *progressView) reset() {
 func (p *progressView) render() string {
 	lines, elided := p.lines, p.elided
 	for {
-		var b strings.Builder
-		b.WriteString("⏳ en cours…\n")
-		if elided {
-			b.WriteString("…\n")
-		}
-		b.WriteString(strings.Join(lines, "\n"))
-		out := b.String()
+		out := progressFrame(lines, elided)
 		if len(lines) <= 1 || utf8.RuneCountInString(out) <= gatewayMaxLen {
 			return out
 		}
 		lines, elided = lines[1:], true
 	}
+}
+
+func progressFrame(lines []string, elided bool) string {
+	header := "⏳ en cours…\n"
+	if elided {
+		header += "…\n"
+	}
+	return header + strings.Join(lines, "\n")
 }
 
 func (p *progressView) summary() string {

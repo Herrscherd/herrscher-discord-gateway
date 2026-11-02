@@ -19,7 +19,7 @@ type allowStore struct {
 }
 
 func newAllowStore(path string, log *slog.Logger) *allowStore {
-	s := &allowStore{path: path, Session: map[string][]string{}}
+	s := &allowStore{path: path, Session: make(map[string][]string)}
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("allow store unreadable, starting with an empty allowlist", "path", path, "err", err)
@@ -28,10 +28,10 @@ func newAllowStore(path string, log *slog.Logger) *allowStore {
 		if err := json.Unmarshal(data, s); err != nil {
 			log.Warn("allow store corrupt, ignoring it", "path", path, "err", err)
 			s.Global = nil
-			s.Session = map[string][]string{}
+			s.Session = make(map[string][]string)
 		}
 		if s.Session == nil {
-			s.Session = map[string][]string{}
+			s.Session = make(map[string][]string)
 		}
 	}
 	return s

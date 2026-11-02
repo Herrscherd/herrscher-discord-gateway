@@ -32,9 +32,9 @@ type closeCall struct {
 
 func newFakeCtrl() *fakeCtrl {
 	return &fakeCtrl{
-		submitted: map[string][]contracts.Inbound{},
-		live:      map[string]bool{},
-		picked:    map[string][]string{},
+		submitted: make(map[string][]contracts.Inbound),
+		live:      make(map[string]bool),
+		picked:    make(map[string][]string),
 	}
 }
 

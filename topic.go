@@ -67,7 +67,7 @@ func repoBase(name string) string {
 }
 
 func tokenSet(text string) map[string]bool {
-	out := map[string]bool{}
+	out := make(map[string]bool)
 	for _, tok := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
 		switch r {
 		case '-', '_', '.', '/':
@@ -82,8 +82,8 @@ func tokenSet(text string) map[string]bool {
 
 const threadNameMax = 100
 
-func threadName(text string) string {
-	var b strings.Builder
+func outsideAngles(text string) string {
+	var kept []rune
 	depth := 0
 	for _, r := range text {
 		switch {
@@ -92,10 +92,14 @@ func threadName(text string) string {
 		case r == '>' && depth > 0:
 			depth--
 		case depth == 0:
-			b.WriteRune(r)
+			kept = append(kept, r)
 		}
 	}
-	name := strings.Join(strings.Fields(b.String()), " ")
+	return string(kept)
+}
+
+func threadName(text string) string {
+	name := strings.Join(strings.Fields(outsideAngles(text)), " ")
 	if r := []rune(name); len(r) > threadNameMax {
 		name = strings.TrimSpace(string(r[:threadNameMax-1])) + "…"
 	}
