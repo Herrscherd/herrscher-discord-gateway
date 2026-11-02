@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -14,7 +15,7 @@ func tidySink(f *fakeRender, ch string) *sink {
 func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 1 || f.deleted[0] != (msgRef{ch: "c1", id: "m1"}) {
@@ -31,7 +32,7 @@ func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 func TestTidyOffKeepsThePing(t *testing.T) {
 	f := &fakeRender{}
 	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 0 {
@@ -45,7 +46,7 @@ func TestTidyOffKeepsThePing(t *testing.T) {
 func TestTidyKeepsThePingOnAbandonedTurn(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "abandoned"})
 
 	if len(f.deleted) != 0 {
@@ -59,7 +60,7 @@ func TestTidyKeepsThePingOnAbandonedTurn(t *testing.T) {
 func TestTidyNeverDeletesAPingOutsideItsOwnConversation(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "thread1")
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 0 {
@@ -73,7 +74,7 @@ func TestTidyNeverDeletesAPingOutsideItsOwnConversation(t *testing.T) {
 func TestTidyFallsBackToClearingTheAckWhenDeleteFails(t *testing.T) {
 	f := &fakeRender{deleteErr: errors.New("missing permissions")}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.unreacted) != 1 {
@@ -84,7 +85,7 @@ func TestTidyFallsBackToClearingTheAckWhenDeleteFails(t *testing.T) {
 func TestTidyKeepsAPingThatArrivedMidTurn(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1", "42")
+	s.ack(context.Background(), "c1", "m1", "42")
 	s.noteUser("c1", "m2", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
@@ -99,7 +100,7 @@ func TestTidyKeepsAPingThatArrivedMidTurn(t *testing.T) {
 func TestTidyNeverDeletesABystandersMessage(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
-	s.ack("c1", "m1", "99")
+	s.ack(context.Background(), "c1", "m1", "99")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 0 {

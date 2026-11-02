@@ -169,46 +169,49 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 		return
 	}
 	j := r.place(ctx, m)
-	r.sinks.at(j.conv).ack(m.ChannelID, m.ID, m.Author.ID)
+	r.sinks.at(j.conv).ack(ctx, m.ChannelID, m.ID, m.Author.ID)
+	if r.bindKnownRepo(ctx, ctrl, j, m, repos) {
+		return
+	}
+	r.askRepo(ctx, j, m, repos)
+}
 
+func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionControl, j job, m messageCreate, repos []contracts.RepoRef) bool {
 	if value := r.binds.Repo(j.parent); value != "" {
-		if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-			r.sinks.at(j.conv).fail(msg)
-		}
-		return
+		r.bindOrFail(ctx, ctrl, j, value, m)
+		return true
 	}
-
 	if repo, ok := matchRepo(m.Content, repos); ok {
-		if msg := r.bind(ctx, ctrl, j, repoValue(repo), m, true); msg != "" {
-			r.sinks.at(j.conv).fail(msg)
-		}
-		return
+		r.bindOrFail(ctx, ctrl, j, repoValue(repo), m)
+		return true
 	}
-
-	if last := r.binds.LastRepo(); last != "" && knownRepo(last, repos) {
-		if msg := r.bind(ctx, ctrl, j, last, m, true); msg != "" {
-			r.sinks.at(j.conv).fail(msg)
-			return
-		}
-		r.post(ctx, j.conv, fmt.Sprintf(
-			"je repars sur **%s**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs",
-			repoLabel(last)))
-		return
+	last := r.binds.LastRepo()
+	if last == "" || !knownRepo(last, repos) {
+		return false
 	}
+	if msg := r.bind(ctx, ctrl, j, last, m, true); msg != "" {
+		r.sinks.at(j.conv).fail(ctx, msg)
+		return true
+	}
+	r.post(ctx, j.conv, fmt.Sprintf(
+		"je repars sur **%s**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs",
+		repoLabel(last)))
+	return true
+}
 
+func (r *router) bindOrFail(ctx context.Context, ctrl contracts.SessionControl, j job, value string, m messageCreate) {
+	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
+		r.sinks.at(j.conv).fail(ctx, msg)
+	}
+}
+
+func (r *router) askRepo(ctx context.Context, j job, m messageCreate, repos []contracts.RepoRef) {
 	conv := j.conv
 	r.mu.Lock()
 	r.pending[conv] = m
 	r.jobs[conv] = j
 	r.mu.Unlock()
 
-	opts := make([]dctl.SelectOption, 0, len(repos))
-	for _, repo := range repos {
-		if len(opts) == selectMenuMax {
-			break
-		}
-		opts = append(opts, dctl.SelectOption{Label: repo.Name, Value: repoValue(repo), Description: repo.Description})
-	}
 	prompt := "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
 	if len(repos) > selectMenuMax {
 		prompt = fmt.Sprintf("%s, %d repos, les %d premiers sont listés", prompt, len(repos), selectMenuMax)
@@ -217,14 +220,25 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 	if conv != m.ChannelID {
 		replyTo = ""
 	}
-	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), opts); err != nil {
+	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), repoOptions(repos)); err != nil {
 		r.log.Warn("repo menu failed", "err", err)
 		r.mu.Lock()
 		delete(r.pending, conv)
 		delete(r.jobs, conv)
 		r.mu.Unlock()
-		r.sinks.at(conv).fail("je n'ai pas pu poster le menu des repos ici, reformule en nommant le repo, ou vérifie mes permissions dans ce salon")
+		r.sinks.at(conv).fail(ctx, "je n'ai pas pu poster le menu des repos ici, reformule en nommant le repo, ou vérifie mes permissions dans ce salon")
 	}
+}
+
+func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
+	opts := make([]dctl.SelectOption, 0, min(len(repos), selectMenuMax))
+	for _, repo := range repos {
+		if len(opts) == selectMenuMax {
+			break
+		}
+		opts = append(opts, dctl.SelectOption{Label: repo.Name, Value: repoValue(repo), Description: repo.Description})
+	}
+	return opts
 }
 
 func (r *router) place(ctx context.Context, m messageCreate) job {
@@ -298,9 +312,9 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 	if !j.thread {
 		return false
 	}
-	r.sinks.at(j.conv).ack(m.ChannelID, m.ID, m.Author.ID)
+	r.sinks.at(j.conv).ack(ctx, m.ChannelID, m.ID, m.Author.ID)
 	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-		r.sinks.at(j.conv).fail(msg)
+		r.sinks.at(j.conv).fail(ctx, msg)
 	}
 	return true
 }
@@ -410,7 +424,7 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 	}
 
 	if msg := r.bind(ctx, ctrl, j, value, m, buffered); msg != "" {
-		r.sinks.at(j.conv).fail("")
+		r.sinks.at(j.conv).fail(ctx, "")
 		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")

@@ -100,7 +100,7 @@ func (s *sink) noteUser(ch, id, author string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) ack(ch, id, author string) {
+func (s *sink) ack(ctx context.Context, ch, id, author string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ref := msgRef{ch: ch, id: id, author: author}
@@ -108,28 +108,27 @@ func (s *sink) ack(ch, id, author string) {
 	if id == "" || s.acked == ref {
 		return
 	}
-	s.addAck(ref)
+	s.addAck(ctx, ref)
 }
 
-func (s *sink) addAck(ref msgRef) {
-	if err := s.rc.React(s.run(), ref.chOr(s.ch), ref.id, ackEmoji); err != nil {
+func (s *sink) addAck(ctx context.Context, ref msgRef) {
+	if err := s.rc.React(ctx, ref.chOr(s.ch), ref.id, ackEmoji); err != nil {
 		s.log.Warn("add ack reaction failed", "err", err)
 		return
 	}
 	s.acked = ref
 }
 
-func (s *sink) fail(reason string) {
+func (s *sink) fail(ctx context.Context, reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.pv != nil {
 		s.pv.flush(true)
 		s.pv = nil
 	}
-	ctx := s.run()
 	ch := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
-		s.clearAck(ch)
+		s.clearAck(ctx, ch)
 		if err := s.rc.React(ctx, ch, s.acked.id, failEmoji); err != nil {
 			s.log.Warn("add failure reaction failed", "err", err)
 		}
@@ -144,9 +143,10 @@ func (s *sink) fail(reason string) {
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	ctx := s.run()
 	switch e.T {
 	case "human":
-		s.onHuman()
+		s.onHuman(ctx)
 	case "status":
 		s.onStatus(e.Text)
 	case "chunk":
@@ -154,18 +154,18 @@ func (s *sink) handle(e contracts.Event) {
 	case "reset":
 		s.onReset()
 	case "abandoned":
-		s.onAbandoned()
+		s.onAbandoned(ctx)
 	case "reply":
-		s.onReply(e)
+		s.onReply(ctx, e)
 	}
 }
 
-func (s *sink) onHuman() {
+func (s *sink) onHuman(ctx context.Context) {
 	if level := s.level(); rendersProgress(level) {
 		s.pv = newProgressView(s.upsertStatus, level, time.Now(), s.log)
 	}
 	if s.lastUser.id != "" && s.acked != s.lastUser {
-		s.addAck(s.lastUser)
+		s.addAck(ctx, s.lastUser)
 	}
 }
 
@@ -193,20 +193,20 @@ func (s *sink) onReset() {
 	}
 }
 
-func (s *sink) onAbandoned() {
+func (s *sink) onAbandoned(ctx context.Context) {
 	if s.pv != nil {
 		s.pv.flush(true)
 		s.pv = nil
 	}
-	s.clearAck(s.ch)
+	s.clearAck(ctx, s.ch)
 }
 
-func (s *sink) onReply(e contracts.Event) {
+func (s *sink) onReply(ctx context.Context, e contracts.Event) {
 	if !e.Done {
 		return
 	}
 	ch := s.ch
-	s.postParts(s.run(), ch, s.answer(e.Text))
+	s.postParts(ctx, ch, s.answer(e.Text))
 	if s.pv != nil {
 		if e.Cost > 0 {
 			s.pv.add(contracts.BackendEvent{Kind: "result", Cost: e.Cost})
@@ -214,10 +214,10 @@ func (s *sink) onReply(e contracts.Event) {
 		s.pv.finish()
 		s.pv = nil
 	}
-	if s.tidyPing(ch) {
+	if s.tidyPing(ctx, ch) {
 		return
 	}
-	s.clearAck(ch)
+	s.clearAck(ctx, ch)
 }
 
 func (s *sink) postParts(ctx context.Context, ch, text string) {
@@ -228,14 +228,14 @@ func (s *sink) postParts(ctx context.Context, ch, text string) {
 	}
 }
 
-func (s *sink) tidyPing(ch string) bool {
+func (s *sink) tidyPing(ctx context.Context, ch string) bool {
 	if !s.tidy || s.acked.id == "" || s.acked.chOr(ch) != ch {
 		return false
 	}
 	if s.owner == "" || s.acked.author != s.owner {
 		return false
 	}
-	if err := s.rc.Delete(s.run(), ch, s.acked.id); err != nil {
+	if err := s.rc.Delete(ctx, ch, s.acked.id); err != nil {
 		return false
 	}
 	gone := s.acked
@@ -256,11 +256,11 @@ func (s *sink) answer(text string) string {
 	return "<@" + s.owner + "> " + text
 }
 
-func (s *sink) clearAck(ch string) {
+func (s *sink) clearAck(ctx context.Context, ch string) {
 	if s.acked.id == "" {
 		return
 	}
-	if err := s.rc.Unreact(s.run(), s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
+	if err := s.rc.Unreact(ctx, s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
 		s.log.Warn("remove ack reaction failed", "err", err)
 	}
 	s.acked = msgRef{}
