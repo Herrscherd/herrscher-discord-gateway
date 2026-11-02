@@ -7,16 +7,17 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-var threadWords = map[string]bool{
-	"thread": true,
-	"fil":    true,
-	"privé":  true,
-	"prive":  true,
+func isThreadWord(tok string) bool {
+	switch tok {
+	case "thread", "fil", "privé", "prive":
+		return true
+	}
+	return false
 }
 
 func wantsThread(text string) bool {
 	for tok := range tokenSet(text) {
-		if threadWords[tok] {
+		if isThreadWord(tok) {
 			return true
 		}
 	}

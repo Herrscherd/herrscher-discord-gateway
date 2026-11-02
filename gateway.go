@@ -68,7 +68,7 @@ func (g *Gateway) Manifest() contracts.Manifest {
 		Kind:            "discord",
 		Category:        contracts.CategoryGateway,
 		Capabilities:    contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
-		AttachmentHosts: attachmentHosts,
+		AttachmentHosts: attachmentHostList(),
 	}
 }
 

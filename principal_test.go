@@ -2,7 +2,7 @@ package discord
 
 import (
 	"context"
-	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
@@ -39,7 +39,7 @@ func TestAnInteractionNamesItsCallerToTheCore(t *testing.T) {
 		Data:      dctl.InteractionData{CustomID: BindCustomID("c1"), Values: []string{"local:herrscher"}},
 	})
 
-	if !reflect.DeepEqual(ctrl.principals, []string{"discord:owner1"}) {
+	if !slices.Equal(ctrl.principals, []string{"discord:owner1"}) {
 		t.Fatalf("principals = %v, want [discord:owner1]", ctrl.principals)
 	}
 }

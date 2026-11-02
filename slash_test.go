@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +22,7 @@ func TestRouteSubcommand(t *testing.T) {
 		}},
 	}
 	path, leaves := route(d)
-	if !reflect.DeepEqual(path, []string{"set", "home"}) {
+	if !slices.Equal(path, []string{"set", "home"}) {
 		t.Fatalf("path = %v", path)
 	}
 	if len(leaves) != 1 || leaves[0].Name != "channel" {
@@ -45,7 +45,7 @@ func TestRouteGroup(t *testing.T) {
 		}},
 	}
 	path, leaves := route(d)
-	if !reflect.DeepEqual(path, []string{"session", "allow", "add"}) {
+	if !slices.Equal(path, []string{"session", "allow", "add"}) {
 		t.Fatalf("path = %v", path)
 	}
 	if len(leaves) != 2 {
@@ -62,7 +62,7 @@ func TestFlagsFrom(t *testing.T) {
 	}
 	got := flagsFrom(leaves)
 	want := []string{"--name", "demo", "--shared", "--backend", "oneshot"}
-	if !reflect.DeepEqual(got, want) {
+	if !slices.Equal(got, want) {
 		t.Fatalf("flagsFrom = %v, want %v", got, want)
 	}
 }
@@ -169,7 +169,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 	if got := s.stop("c1", "", true); !strings.Contains(got, "interrompu") {
 		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
 	}
-	if !reflect.DeepEqual(ctrl.interrupted, []string{"ch-c1"}) {
+	if !slices.Equal(ctrl.interrupted, []string{"ch-c1"}) {
 		t.Fatalf("interrupted = %v, want [ch-c1]", ctrl.interrupted)
 	}
 }
@@ -274,9 +274,7 @@ func TestAnUnknownModeIsRefused(t *testing.T) {
 }
 
 func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
-	restore := syncBackoff
-	syncBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
-	defer func() { syncBackoff = restore }()
+	backoff := []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 
 	calls := 0
 	syncWithRetry(context.Background(), func(context.Context) error {
@@ -285,7 +283,7 @@ func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
 			return errors.New("429: You are being rate limited")
 		}
 		return nil
-	}, testLog())
+	}, testLog(), backoff)
 
 	if calls != 3 {
 		t.Fatalf("calls = %d, want the sync retried until it landed", calls)
@@ -293,25 +291,21 @@ func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
 }
 
 func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
-	restore := syncBackoff
-	syncBackoff = []time.Duration{time.Millisecond}
-	defer func() { syncBackoff = restore }()
+	backoff := []time.Duration{time.Millisecond}
 
 	calls := 0
 	syncWithRetry(context.Background(), func(context.Context) error {
 		calls++
 		return errors.New("nope")
-	}, testLog())
+	}, testLog(), backoff)
 
-	if calls != len(syncBackoff)+1 {
-		t.Fatalf("calls = %d, want %d attempts then a report", calls, len(syncBackoff)+1)
+	if calls != len(backoff)+1 {
+		t.Fatalf("calls = %d, want %d attempts then a report", calls, len(backoff)+1)
 	}
 }
 
 func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
-	restore := syncBackoff
-	syncBackoff = []time.Duration{time.Hour}
-	defer func() { syncBackoff = restore }()
+	backoff := []time.Duration{time.Hour}
 	ctx, cancel := context.WithCancel(context.Background())
 
 	done := make(chan struct{})
@@ -320,7 +314,7 @@ func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
 		syncWithRetry(ctx, func(context.Context) error {
 			cancel()
 			return errors.New("429")
-		}, testLog())
+		}, testLog(), backoff)
 	}()
 
 	select {
