@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,7 +21,22 @@ var (
 	errHeartbeatUnacked   = errors.New("heartbeat not acknowledged")
 )
 
+const (
+	closeAuthenticationFailed websocket.StatusCode = 4004
+	closeInvalidShard         websocket.StatusCode = 4010
+	closeShardingRequired     websocket.StatusCode = 4011
+	closeInvalidAPIVersion    websocket.StatusCode = 4012
+	closeInvalidIntents       websocket.StatusCode = 4013
+	closeDisallowedIntents    websocket.StatusCode = 4014
+)
+
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
+
+const (
+	intentGuilds         = 1 << 0
+	intentGuildMessages  = 1 << 9
+	intentDirectMessages = 1 << 12
+)
 
 const (
 	opDispatch          = 0
@@ -33,7 +49,7 @@ const (
 	readLimit           = 8 << 20
 	maxReconnectBackoff = 30 * time.Second
 	maxInFlight         = 64
-	wsIntents           = 1 | (1 << 9) | (1 << 12)
+	wsIntents           = intentGuilds | intentGuildMessages | intentDirectMessages
 )
 
 type ws struct {
@@ -88,11 +104,18 @@ func (w *ws) run(ctx context.Context) {
 
 func permanentClose(err error) (websocket.StatusCode, bool) {
 	code := websocket.CloseStatus(err)
-	switch code {
-	case 4004, 4010, 4011, 4012, 4013, 4014:
-		return code, true
+	return code, slices.Contains(permanentCloseCodes(), code)
+}
+
+func permanentCloseCodes() []websocket.StatusCode {
+	return []websocket.StatusCode{
+		closeAuthenticationFailed,
+		closeInvalidShard,
+		closeShardingRequired,
+		closeInvalidAPIVersion,
+		closeInvalidIntents,
+		closeDisallowedIntents,
 	}
-	return code, false
 }
 
 func (w *ws) session(ctx context.Context, connected func()) error {

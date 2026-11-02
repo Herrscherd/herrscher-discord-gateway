@@ -18,6 +18,8 @@ import (
 //go:embed skills
 var skillsFS embed.FS
 
+const defaultContextMessages = 30
+
 func embeddedSkills() (fs.FS, error) {
 	sub, err := fs.Sub(skillsFS, "skills")
 	if err != nil {
@@ -124,7 +126,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		routerConfig{
 			owner:           owner,
 			appID:           appID,
-			contextMessages: intSetting(cfg.Get("context_messages"), 30),
+			contextMessages: intSetting(cfg.Get("context_messages"), defaultContextMessages),
 			playbook:        strSetting(cfg.Get("playbook"), "pr-job"),
 			agent:           agent,
 			access: accessSettings{
@@ -156,8 +158,7 @@ func stateDir(log *slog.Logger) (string, error) {
 		}
 		dir = filepath.Join(home, ".config", "dctl")
 	}
-	dir = filepath.Clean(dir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Clean(dir), 0o700); err != nil {
 		log.Warn("create state directory failed", "dir", dir, "err", err)
 	}
 	return dir, nil

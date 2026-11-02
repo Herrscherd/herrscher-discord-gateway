@@ -12,6 +12,8 @@ import (
 
 const maxLines = 15
 
+const previewWidth = 120
+
 const progressInterval = 1500 * time.Millisecond
 
 const (
@@ -57,7 +59,7 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		if p.level != levelFull {
 			return
 		}
-		p.push("💭 " + clip(flatten(ev.Detail), 120))
+		p.push("💭 " + clip(flatten(ev.Detail), previewWidth))
 	case "tool":
 		if _, seen := p.counts[ev.Tool]; !seen {
 			p.order = append(p.order, ev.Tool)
@@ -65,7 +67,7 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		p.counts[ev.Tool]++
 		p.actions++
 		line := emojiFor(ev.Tool) + " " + ev.Tool
-		if d := clip(flatten(ev.Detail), 120); d != "" && p.level != levelQuiet {
+		if d := clip(flatten(ev.Detail), previewWidth); d != "" && p.level != levelQuiet {
 			line += " · " + d
 		}
 		p.push(line)
@@ -180,8 +182,10 @@ func plural(n int) string {
 	return "s"
 }
 
+const costPrecisionThreshold = 0.01
+
 func formatCost(c float64) string {
-	if c < 0.01 {
+	if c < costPrecisionThreshold {
 		return fmt.Sprintf("$%.4f", c)
 	}
 	return fmt.Sprintf("$%.2f", c)

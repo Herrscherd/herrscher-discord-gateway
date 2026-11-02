@@ -62,8 +62,10 @@ func writeAtomic(path string, data []byte) error {
 	return nil
 }
 
+const privateFileMode = 0o600
+
 func writeTemp(tmp *os.File, data []byte) error {
-	if err := tmp.Chmod(0o600); err != nil {
+	if err := tmp.Chmod(privateFileMode); err != nil {
 		return errors.Join(err, tmp.Close())
 	}
 	if _, err := tmp.Write(data); err != nil {

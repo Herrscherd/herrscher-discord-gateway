@@ -162,7 +162,8 @@ func renderMessages(msgs []dctl.Message) string {
 		return "(no messages)"
 	}
 	var b strings.Builder
-	for _, m := range msgs {
+	for i := range msgs {
+		m := msgs[i]
 		fmt.Fprintf(&b, "%s %s: %s  [%s]\n",
 			authorOf(m), m.Timestamp, bodyOf(m), m.ID)
 	}

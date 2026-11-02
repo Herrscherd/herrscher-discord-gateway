@@ -71,7 +71,7 @@ func TestEveryModeTheCommandOffersIsKnown(t *testing.T) {
 }
 
 func TestAThreadInheritsItsChannelsMode(t *testing.T) {
-	r, _, _ := newGuildRouter(t, nil)
+	r, _ := newGuildRouter(t, nil)
 	if err := r.binds.SetMode("c1", ambientMode); err != nil {
 		t.Fatal(err)
 	}

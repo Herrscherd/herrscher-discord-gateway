@@ -153,7 +153,8 @@ func (r *router) hydrate(ctx context.Context, m messageCreate) messageCreate {
 		r.log.Warn("read blanked message failed", "err", err)
 		return m
 	}
-	for _, prev := range msgs {
+	for i := range msgs {
+		prev := msgs[i]
 		if prev.ID == m.ID {
 			m.Content, m.Attachments = prev.Content, prev.Attachments
 			break
@@ -320,7 +321,9 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 }
 
 func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
-	for _, si := range ctrl.Sessions() {
+	items := ctrl.Sessions()
+	for i := range items {
+		si := items[i]
 		if si.Name != session {
 			continue
 		}
@@ -464,7 +467,9 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, id, user string, direc
 	if s := r.binds.Session(id); s != "" {
 		return s
 	}
-	for _, si := range ctrl.Sessions() {
+	items := ctrl.Sessions()
+	for i := range items {
+		si := items[i]
 		if si.ChannelID == id {
 			return si.Name
 		}
@@ -524,7 +529,8 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 		return ""
 	}
 	var b strings.Builder
-	for _, prev := range msgs {
+	for i := range msgs {
+		prev := msgs[i]
 		if prev.ID == m.ID {
 			continue
 		}

@@ -302,7 +302,9 @@ func (s *slash) autoSession(ctx context.Context, ix dctl.Interaction) ([]dctl.Au
 	_, val, _ := ix.Data.Focused()
 	val = strings.ToLower(val)
 	var out []dctl.AutocompleteChoice
-	for _, si := range s.sessions() {
+	items := s.sessions()
+	for i := range items {
+		si := items[i]
 		if val == "" || strings.Contains(strings.ToLower(si.Name), val) {
 			out = append(out, dctl.AutocompleteChoice{Name: si.Name, Value: si.Name})
 		}
@@ -374,8 +376,8 @@ func (s *slash) saveNote(err error, store, ok string) string {
 	return ok
 }
 
-func route(d dctl.InteractionData) (path []string, leaves []dctl.InteractionOption) {
-	path = []string{d.Name}
+func route(d dctl.InteractionData) ([]string, []dctl.InteractionOption) {
+	path := []string{d.Name}
 	opts := d.Options
 	for {
 		var next *dctl.InteractionOption

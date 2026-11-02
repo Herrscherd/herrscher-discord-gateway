@@ -120,7 +120,8 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 		return nil, fmt.Errorf("discord read: %w", err)
 	}
 	out := make([]rawMsg, 0, len(msgs))
-	for _, m := range msgs {
+	for i := range msgs {
+		m := msgs[i]
 		atts := make([]contracts.Attachment, 0, len(m.Attachments))
 		for _, a := range m.Attachments {
 			atts = append(atts, contracts.Attachment{
@@ -160,7 +161,8 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 		return nil, err
 	}
 	out := make([]contracts.Message, 0, len(raws))
-	for _, r := range raws {
+	for i := range raws {
+		r := raws[i]
 		out = append(out, r.msg)
 		if !r.bot && p.sinks != nil {
 			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id, r.msg.AuthorID)
