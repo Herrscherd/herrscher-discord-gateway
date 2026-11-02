@@ -83,8 +83,8 @@ func TestDeleteRefusesAnotherAuthorsMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("deleting a message this bot did not write must be refused")
 	}
-	if !strings.Contains(err.Error(), "ana") {
-		t.Fatalf("the refusal must name the actual author, got %v", err)
+	if !errors.Is(err, errNotOwnMessage) {
+		t.Fatalf("the refusal must be errNotOwnMessage, got %v", err)
 	}
 	if len(f.deleted) != 0 {
 		t.Fatalf("nothing may reach the client on a refusal: %v", f.deleted)
