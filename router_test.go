@@ -56,6 +56,7 @@ func (f *fakeCtrl) Create(ctx context.Context, s contracts.CreateSession) (strin
 	f.live[s.Name] = true
 	return "created", nil
 }
+
 func (f *fakeCtrl) Close(_ context.Context, name string, force bool) (string, error) {
 	f.closed = append(f.closed, closeCall{name: name, force: force})
 	if f.closeErr != nil && !force {
@@ -71,6 +72,7 @@ func (f *fakeCtrl) Interrupt(name string) bool {
 	f.interrupted = append(f.interrupted, name)
 	return f.live[name]
 }
+
 func (f *fakeCtrl) Submit(name string, in contracts.Inbound) bool {
 	if !f.live[name] {
 		return false
@@ -78,6 +80,7 @@ func (f *fakeCtrl) Submit(name string, in contracts.Inbound) bool {
 	f.submitted[name] = append(f.submitted[name], in)
 	return true
 }
+
 func (f *fakeCtrl) Pick(name, value string) bool {
 	if !f.live[name] {
 		return false

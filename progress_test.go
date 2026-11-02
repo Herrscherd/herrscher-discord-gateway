@@ -36,8 +36,10 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	}, levelFull, time.Unix(0, 0))
 
 	for i := 0; i < maxLines*2; i++ {
-		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Bash",
-			Detail: strconv.Itoa(i) + strings.Repeat("x", 200)})
+		pv.add(contracts.BackendEvent{
+			Kind: "tool", Tool: "Bash",
+			Detail: strconv.Itoa(i) + strings.Repeat("x", 200),
+		})
 	}
 	pv.flush(true)
 

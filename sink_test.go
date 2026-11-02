@@ -52,19 +52,23 @@ func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, id, content strin
 	}
 	return f.statusID, nil
 }
+
 func (f *fakeRender) Post(_ context.Context, ch, content string) error {
 	f.posts = append(f.posts, content)
 	f.postChans = append(f.postChans, ch)
 	return nil
 }
+
 func (f *fakeRender) React(_ context.Context, _, _, emoji string) error {
 	f.reacted = append(f.reacted, emoji)
 	return nil
 }
+
 func (f *fakeRender) Unreact(_ context.Context, _, _, emoji string) error {
 	f.unreacted = append(f.unreacted, emoji)
 	return nil
 }
+
 func (f *fakeRender) Delete(_ context.Context, ch, id string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr

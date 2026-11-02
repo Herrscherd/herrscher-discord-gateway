@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // skills carries the playbook that teaches an agent when to reach for the verbs

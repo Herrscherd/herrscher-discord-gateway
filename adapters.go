@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // Discord channel-type ints (GUILD_CATEGORY is 4; dctl exports ChannelForum=15).
@@ -218,21 +218,25 @@ type renderAdapter struct{ p *Platform }
 func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
 	return r.p.UpsertStatusMessage(ctx, ch, id, content)
 }
+
 func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error {
 	return r.p.Unreact(ctx, ch, id, emoji)
 }
+
 func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
 	if _, err := r.p.c.Messages().Send(ctx, ch, content); err != nil {
 		return fmt.Errorf("discord post: %w", err)
 	}
 	return nil
 }
+
 func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
 	if err := r.p.c.Reactions().Add(ctx, ch, id, emoji); err != nil {
 		return fmt.Errorf("discord react: %w", err)
 	}
 	return nil
 }
+
 func (r renderAdapter) Delete(ctx context.Context, ch, id string) error {
 	if err := r.p.c.Messages().Delete(ctx, ch, id); err != nil {
 		return fmt.Errorf("discord delete: %w", err)

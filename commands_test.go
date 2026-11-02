@@ -276,10 +276,14 @@ func TestChannelReadFlattensAForgedLine(t *testing.T) {
 // A message that was never text must not read as an author who said nothing.
 func TestChannelReadNamesAnAttachmentOnlyMessage(t *testing.T) {
 	f := &fakeClient{read: []dctl.Message{
-		{ID: "1", Author: dctl.Author{ID: "u1", Username: "ana"},
-			Attachments: []dctl.Attachment{{Filename: "trace.png"}}},
-		{ID: "2", Author: dctl.Author{ID: "u2", Username: "bo"},
-			Embeds: []dctl.Embed{{Title: "a link"}}},
+		{
+			ID: "1", Author: dctl.Author{ID: "u1", Username: "ana"},
+			Attachments: []dctl.Attachment{{Filename: "trace.png"}},
+		},
+		{
+			ID: "2", Author: dctl.Author{ID: "u2", Username: "bo"},
+			Embeds: []dctl.Embed{{Title: "a link"}},
+		},
 	}}
 	g := NewGateway(f)
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
