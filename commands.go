@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -117,19 +118,25 @@ func (g *Gateway) Commands() []contracts.Cmd {
 	return cmds
 }
 
+var (
+	errOwnIDUnknown  = errors.New("this bot's own id is unknown, so authorship cannot be checked")
+	errMessageGone   = errors.New("no such message")
+	errNotOwnMessage = errors.New("only this bot's own messages can be deleted")
+)
+
 func (g *Gateway) ownMessage(ctx context.Context, channelID, messageID string) error {
 	if g.selfID == "" {
-		return fmt.Errorf("discord message delete: this bot's own id is unknown, so authorship cannot be checked")
+		return fmt.Errorf("discord message delete: %w", errOwnIDUnknown)
 	}
 	m, err := g.c.GetMessage(ctx, channelID, messageID)
 	if err != nil {
 		return fmt.Errorf("discord message delete: read message %s: %w", messageID, err)
 	}
 	if m == nil {
-		return fmt.Errorf("discord message delete: message %s is not in channel %s", messageID, channelID)
+		return fmt.Errorf("discord message delete: message %s is not in channel %s: %w", messageID, channelID, errMessageGone)
 	}
 	if m.Author.ID != g.selfID {
-		return fmt.Errorf("discord message delete: message %s was written by %s, not by this bot, only this bot's own messages can be deleted", messageID, authorOf(*m))
+		return fmt.Errorf("discord message delete: message %s was written by %s, not by this bot: %w", messageID, authorOf(*m), errNotOwnMessage)
 	}
 	return nil
 }

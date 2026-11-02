@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -11,6 +12,12 @@ import (
 
 	"github.com/Herrscherd/dctl"
 	"github.com/coder/websocket"
+)
+
+var (
+	errNoHello            = errors.New("the gateway did not open with HELLO")
+	errReconnectRequested = errors.New("the server asked to reconnect")
+	errHeartbeatUnacked   = errors.New("heartbeat not acknowledged")
 )
 
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
@@ -99,7 +106,7 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 		return fmt.Errorf("hello: %w", err)
 	}
 	if hello.Op != opHello {
-		return fmt.Errorf("expected HELLO, got op %d", hello.Op)
+		return fmt.Errorf("got op %d: %w", hello.Op, errNoHello)
 	}
 	var h struct {
 		HeartbeatInterval int `json:"heartbeat_interval"`
@@ -134,7 +141,7 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 				return err
 			}
 		case opReconnect, opInvalidSession:
-			return fmt.Errorf("server asked to reconnect (op %d)", p.Op)
+			return fmt.Errorf("op %d: %w", p.Op, errReconnectRequested)
 		case opHeartbeatACK:
 			w.acked.Store(true)
 		}
@@ -245,7 +252,7 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 
 func (w *ws) sendHeartbeat(ctx context.Context, c *websocket.Conn) error {
 	if !w.acked.Swap(false) {
-		return fmt.Errorf("heartbeat not acknowledged")
+		return errHeartbeatUnacked
 	}
 	return w.writeHeartbeat(ctx, c)
 }
