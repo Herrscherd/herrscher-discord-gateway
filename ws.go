@@ -119,28 +119,28 @@ func permanentCloseCodes() []websocket.StatusCode {
 }
 
 func (w *ws) session(ctx context.Context, connected func()) error {
-	c, _, err := websocket.Dial(ctx, gatewayURL, nil)
+	conn, _, err := websocket.Dial(ctx, gatewayURL, nil)
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	defer w.closeSocket(c, websocket.StatusNormalClosure, "")
-	c.SetReadLimit(readLimit)
+	defer w.closeSocket(conn, websocket.StatusNormalClosure, "")
+	conn.SetReadLimit(readLimit)
 
-	hello, err := readPayload(ctx, c)
+	hello, err := readPayload(ctx, conn)
 	if err != nil {
 		return fmt.Errorf("hello: %w", err)
 	}
 	if hello.Op != opHello {
 		return fmt.Errorf("got op %d: %w", hello.Op, errNoHello)
 	}
-	var h struct {
+	var handshake struct {
 		HeartbeatInterval int `json:"heartbeat_interval"`
 	}
-	if err := json.Unmarshal(hello.D, &h); err != nil {
+	if err := json.Unmarshal(hello.D, &handshake); err != nil {
 		return fmt.Errorf("hello payload: %w", err)
 	}
 
-	if err := w.identify(ctx, c); err != nil {
+	if err := w.identify(ctx, conn); err != nil {
 		return fmt.Errorf("identify: %w", err)
 	}
 	connected()
@@ -148,70 +148,70 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	w.acked.Store(true)
 	hbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	go w.heartbeatLoop(hbCtx, c, time.Duration(h.HeartbeatInterval)*time.Millisecond)
+	go w.heartbeatLoop(hbCtx, conn, time.Duration(handshake.HeartbeatInterval)*time.Millisecond)
 
 	for {
-		p, err := readPayload(ctx, c)
+		payload, err := readPayload(ctx, conn)
 		if err != nil {
 			return err
 		}
-		if p.S != nil {
-			w.setSeq(*p.S)
+		if payload.S != nil {
+			w.setSeq(*payload.S)
 		}
-		switch p.Op {
+		switch payload.Op {
 		case opDispatch:
-			w.dispatch(ctx, p.T, p.D)
+			w.dispatch(ctx, payload.T, payload.D)
 		case opHeartbeat:
-			if err := w.writeHeartbeat(ctx, c); err != nil {
+			if err := w.writeHeartbeat(ctx, conn); err != nil {
 				return err
 			}
 		case opReconnect, opInvalidSession:
-			return fmt.Errorf("op %d: %w", p.Op, errReconnectRequested)
+			return fmt.Errorf("op %d: %w", payload.Op, errReconnectRequested)
 		case opHeartbeatACK:
 			w.acked.Store(true)
 		}
 	}
 }
 
-func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
-	switch t {
+func (w *ws) dispatch(ctx context.Context, eventType string, data json.RawMessage) {
+	switch eventType {
 	case "INTERACTION_CREATE":
 		if w.handle == nil {
 			return
 		}
-		var ix dctl.Interaction
-		if err := json.Unmarshal(d, &ix); err != nil {
+		var interaction dctl.Interaction
+		if err := json.Unmarshal(data, &interaction); err != nil {
 			w.log.Warn("bad interaction payload dropped", "err", err)
 			return
 		}
-		w.bounded(ctx, func() { w.handle(ctx, ix) })
+		w.bounded(ctx, func() { w.handle(ctx, interaction) })
 	case "MESSAGE_CREATE":
 		if w.onMessage == nil {
 			return
 		}
-		var m messageCreate
-		if err := json.Unmarshal(d, &m); err != nil {
+		var message messageCreate
+		if err := json.Unmarshal(data, &message); err != nil {
 			w.log.Warn("bad message payload dropped", "err", err)
 			return
 		}
-		w.bounded(ctx, func() { w.onMessage(ctx, m) })
+		w.bounded(ctx, func() { w.onMessage(ctx, message) })
 	case "CHANNEL_DELETE", "THREAD_DELETE":
 		if w.onGone == nil {
 			return
 		}
-		var c channelDelete
-		if err := json.Unmarshal(d, &c); err != nil {
-			w.log.Warn("bad gone payload dropped", "event", t, "err", err)
+		var deletion channelDelete
+		if err := json.Unmarshal(data, &deletion); err != nil {
+			w.log.Warn("bad gone payload dropped", "event", eventType, "err", err)
 			return
 		}
-		if c.ID == "" {
+		if deletion.ID == "" {
 			return
 		}
-		w.bounded(ctx, func() { w.onGone(ctx, c.ID) })
+		w.bounded(ctx, func() { w.onGone(ctx, deletion.ID) })
 	}
 }
 
-func (w *ws) bounded(ctx context.Context, fn func()) {
+func (w *ws) bounded(ctx context.Context, work func()) {
 	select {
 	case w.sem <- struct{}{}:
 	case <-ctx.Done():
@@ -219,7 +219,7 @@ func (w *ws) bounded(ctx context.Context, fn func()) {
 	}
 	go func() {
 		defer func() { <-w.sem }()
-		fn()
+		work()
 	}()
 }
 
@@ -256,57 +256,57 @@ func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 	})
 }
 
-func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time.Duration) {
+func (w *ws) heartbeatLoop(ctx context.Context, conn *websocket.Conn, interval time.Duration) {
 	if interval <= 0 {
 		return
 	}
-	t := time.NewTicker(interval)
-	defer t.Stop()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-t.C:
-			if err := w.sendHeartbeat(ctx, c); err != nil {
-				w.closeSocket(c, websocket.StatusInternalError, "heartbeat")
+		case <-ticker.C:
+			if err := w.sendHeartbeat(ctx, conn); err != nil {
+				w.closeSocket(conn, websocket.StatusInternalError, "heartbeat")
 				return
 			}
 		}
 	}
 }
 
-func (w *ws) sendHeartbeat(ctx context.Context, c *websocket.Conn) error {
+func (w *ws) sendHeartbeat(ctx context.Context, conn *websocket.Conn) error {
 	if !w.acked.Swap(false) {
 		return errHeartbeatUnacked
 	}
-	return w.writeHeartbeat(ctx, c)
+	return w.writeHeartbeat(ctx, conn)
 }
 
-func (w *ws) writeHeartbeat(ctx context.Context, c *websocket.Conn) error {
+func (w *ws) writeHeartbeat(ctx context.Context, conn *websocket.Conn) error {
 	w.seq.Lock()
-	n := w.seq.n
+	sequence := w.seq.n
 	w.seq.Unlock()
-	var d *int
-	if n > 0 {
-		d = &n
+	var seqPtr *int
+	if sequence > 0 {
+		seqPtr = &sequence
 	}
-	return w.write(ctx, c, heartbeatMsg{Op: opHeartbeat, D: d})
+	return w.write(ctx, conn, heartbeatMsg{Op: opHeartbeat, D: seqPtr})
 }
 
-func (w *ws) setSeq(n int) {
+func (w *ws) setSeq(sequence int) {
 	w.seq.Lock()
-	w.seq.n = n
+	w.seq.n = sequence
 	w.seq.Unlock()
 }
 
-func (w *ws) write(ctx context.Context, c *websocket.Conn, v any) error {
-	b, err := json.Marshal(v)
+func (w *ws) write(ctx context.Context, conn *websocket.Conn, v any) error {
+	encoded, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return c.Write(ctx, websocket.MessageText, b)
+	return conn.Write(ctx, websocket.MessageText, encoded)
 }
 
 func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
@@ -314,11 +314,11 @@ func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
 	if err != nil {
 		return gwPayload{}, err
 	}
-	var p gwPayload
-	if err := json.Unmarshal(data, &p); err != nil {
+	var payload gwPayload
+	if err := json.Unmarshal(data, &payload); err != nil {
 		return gwPayload{}, fmt.Errorf("decode payload: %w", err)
 	}
-	return p, nil
+	return payload, nil
 }
 
 func (w *ws) closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {

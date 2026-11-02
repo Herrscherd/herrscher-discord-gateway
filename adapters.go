@@ -21,11 +21,11 @@ func NewChannelAdmin(c *dctl.Client) *ChannelAdmin { return &ChannelAdmin{c: c} 
 // Kind reports what the channel id names: "category" for a category, "forum" for a
 // forum, and an empty string for any other channel.
 func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
-	t, err := a.c.Channels().Type(ctx, id)
+	kind, err := a.c.Channels().Type(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("discord channel type: %w", err)
 	}
-	switch t {
+	switch kind {
 	case channelCategory:
 		return "category", nil
 	case dctl.ChannelForum:
@@ -38,28 +38,28 @@ func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 // CreateUnder creates a channel named name under parentID and returns its id. It
 // returns an empty id when Discord answers without a channel.
 func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (string, error) {
-	ch, err := a.c.Channels().CreateUnder(ctx, parentID, name)
+	channel, err := a.c.Channels().CreateUnder(ctx, parentID, name)
 	if err != nil {
 		return "", fmt.Errorf("discord create channel: %w", err)
 	}
-	if ch == nil {
+	if channel == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return channel.ID, nil
 }
 
 // ForumPost opens a post named name with content in the forum forumID and returns
 // the id of the post's thread. It returns an empty id when Discord answers without
 // a thread.
 func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content string) (string, error) {
-	ch, err := a.c.Threads().ForumPost(ctx, forumID, name, content)
+	channel, err := a.c.Threads().ForumPost(ctx, forumID, name, content)
 	if err != nil {
 		return "", fmt.Errorf("discord forum post: %w", err)
 	}
-	if ch == nil {
+	if channel == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return channel.ID, nil
 }
 
 // Archive archives the channel id. It returns an error that wraps the Discord
@@ -102,13 +102,14 @@ type rawMsg struct {
 
 // NewPlatform returns a Platform that works through the dctl client c.
 func NewPlatform(c *dctl.Client) *Platform {
-	p := &Platform{c: c}
-	p.readImpl = p.readDctl
-	return p
+	platform := &Platform{c: c}
+	platform.readImpl = platform.readDctl
+	return platform
 }
 
 // Enabled reports whether the underlying dctl client is enabled.
-func (p *Platform) Enabled() bool          { return p.c.Enabled() }
+func (p *Platform) Enabled() bool { return p.c.Enabled() }
+
 // DefaultChannel returns the default channel id of the underlying dctl client.
 func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
 
@@ -122,14 +123,14 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 		}
 		return p.c.Channels().Ensure(ctx, "", name)
 	}
-	ch, err := ensure()
+	channel, err := ensure()
 	if err != nil {
 		return contracts.Channel{}, fmt.Errorf("discord ensure channel: %w", err)
 	}
-	if ch == nil {
+	if channel == nil {
 		return contracts.Channel{}, nil
 	}
-	return contracts.Channel{ID: ch.ID, Name: ch.Name}, nil
+	return contracts.Channel{ID: channel.ID, Name: channel.Name}, nil
 }
 
 func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error) {
@@ -139,26 +140,26 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 	}
 	out := make([]rawMsg, 0, len(msgs))
 	for i := range msgs {
-		m := msgs[i]
-		atts := make([]contracts.Attachment, 0, len(m.Attachments))
-		for _, a := range m.Attachments {
+		msg := msgs[i]
+		atts := make([]contracts.Attachment, 0, len(msg.Attachments))
+		for _, attachment := range msg.Attachments {
 			atts = append(atts, contracts.Attachment{
-				Filename:    a.Filename,
-				URL:         a.URL,
-				ContentType: a.ContentType,
-				Size:        a.Size,
+				Filename:    attachment.Filename,
+				URL:         attachment.URL,
+				ContentType: attachment.ContentType,
+				Size:        attachment.Size,
 			})
 		}
 		out = append(out, rawMsg{
-			id:  m.ID,
-			bot: m.Author.Bot,
+			id:  msg.ID,
+			bot: msg.Author.Bot,
 			msg: contracts.Message{
-				ID:          m.ID,
-				ChannelID:   m.ChannelID,
-				Content:     m.Content,
-				AuthorID:    m.Author.ID,
-				AuthorName:  m.Author.Username,
-				AuthorBot:   m.Author.Bot,
+				ID:          msg.ID,
+				ChannelID:   msg.ChannelID,
+				Content:     msg.Content,
+				AuthorID:    msg.Author.ID,
+				AuthorName:  msg.Author.Username,
+				AuthorBot:   msg.Author.Bot,
 				Attachments: atts,
 			},
 		})
@@ -180,10 +181,10 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	}
 	out := make([]contracts.Message, 0, len(raws))
 	for i := range raws {
-		r := raws[i]
-		out = append(out, r.msg)
-		if !r.bot && p.sinks != nil {
-			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id, r.msg.AuthorID)
+		raw := raws[i]
+		out = append(out, raw.msg)
+		if !raw.bot && p.sinks != nil {
+			p.sinks.at(raw.msg.ChannelID).noteUser(raw.msg.ChannelID, raw.id, raw.msg.AuthorID)
 		}
 	}
 	return out, nil
@@ -203,11 +204,11 @@ func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji stri
 // new message. It returns the id of the message it edited or posted, and an error
 // that wraps the Discord failure.
 func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error) {
-	id, err := p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
+	statusID, err := p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
 	if err != nil {
-		return id, fmt.Errorf("discord status message: %w", err)
+		return statusID, fmt.Errorf("discord status message: %w", err)
 	}
-	return id, nil
+	return statusID, nil
 }
 
 // RouteMenu sends prompt in reply to replyTo with a select menu of opts whose picks
@@ -217,14 +218,14 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	m, err := p.c.Components().SendSelectMenu(ctx, channelID, replyTo, prompt, ChoiceCustomID(route), out)
+	sent, err := p.c.Components().SendSelectMenu(ctx, channelID, replyTo, prompt, ChoiceCustomID(route), out)
 	if err != nil {
 		return "", fmt.Errorf("discord menu: %w", err)
 	}
-	if m == nil {
+	if sent == nil {
 		return "", nil
 	}
-	return contracts.MessageID(m.ID), nil
+	return contracts.MessageID(sent.ID), nil
 }
 
 type renderAdapter struct{ p *Platform }

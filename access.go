@@ -37,11 +37,11 @@ func (p *accessPolicy) configured() bool {
 	return p.owner != "" || !p.users.empty() || !p.roles.empty() || !p.channels.empty() || p.allowAll
 }
 
-func (p *accessPolicy) permits(m messageCreate, parent string, mentioned bool) bool {
-	if p.selfID != "" && m.Author.ID == p.selfID {
+func (p *accessPolicy) permits(msg messageCreate, parent string, mentioned bool) bool {
+	if p.selfID != "" && msg.Author.ID == p.selfID {
 		return false
 	}
-	if m.Author.Bot {
+	if msg.Author.Bot {
 		switch p.bots {
 		case botsAll:
 		case botsMentions:
@@ -52,23 +52,23 @@ func (p *accessPolicy) permits(m messageCreate, parent string, mentioned bool) b
 			return false
 		}
 	}
-	if p.ignored.matches(m.ChannelID, parent) {
+	if p.ignored.matches(msg.ChannelID, parent) {
 		return false
 	}
-	if !p.channels.empty() && !p.channels.matches(m.ChannelID, parent) {
+	if !p.channels.empty() && !p.channels.matches(msg.ChannelID, parent) {
 		return false
 	}
-	return p.authorizes(m)
+	return p.authorizes(msg)
 }
 
-func (p *accessPolicy) authorizes(m messageCreate) bool {
-	if p.owner != "" && m.Author.ID == p.owner {
+func (p *accessPolicy) authorizes(msg messageCreate) bool {
+	if p.owner != "" && msg.Author.ID == p.owner {
 		return true
 	}
-	if p.users.matches(m.Author.ID) {
+	if p.users.matches(msg.Author.ID) {
 		return true
 	}
-	if !p.roles.empty() && !m.direct() && p.roles.matches(m.roleIDs()...) {
+	if !p.roles.empty() && !msg.direct() && p.roles.matches(msg.roleIDs()...) {
 		return true
 	}
 	if p.allowAll {

@@ -23,34 +23,34 @@ type bindStore struct {
 }
 
 func newBindStore(path string, log *slog.Logger) *bindStore {
-	s := &bindStore{path: path, Channels: make(map[string]string), Threads: make(map[string]bool), Levels: make(map[string]string), Modes: make(map[string]string), Repos: make(map[string]string), Parents: make(map[string]string)}
+	store := &bindStore{path: path, Channels: make(map[string]string), Threads: make(map[string]bool), Levels: make(map[string]string), Modes: make(map[string]string), Repos: make(map[string]string), Parents: make(map[string]string)}
 	if data, err := os.ReadFile(filepath.Clean(path)); err == nil {
-		if err := json.Unmarshal(data, s); err != nil {
+		if err := json.Unmarshal(data, store); err != nil {
 			log.Warn("bind store corrupt, ignoring it", "path", path, "err", err)
-			s.Channels, s.Threads, s.Levels = make(map[string]string), make(map[string]bool), make(map[string]string)
-			s.Modes, s.Repos, s.Parents = make(map[string]string), make(map[string]string), make(map[string]string)
-			s.Last = ""
+			store.Channels, store.Threads, store.Levels = make(map[string]string), make(map[string]bool), make(map[string]string)
+			store.Modes, store.Repos, store.Parents = make(map[string]string), make(map[string]string), make(map[string]string)
+			store.Last = ""
 		}
-		if s.Channels == nil {
-			s.Channels = make(map[string]string)
+		if store.Channels == nil {
+			store.Channels = make(map[string]string)
 		}
-		if s.Threads == nil {
-			s.Threads = make(map[string]bool)
+		if store.Threads == nil {
+			store.Threads = make(map[string]bool)
 		}
-		if s.Levels == nil {
-			s.Levels = make(map[string]string)
+		if store.Levels == nil {
+			store.Levels = make(map[string]string)
 		}
-		if s.Modes == nil {
-			s.Modes = make(map[string]string)
+		if store.Modes == nil {
+			store.Modes = make(map[string]string)
 		}
-		if s.Repos == nil {
-			s.Repos = make(map[string]string)
+		if store.Repos == nil {
+			store.Repos = make(map[string]string)
 		}
-		if s.Parents == nil {
-			s.Parents = make(map[string]string)
+		if store.Parents == nil {
+			store.Parents = make(map[string]string)
 		}
 	}
-	return s
+	return store
 }
 
 func (s *bindStore) persist(mutate func()) error {
