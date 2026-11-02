@@ -91,7 +91,7 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	defer c.Close(websocket.StatusNormalClosure, "")
+	defer closeSocket(c, websocket.StatusNormalClosure, "")
 	c.SetReadLimit(readLimit)
 
 	hello, err := readPayload(ctx, c)
@@ -236,7 +236,7 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 			return
 		case <-t.C:
 			if err := w.sendHeartbeat(ctx, c); err != nil {
-				c.Close(websocket.StatusInternalError, "heartbeat")
+				closeSocket(c, websocket.StatusInternalError, "heartbeat")
 				return
 			}
 		}
@@ -287,4 +287,10 @@ func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
 		return gwPayload{}, fmt.Errorf("decode payload: %w", err)
 	}
 	return p, nil
+}
+
+func closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {
+	if err := c.Close(code, reason); err != nil {
+		warnf("close gateway socket: %v", err)
+	}
 }

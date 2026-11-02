@@ -43,7 +43,7 @@ func guildPing(author, text string, mention bool) messageCreate {
 
 func TestTwoPeopleInAChannelGetTwoSessions(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
@@ -63,7 +63,7 @@ func TestTwoPeopleInAChannelGetTwoSessions(t *testing.T) {
 
 func TestOnePersonKeepsOneSessionAcrossTurns(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u1", "now the tests", true))
@@ -78,7 +78,7 @@ func TestOnePersonKeepsOneSessionAcrossTurns(t *testing.T) {
 
 func TestASharedChannelPutsEveryoneInOneSession(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.scope.groupPerUser = false })
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
@@ -102,8 +102,8 @@ func TestASharedChannelPutsEveryoneInOneSession(t *testing.T) {
 
 func TestAmbientModeAnswersWithoutBeingMentioned(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
-	r.binds.SetMode("c1", ambientMode)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
 
 	r.onMessage(context.Background(), guildPing("u1", "quelqu'un sait pourquoi le build casse ?", false))
 
@@ -114,7 +114,7 @@ func TestAmbientModeAnswersWithoutBeingMentioned(t *testing.T) {
 
 func TestANormalChannelIgnoresWhatIsNotAddressedToIt(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "quelqu'un sait pourquoi le build casse ?", false))
 
@@ -125,8 +125,8 @@ func TestANormalChannelIgnoresWhatIsNotAddressedToIt(t *testing.T) {
 
 func TestOffModeIgnoresEvenAMention(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
-	r.binds.SetMode("c1", offMode)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
+	requireNoError(t, r.binds.SetMode("c1", offMode))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -137,7 +137,7 @@ func TestOffModeIgnoresEvenAMention(t *testing.T) {
 
 func TestAnUnauthorizedMentionIsIgnored(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.access.users = newIDSet("u9") })
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -148,7 +148,7 @@ func TestAnUnauthorizedMentionIsIgnored(t *testing.T) {
 
 func TestTheConfiguredPersonaRunsEverySessionItOpens(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.agent = "greeter" })
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -159,7 +159,7 @@ func TestTheConfiguredPersonaRunsEverySessionItOpens(t *testing.T) {
 
 func TestDeletingAChannelClosesEveryonesSession(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 
@@ -175,7 +175,7 @@ func TestDeletingAChannelClosesEveryonesSession(t *testing.T) {
 
 func TestChoicePickGoesToTheSessionOfWhoeverClicked(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 	for _, si := range ctrl.Sessions() {
@@ -214,7 +214,7 @@ func TestRepoMenuOnlyAnswersTheOneWhoAsked(t *testing.T) {
 
 func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
 	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 	if got := r.binds.SessionsIn("c1"); len(got) != 2 {
@@ -289,5 +289,12 @@ func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
 	}
 	if !r.binds.IsThread(thread) {
 		t.Fatal("the binding lost the thread flag")
+	}
+}
+
+func requireNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

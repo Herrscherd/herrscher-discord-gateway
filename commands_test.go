@@ -153,8 +153,9 @@ func TestChannelReadRendersAuthorsAndIDs(t *testing.T) {
 func TestChannelReadKeepsBotMessages(t *testing.T) {
 	f := &fakeClient{read: []dctl.Message{{ID: "2", Content: "an answer", Author: dctl.Author{ID: "u3", Username: "bot", Bot: true}}}}
 	g := NewGateway(f)
-	out, _ := cmdNamed(t, g, "channel", "read").Run(context.Background(),
+	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
+	requireNoError(t, err)
 	if !strings.Contains(out, "an answer") {
 		t.Fatalf("a bot message must survive an explicit read: %q", out)
 	}

@@ -69,7 +69,11 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	c := dctl.New(token, "", dctl.WithGlobalCommands())
 	gw := NewGateway(discordClient{c})
 	plat := NewPlatform(c)
-	binds := newBindStore(bindStorePath())
+	bindPath, err := bindStorePath()
+	if err != nil {
+		return contracts.GatewaySet{}, err
+	}
+	binds := newBindStore(bindPath)
 	plat.binds = binds
 
 	level := verbositySetting(cfg.Get("verbosity"))
@@ -90,7 +94,11 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	gw.deletes = boolSetting(cfg.Get("message_deletes"))
 	gw.selfID = appID
 
-	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowStorePath()), binds)
+	allowPath, err := allowStorePath()
+	if err != nil {
+		return contracts.GatewaySet{}, err
+	}
+	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowPath), binds)
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
@@ -134,19 +142,32 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	}, nil
 }
 
-func stateDir() string {
+func stateDir() (string, error) {
 	dir := os.Getenv("DCTL_STATE_DIR")
 	if dir == "" {
-		home, _ := os.UserHomeDir()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("locate the state directory: %w", err)
+		}
 		dir = filepath.Join(home, ".config", "dctl")
 	}
-	_ = os.MkdirAll(dir, 0o700)
-	return dir
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		warnf("create the state directory %s: %v", dir, err)
+	}
+	return dir, nil
 }
 
-func allowStorePath() string { return filepath.Join(stateDir(), "discord-allow.json") }
+func allowStorePath() (string, error) { return storePath("discord-allow.json") }
 
-func bindStorePath() string { return filepath.Join(stateDir(), "discord-router.json") }
+func bindStorePath() (string, error) { return storePath("discord-router.json") }
+
+func storePath(name string) (string, error) {
+	dir, err := stateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, name), nil
+}
 
 func intSetting(v string, def int) int {
 	n, err := strconv.Atoi(v)

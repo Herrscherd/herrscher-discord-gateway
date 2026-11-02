@@ -88,7 +88,9 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	}
 	if !s.allow.Allowed(ix.UserID()) {
 		if s.comp != nil {
-			_ = s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), "tu n'es pas autorisé à utiliser ce menu")
+			if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), "tu n'es pas autorisé à utiliser ce menu"); err != nil {
+				warnf("acknowledge component: %v", err)
+			}
 		}
 		return
 	}
@@ -107,7 +109,9 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 		return
 	}
 	if s.comp != nil {
-		_ = s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg)
+		if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg); err != nil {
+			warnf("acknowledge component: %v", err)
+		}
 	}
 }
 
@@ -119,17 +123,23 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 	}
 	if ix.Type == dctl.InteractionAutocomplete {
 		if !s.allow.Allowed(ix.UserID()) {
-			_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil)
+			if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil); err != nil {
+				warnf("answer autocomplete: %v", err)
+			}
 			return
 		}
 		choices, err := s.reg.DispatchAutocomplete(ctx, ix)
 		if err != nil {
 			return
 		}
-		_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), choices)
+		if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), choices); err != nil {
+			warnf("answer autocomplete: %v", err)
+		}
 		return
 	}
-	_, _ = s.reg.Dispatch(ctx, ix)
+	if _, err := s.reg.Dispatch(ctx, ix); err != nil {
+		warnf("dispatch interaction: %v", err)
+	}
 }
 
 func (s *slash) routeAndDispatch(ctx context.Context, ix dctl.Interaction) {
@@ -311,7 +321,9 @@ func (s *slash) dispatch(ctx context.Context, ix dctl.Interaction, args []string
 	if err != nil {
 		return
 	}
-	_ = s.ix.EditResponse(ctx, appID, token, dctl.Response{Content: out})
+	if err := s.ix.EditResponse(ctx, appID, token, dctl.Response{Content: out}); err != nil {
+		warnf("edit interaction response: %v", err)
+	}
 }
 
 func (s *slash) run(ctx context.Context, args []string) string {
@@ -329,7 +341,9 @@ func (s *slash) run(ctx context.Context, args []string) string {
 }
 
 func (s *slash) respond(ctx context.Context, ix dctl.Interaction, content string) {
-	_ = s.ix.Respond(ctx, ix.ID, ix.Token.Reveal(), dctl.Response{Content: content, Ephemeral: true})
+	if err := s.ix.Respond(ctx, ix.ID, ix.Token.Reveal(), dctl.Response{Content: content, Ephemeral: true}); err != nil {
+		warnf("respond to interaction: %v", err)
+	}
 }
 
 const (
@@ -370,7 +384,7 @@ func flagsFrom(leaves []dctl.InteractionOption) []string {
 	var out []string
 	for _, o := range leaves {
 		if o.Type == optBoolean {
-			if b, _ := o.Value.(bool); b {
+			if b, ok := o.Value.(bool); ok && b {
 				out = append(out, "--"+o.Name)
 			}
 			continue
