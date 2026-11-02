@@ -165,7 +165,10 @@ func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
 
 func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate) {
 	repos, err := ctrl.Repos(ctx)
-	if err != nil || len(repos) == 0 {
+	if err != nil {
+		r.log.Warn("list repos failed", "err", err)
+	}
+	if len(repos) == 0 {
 		r.post(ctx, msg.ChannelID, "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge")
 		return
 	}
@@ -190,8 +193,8 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 	if last == "" || !knownRepo(last, repos) {
 		return false
 	}
-	if msg := r.bind(ctx, ctrl, task, last, msg, true); msg != "" {
-		r.sinks.at(task.conv).fail(ctx, msg)
+	if failure := r.bind(ctx, ctrl, task, last, msg, true); failure != "" {
+		r.sinks.at(task.conv).fail(ctx, failure)
 		return true
 	}
 	r.post(ctx, task.conv, fmt.Sprintf(
@@ -282,6 +285,7 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 			r.post(ctx, msg.ChannelID, "je continue en privé dans <#"+threadID+">")
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
+		r.log.Warn("private thread left without its member, delete it by hand", "channel", msg.ChannelID, "thread", threadID, "err", err)
 	}
 	r.log.Warn("private thread failed", "channel", msg.ChannelID, "err", err)
 	r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
@@ -314,8 +318,8 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 		return false
 	}
 	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
-	if msg := r.bind(ctx, ctrl, task, value, msg, true); msg != "" {
-		r.sinks.at(task.conv).fail(ctx, msg)
+	if failure := r.bind(ctx, ctrl, task, value, msg, true); failure != "" {
+		r.sinks.at(task.conv).fail(ctx, failure)
 	}
 	return true
 }
@@ -370,8 +374,9 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	if err := r.binds.SetLastRepo(value); err != nil {
 		r.log.Warn("bind store save failed", "err", err)
 	}
-	if buffered {
-		r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared)
+	if buffered && !r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared) {
+		r.log.Warn("buffered message not delivered to the new session", "session", spec.Name, "conv", task.conv)
+		r.sinks.at(task.conv).fail(ctx, "je n'ai pas pu transmettre ton message à la session, renvoie-le")
 	}
 	return ""
 }

@@ -12,17 +12,18 @@ import (
 )
 
 type fakeCtrl struct {
-	repos       []contracts.RepoRef
-	sessions    []contracts.SessionInfo
-	created     []contracts.CreateSession
-	submitted   map[string][]contracts.Inbound
-	live        map[string]bool
-	picked      map[string][]string
-	interrupted []string
-	closed      []closeCall
-	principals  []string
-	closeErr    error
-	createErr   error
+	repos        []contracts.RepoRef
+	sessions     []contracts.SessionInfo
+	created      []contracts.CreateSession
+	submitted    map[string][]contracts.Inbound
+	live         map[string]bool
+	picked       map[string][]string
+	interrupted  []string
+	closed       []closeCall
+	principals   []string
+	closeErr     error
+	createErr    error
+	refuseSubmit bool
 }
 
 type closeCall struct {
@@ -66,7 +67,7 @@ func (f *fakeCtrl) Interrupt(name string) bool {
 }
 
 func (f *fakeCtrl) Submit(name string, in contracts.Inbound) bool {
-	if !f.live[name] {
+	if f.refuseSubmit || !f.live[name] {
 		return false
 	}
 	f.submitted[name] = append(f.submitted[name], in)
@@ -811,5 +812,18 @@ func TestASupportThreadInheritsTheChannelRenderLevel(t *testing.T) {
 
 	if got := r.binds.Level(ctrl.created[0].ChannelID); got != levelSilent {
 		t.Fatalf("level = %q, want %q carried into the ticket", got, levelSilent)
+	}
+}
+
+func TestUndeliverableBufferedMessageIsReported(t *testing.T) {
+	r, ctrl, _, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	r.onMessage(context.Background(), ownerPing("fix the login bug"))
+	ctrl.refuseSubmit = true
+
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
+
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "renvoie-le") {
+		t.Fatalf("the operator was not told the message was lost: posts=%q", f.posts)
 	}
 }
