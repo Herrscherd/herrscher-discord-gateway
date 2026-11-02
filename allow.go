@@ -20,7 +20,7 @@ type allowStore struct {
 
 func newAllowStore(path string, log *slog.Logger) *allowStore {
 	s := &allowStore{path: path, Session: map[string][]string{}}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("allow store unreadable, starting with an empty allowlist", "path", path, "err", err)
 	}

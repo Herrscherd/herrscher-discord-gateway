@@ -9,6 +9,8 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
+const gatewayKind = "discord"
+
 type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
@@ -65,7 +67,7 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 
 func (g *Gateway) Manifest() contracts.Manifest {
 	return contracts.Manifest{
-		Kind:            "discord",
+		Kind:            gatewayKind,
 		Category:        contracts.CategoryGateway,
 		Capabilities:    contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 		AttachmentHosts: attachmentHostList(),

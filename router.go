@@ -339,7 +339,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 	spec := contracts.CreateSession{
 		Name:      sessionNameFor(j.slot),
 		ChannelID: j.conv,
-		Gateways:  []string{"discord"},
+		Gateways:  []string{gatewayKind},
 		Agent:     r.cfg.agent,
 	}
 	if target, ok := strings.CutPrefix(value, "local:"); ok {
@@ -475,7 +475,7 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, id, user string, direc
 func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening, shared bool) bool {
 	ref := r.reference(ctx, m)
 	in := contracts.Inbound{
-		Conversation: contracts.Conversation{Gateway: "discord", ID: conv},
+		Conversation: contracts.Conversation{Gateway: gatewayKind, ID: conv},
 		Author:       m.Author.Username,
 		AuthorID:     m.Author.ID,
 		Text:         r.compose(ctx, m, ref, opening, shared),
