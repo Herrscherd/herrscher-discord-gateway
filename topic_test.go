@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"strings"
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -84,10 +85,7 @@ func TestThreadName(t *testing.T) {
 	if got := threadName("<@123>"); got != "session" {
 		t.Fatalf("threadName = %q, want a fallback rather than an empty name", got)
 	}
-	long := ""
-	for range 200 {
-		long += "é"
-	}
+	long := strings.Repeat("é", 200)
 	got := []rune(threadName(long))
 	if len(got) > threadNameMax {
 		t.Fatalf("threadName length = %d runes, want <= %d (Discord rejects longer)", len(got), threadNameMax)

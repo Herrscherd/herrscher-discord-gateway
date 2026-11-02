@@ -46,6 +46,7 @@ type ws struct {
 	acked atomic.Bool
 	seq   struct {
 		sync.Mutex
+
 		n int
 	}
 	sem chan struct{}

@@ -418,7 +418,7 @@ func TestNamedRepoSkipsTheMenu(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "Herrscherd/dctl"}}
 
-	r.onMessage(context.Background(), ownerPing("le bug d'auth de herrscher, tu regardes ?"))
+	r.onMessage(context.Background(), ownerPing("le bug d'auth de herrscher, tu vois ?"))
 
 	if len(c.menus) != 0 {
 		t.Fatalf("menus = %+v, want none, the ping already said which repo", c.menus)
