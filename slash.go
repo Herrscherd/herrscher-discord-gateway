@@ -476,10 +476,10 @@ func commandVerbosity() *dctl.Command {
 		With(
 			dctl.String("level", "how much of a turn to show here", true).
 				Choices(
-					dctl.NewChoice("silent, the answer and nothing else", levelSilent),
-					dctl.NewChoice("quiet, adds a live list of tool names", levelQuiet),
-					dctl.NewChoice("actions, adds each tool's detail", levelActions),
-					dctl.NewChoice("full, adds the assistant's text", levelFull),
+					dctl.NewChoice("silent: only the answer", levelSilent),
+					dctl.NewChoice("quiet: also a live list of tool names", levelQuiet),
+					dctl.NewChoice("actions: also each tool's detail", levelActions),
+					dctl.NewChoice("full: also the assistant's text", levelFull),
 				),
 		)
 }

@@ -47,7 +47,7 @@ func init() {
 				{Key: "sessions_per_user", Env: "DISCORD_SESSIONS_PER_USER", Help: "give each participant of a channel their own session (default true; false puts the whole room in one shared session)"},
 				{Key: "thread_sessions_per_user", Env: "DISCORD_THREAD_SESSIONS_PER_USER", Help: "give each participant of a thread their own session (default false; a thread is one piece of work everyone in it shares)"},
 				{Key: "agent", Env: "DISCORD_AGENT", Help: "persona every session this gateway opens runs as, which is what gates its tools (required by /mode ambient)"},
-				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default for how much of a turn shows in-channel, overridable per conversation with /verbosity: silent (default; the answer and nothing else) | quiet (adds a live list of tool names) | actions (adds each tool's detail) | full (adds the assistant's text)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default for how much of a turn shows in-channel, overridable per conversation with /verbosity. silent (default) shows only the answer. quiet also shows a live list of tool names. actions also shows each tool's detail. full also shows the assistant's text."},
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many prior channel messages to carry as context (default 30)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "skill name a new session is told to follow (default pr-job)"},
 				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so a channel keeps the work and not the requests (default off; never applies where the answer lives in a thread started off the ping)"},
