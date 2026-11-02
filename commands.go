@@ -28,94 +28,102 @@ func (g *Gateway) Commands() []contracts.Cmd {
 			Param("id", "channel id", true).
 			ValueParam("limit", fmt.Sprintf("how many messages, capped at %d", readCap), false).
 			ValueParam("after", "message id to read forward from, for paging", false).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				limit, _ := in.Lookup("limit")
-				after, _ := in.Lookup("after")
-				msgs, err := g.c.ReadMessages(ctx, in.Args["id"], capLimit(limit), after)
-				if err != nil {
-					return "", fmt.Errorf("discord channel read: %w", err)
-				}
-				return renderMessages(msgs), nil
-			}),
-
+			Do(g.readChannel),
 		contracts.New("channel", "post").
 			Help("post a message to a channel").
 			Param("id", "channel id", true).
 			Param("text", "message body", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				m, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
-				if err != nil {
-					return "", fmt.Errorf("discord channel post: %w", err)
-				}
-				return "posted " + string(msgID(m)), nil
-			}),
-
+			Do(g.postChannel),
 		contracts.New("message", "reply").
 			Help("reply to a specific message").
 			Param("id", "channel id", true).
 			Param("to", "message id being replied to", true).
 			Param("text", "message body", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				m, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
-				if err != nil {
-					return "", fmt.Errorf("discord message reply: %w", err)
-				}
-				return "replied " + string(msgID(m)), nil
-			}),
-
+			Do(g.replyMessage),
 		contracts.New("message", "react").
 			Help("add a reaction to a message").
 			Param("id", "channel id", true).
 			Param("msg", "message id", true).
 			Param("emoji", "emoji to add", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				if err := g.c.React(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
-					return "", fmt.Errorf("discord message react: %w", err)
-				}
-				return "reacted", nil
-			}),
-
+			Do(g.reactMessage),
 		contracts.New("message", "unreact").
 			Help("remove a reaction this bot added to a message").
 			Param("id", "channel id", true).
 			Param("msg", "message id", true).
 			Param("emoji", "emoji to remove", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				if err := g.c.Unreact(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
-					return "", fmt.Errorf("discord message unreact: %w", err)
-				}
-				return "unreacted", nil
-			}),
-
+			Do(g.unreactMessage),
 		contracts.New("message", "edit").
 			Help("rewrite a message this bot sent").
 			Param("id", "channel id", true).
 			Param("msg", "message id", true).
 			Param("text", "new body", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				if err := g.Edit(ctx, in.Args["id"], in.Args["msg"], in.Args["text"]); err != nil {
-					return "", err
-				}
-				return "edited", nil
-			}),
+			Do(g.editMessage),
 	}
-
 	if g.deletes {
 		cmds = append(cmds, contracts.New("message", "delete").
 			Help("delete a message this bot sent").
 			Param("id", "channel id", true).
 			Param("msg", "message id", true).
-			Do(func(ctx context.Context, in contracts.Input) (string, error) {
-				if err := g.ownMessage(ctx, in.Args["id"], in.Args["msg"]); err != nil {
-					return "", err
-				}
-				if err := g.Delete(ctx, in.Args["id"], in.Args["msg"]); err != nil {
-					return "", err
-				}
-				return "deleted", nil
-			}))
+			Do(g.deleteMessage))
 	}
 	return cmds
+}
+
+func (g *Gateway) readChannel(ctx context.Context, in contracts.Input) (string, error) {
+	limit, _ := in.Lookup("limit")
+	after, _ := in.Lookup("after")
+	msgs, err := g.c.ReadMessages(ctx, in.Args["id"], capLimit(limit), after)
+	if err != nil {
+		return "", fmt.Errorf("discord channel read: %w", err)
+	}
+	return renderMessages(msgs), nil
+}
+
+func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (string, error) {
+	m, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
+	if err != nil {
+		return "", fmt.Errorf("discord channel post: %w", err)
+	}
+	return "posted " + string(msgID(m)), nil
+}
+
+func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (string, error) {
+	m, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
+	if err != nil {
+		return "", fmt.Errorf("discord message reply: %w", err)
+	}
+	return "replied " + string(msgID(m)), nil
+}
+
+func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (string, error) {
+	if err := g.c.React(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
+		return "", fmt.Errorf("discord message react: %w", err)
+	}
+	return "reacted", nil
+}
+
+func (g *Gateway) unreactMessage(ctx context.Context, in contracts.Input) (string, error) {
+	if err := g.c.Unreact(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
+		return "", fmt.Errorf("discord message unreact: %w", err)
+	}
+	return "unreacted", nil
+}
+
+func (g *Gateway) editMessage(ctx context.Context, in contracts.Input) (string, error) {
+	if err := g.Edit(ctx, in.Args["id"], in.Args["msg"], in.Args["text"]); err != nil {
+		return "", err
+	}
+	return "edited", nil
+}
+
+func (g *Gateway) deleteMessage(ctx context.Context, in contracts.Input) (string, error) {
+	if err := g.ownMessage(ctx, in.Args["id"], in.Args["msg"]); err != nil {
+		return "", err
+	}
+	if err := g.Delete(ctx, in.Args["id"], in.Args["msg"]); err != nil {
+		return "", err
+	}
+	return "deleted", nil
 }
 
 var (
