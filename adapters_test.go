@@ -32,10 +32,6 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	}
 }
 
-func TestPlatformSatisfiesRenderClientViaAdapter(_ *testing.T) {
-	var _ renderClient = (*renderAdapter)(nil)
-}
-
 func TestPlatformStillReadsAnUnboundChannel(t *testing.T) {
 	p := &Platform{binds: newBindStore(t.TempDir()+"/router.json", testLog())}
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {

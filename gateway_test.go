@@ -175,10 +175,6 @@ func TestGatewayTranslatesActions(t *testing.T) {
 	}
 }
 
-func TestGatewayImplementsEventSink(_ *testing.T) {
-	var _ contracts.EventSink = (*Gateway)(nil)
-}
-
 func TestGatewayEditsAndDeletes(t *testing.T) {
 	var _ contracts.MessageEditor = (*Gateway)(nil)
 

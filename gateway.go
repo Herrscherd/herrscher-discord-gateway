@@ -49,6 +49,8 @@ type Gateway struct {
 	selfID  string
 }
 
+var _ contracts.EventSink = (*Gateway)(nil)
+
 // NewGateway returns a Gateway that sends through c, runs its slash surface on the
 // lifetime run and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
