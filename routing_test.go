@@ -14,7 +14,7 @@ func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl,
 	t.Helper()
 	ctrl, c := newFakeCtrl(), &fakeClient{}
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	cfg := routerConfig{
 		appID:           "app1",
 		contextMessages: 0,
@@ -26,7 +26,7 @@ func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl,
 		tune(&cfg)
 	}
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), &fakeRender{}, staticLevels("silent"), "", false), cfg)
+		newSinks(testRun(), &fakeRender{}, staticLevels("silent"), "", false, testLog()), testLog(), cfg)
 	return r, ctrl, c
 }
 
@@ -221,7 +221,7 @@ func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
 		t.Fatalf("SessionsIn = %v, want one per participant", got)
 	}
 
-	s := &slash{ctx: context.Background(), binds: r.binds, router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), binds: r.binds, router: r, ctrl: ctrl}
 	s.setMode("c1", supportMode)
 
 	if got := r.binds.SessionsIn("c1"); len(got) != 0 {

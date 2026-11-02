@@ -15,7 +15,7 @@ func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "envfile.go"})
 	pv.flush(true)
@@ -30,7 +30,7 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, levelFull, time.Unix(0, 0))
+	}, levelFull, time.Unix(0, 0), testLog())
 
 	for i := range maxLines * 2 {
 		pv.add(contracts.BackendEvent{
@@ -53,7 +53,7 @@ func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "quiet", time.Unix(0, 0))
+	}, "quiet", time.Unix(0, 0), testLog())
 
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "/home/op/secret-client/app.go"})
 	pv.add(contracts.BackendEvent{Kind: "text", Detail: "looking at /home/op/secret-client"})
@@ -75,7 +75,7 @@ func TestRepeatedLinesCollapse(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "quiet", time.Unix(0, 0))
+	}, "quiet", time.Unix(0, 0), testLog())
 
 	for range 3 {
 		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "a.go"})
@@ -99,7 +99,7 @@ func TestFullKeepsDetail(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "/home/op/app.go"})
 	pv.flush(true)
 	if !strings.Contains(last, "/home/op/app.go") {
@@ -112,7 +112,7 @@ func TestProgressViewSummaryCountsActions(t *testing.T) {
 	pv := newProgressView(func(id, content string) (string, error) {
 		posted = append(posted, content)
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "result", Cost: 0.02})

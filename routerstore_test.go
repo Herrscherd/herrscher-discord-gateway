@@ -8,27 +8,27 @@ import (
 
 func TestBindStoreRoundTrips(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if got := s.Session("c1"); got != "" {
 		t.Fatalf("empty store returned %q", got)
 	}
 	if err := s.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Session("c1"); got != "ch-c1" {
+	if got := newBindStore(path, testLog()).Session("c1"); got != "ch-c1" {
 		t.Fatalf("reloaded store returned %q, want ch-c1", got)
 	}
 	if err := s.Unbind("c1"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Session("c1"); got != "" {
+	if got := newBindStore(path, testLog()).Session("c1"); got != "" {
 		t.Fatalf("unbound channel still resolves to %q", got)
 	}
 }
 
 func TestBindStoreIsPrivate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
-	if err := newBindStore(path).Bind("c1", "s1"); err != nil {
+	if err := newBindStore(path, testLog()).Bind("c1", "s1"); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Stat(path)
@@ -45,7 +45,7 @@ func TestCorruptBindStoreStartsEmpty(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Session("c1"); got != "" {
+	if got := newBindStore(path, testLog()).Session("c1"); got != "" {
 		t.Fatalf("corrupt store resolved %q, it must ask again, never guess a repo", got)
 	}
 }
@@ -55,34 +55,34 @@ func TestCorruptBindStoreKeepsNoThreads(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"threads":{"c1":true},"channels":`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if newBindStore(path).IsThread("c1") {
+	if newBindStore(path, testLog()).IsThread("c1") {
 		t.Fatal("a corrupt store granted a channel the no-@mention rule")
 	}
 }
 
 func TestLevelRoundTripsAndResets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if got := s.Level("c1"); got != "" {
 		t.Fatalf("empty store returned level %q, want the configured default to win", got)
 	}
 	if err := s.SetLevel("c1", levelFull); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Level("c1"); got != levelFull {
+	if got := newBindStore(path, testLog()).Level("c1"); got != levelFull {
 		t.Fatalf("reloaded level = %q, want %q", got, levelFull)
 	}
 	if err := s.SetLevel("c1", ""); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Level("c1"); got != "" {
+	if got := newBindStore(path, testLog()).Level("c1"); got != "" {
 		t.Fatalf("reset level = %q, want the override gone", got)
 	}
 }
 
 func TestUnbindKeepsTheRenderLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if err := s.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
@@ -92,21 +92,21 @@ func TestUnbindKeepsTheRenderLevel(t *testing.T) {
 	if err := s.Unbind("c1"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path).Level("c1"); got != levelQuiet {
+	if got := newBindStore(path, testLog()).Level("c1"); got != levelQuiet {
 		t.Fatalf("level = %q, want %q kept across the session's death", got, levelQuiet)
 	}
 }
 
 func TestUnbindKeepsTheThreadFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if err := s.BindThread("t1", "t1", "c1", "ch-t1"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Unbind("t1"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path); got.Session("t1") != "" || !got.IsThread("t1") {
+	if got := newBindStore(path, testLog()); got.Session("t1") != "" || !got.IsThread("t1") {
 		t.Fatalf("session = %q, thread = %v, want the binding gone and the thread kept",
 			got.Session("t1"), got.IsThread("t1"))
 	}
@@ -118,7 +118,7 @@ func TestAStoreFromBeforeModesReadsAndWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if got := s.Mode("c1"); got != "" {
 		t.Fatalf("mode(c1) = %q, want the ordinary channel", got)
 	}
@@ -128,7 +128,7 @@ func TestAStoreFromBeforeModesReadsAndWrites(t *testing.T) {
 	if err := s.SetRepo("c1", "local:herrscher"); err != nil {
 		t.Fatal(err)
 	}
-	if got := newBindStore(path); got.Mode("c1") != supportMode || got.Repo("c1") != "local:herrscher" {
+	if got := newBindStore(path, testLog()); got.Mode("c1") != supportMode || got.Repo("c1") != "local:herrscher" {
 		t.Fatalf("mode = %q, repo = %q, want both persisted alongside the old binding",
 			got.Mode("c1"), got.Repo("c1"))
 	}

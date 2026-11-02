@@ -2,8 +2,6 @@ package discord
 
 import (
 	"context"
-	"fmt"
-	"os"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
@@ -16,7 +14,7 @@ func (r *router) onChannelGone(ctx context.Context, id string) {
 	for _, child := range r.binds.Children(id) {
 		r.endConversation(ctx, child)
 		if err := r.binds.Forget(child); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
 	r.endConversation(ctx, id)
@@ -30,7 +28,7 @@ func (r *router) endConversation(ctx context.Context, id string) {
 		return
 	}
 	if err := r.binds.Forget(id); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		r.log.Warn("bind store save failed", "err", err)
 	}
 	ctrl := r.ctrl()
 	if ctrl == nil {
@@ -38,20 +36,20 @@ func (r *router) endConversation(ctx context.Context, id string) {
 	}
 	for _, session := range sessions {
 		ctrl.Interrupt(session)
-		closeGone(ctx, ctrl, session, id)
+		r.closeGone(ctx, ctrl, session, id)
 	}
 }
 
-func closeGone(ctx context.Context, ctrl contracts.SessionControl, session, conv string) {
+func (r *router) closeGone(ctx context.Context, ctrl contracts.SessionControl, session, conv string) {
 	if _, err := ctrl.Close(ctx, session, false); err == nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: conversation %s deleted, closed session %s\n", conv, session)
+		r.log.Info("conversation deleted, session closed", "conv", conv, "session", session)
 		return
 	}
 	if _, err := ctrl.Close(ctx, session, true); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: conversation %s deleted, but closing session %s failed: %v\n", conv, session, err)
+		r.log.Warn("conversation deleted, closing session failed", "conv", conv, "session", session, "err", err)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "discord gateway: conversation %s deleted, force-closed session %s, uncommitted worktree changes were discarded, branch session/%s is kept\n", conv, session, session)
+	r.log.Warn("conversation deleted, session force-closed, uncommitted worktree changes discarded", "conv", conv, "session", session, "branch", "session/"+session)
 }
 
 func (r *router) forget(conv string) {

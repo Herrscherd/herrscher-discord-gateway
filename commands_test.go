@@ -25,7 +25,7 @@ func cmdNamed(t *testing.T, g *Gateway, path ...string) contracts.Cmd {
 func TestCommandsAreDeclaredUnprefixed(t *testing.T) {
 	var _ contracts.CommandSource = (*Gateway)(nil)
 
-	g := NewGateway(&fakeClient{})
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
 	for _, c := range g.Commands() {
 		if c.Path[0] == "discord" {
 			t.Fatalf("the host owns the prefix; %v must not carry it", c.Path)
@@ -37,7 +37,7 @@ func TestCommandsAreDeclaredUnprefixed(t *testing.T) {
 }
 
 func deleting(f *fakeClient) *Gateway {
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	g.deletes = true
 	g.selfID = "app1"
 	return g
@@ -54,7 +54,7 @@ func hasCmd(g *Gateway, path ...string) bool {
 }
 
 func TestDeleteIsAbsentWithoutTheOptIn(t *testing.T) {
-	g := NewGateway(&fakeClient{})
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
 	if hasCmd(g, "message", "delete") {
 		t.Fatal("message delete must not be contributed without the operator's opt-in")
 	}
@@ -127,7 +127,7 @@ func TestChannelReadRendersAuthorsAndIDs(t *testing.T) {
 		{ID: "1", Content: "hello", Author: dctl.Author{ID: "u1", Username: "ana"}},
 		{ID: "2", Content: "hi", Author: dctl.Author{ID: "u2", Username: "bo", Bot: true}},
 	}}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
 	if err != nil {
@@ -152,7 +152,7 @@ func TestChannelReadRendersAuthorsAndIDs(t *testing.T) {
 
 func TestChannelReadKeepsBotMessages(t *testing.T) {
 	f := &fakeClient{read: []dctl.Message{{ID: "2", Content: "an answer", Author: dctl.Author{ID: "u3", Username: "bot", Bot: true}}}}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
 	requireNoError(t, err)
@@ -163,7 +163,7 @@ func TestChannelReadKeepsBotMessages(t *testing.T) {
 
 func TestChannelReadCapsTheLimit(t *testing.T) {
 	f := &fakeClient{}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	if _, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1", "limit": "5000"}}); err != nil {
 		t.Fatalf("read: %v", err)
@@ -198,7 +198,7 @@ func TestChannelReadCapsTheLimit(t *testing.T) {
 }
 
 func TestChannelReadSaysWhenEmpty(t *testing.T) {
-	g := NewGateway(&fakeClient{})
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
 	if err != nil {
@@ -214,7 +214,7 @@ func TestChannelReadFlattensAForgedLine(t *testing.T) {
 	f := &fakeClient{read: []dctl.Message{
 		{ID: "1", Content: forged, Author: dctl.Author{ID: "u1", Username: "ana"}},
 	}}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
 	if err != nil {
@@ -243,7 +243,7 @@ func TestChannelReadNamesAnAttachmentOnlyMessage(t *testing.T) {
 			Embeds: []dctl.Embed{{Title: "a link"}},
 		},
 	}}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	out, err := cmdNamed(t, g, "channel", "read").Run(context.Background(),
 		contracts.Input{Args: map[string]string{"id": "c1"}})
 	if err != nil {
@@ -259,7 +259,7 @@ func TestChannelReadNamesAnAttachmentOnlyMessage(t *testing.T) {
 
 func TestWriteCommandsReachTheClient(t *testing.T) {
 	f := &fakeClient{}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	ctx := context.Background()
 
 	if _, err := cmdNamed(t, g, "channel", "post").Run(ctx,
@@ -284,21 +284,21 @@ func TestChannelReadReactUnreactWrapTheClientError(t *testing.T) {
 	ctx := context.Background()
 
 	f := &fakeClient{readErr: sentinel}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	if _, err := cmdNamed(t, g, "channel", "read").Run(ctx,
 		contracts.Input{Args: map[string]string{"id": "c1"}}); !errors.Is(err, sentinel) {
 		t.Fatalf("channel read must wrap the client error, got %v", err)
 	}
 
 	f = &fakeClient{reactErr: sentinel}
-	g = NewGateway(f)
+	g = NewGateway(f, testRun(), testLog())
 	if _, err := cmdNamed(t, g, "message", "react").Run(ctx,
 		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1", "emoji": "👀"}}); !errors.Is(err, sentinel) {
 		t.Fatalf("message react must wrap the client error, got %v", err)
 	}
 
 	f = &fakeClient{unreactErr: sentinel}
-	g = NewGateway(f)
+	g = NewGateway(f, testRun(), testLog())
 	if _, err := cmdNamed(t, g, "message", "unreact").Run(ctx,
 		contracts.Input{Args: map[string]string{"id": "c1", "msg": "m1", "emoji": "👀"}}); !errors.Is(err, sentinel) {
 		t.Fatalf("message unreact must wrap the client error, got %v", err)
@@ -306,7 +306,7 @@ func TestChannelReadReactUnreactWrapTheClientError(t *testing.T) {
 }
 
 func TestRequiredArgsAreDeclared(t *testing.T) {
-	g := NewGateway(&fakeClient{})
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
 	c := cmdNamed(t, g, "channel", "read")
 	var found bool
 	for _, p := range c.Params {
@@ -321,7 +321,7 @@ func TestRequiredArgsAreDeclared(t *testing.T) {
 
 func TestReactVerbsReachTheClient(t *testing.T) {
 	f := &fakeClient{}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	ctx := context.Background()
 
 	if _, err := cmdNamed(t, g, "message", "reply").Run(ctx,

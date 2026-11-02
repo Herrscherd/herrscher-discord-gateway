@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +38,7 @@ const (
 
 type ws struct {
 	token     string
+	log       *slog.Logger
 	handle    func(context.Context, dctl.Interaction)
 	onMessage func(context.Context, messageCreate)
 	onGone    func(context.Context, string)
@@ -59,8 +60,8 @@ type gwPayload struct {
 	T  string          `json:"t"`
 }
 
-func newWS(token string, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	return &ws{token: token, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+func newWS(token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
+	return &ws{token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
 }
 
 func (w *ws) run(ctx context.Context) {
@@ -69,10 +70,10 @@ func (w *ws) run(ctx context.Context) {
 		connected := func() { backoff = time.Second }
 		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
 			if code, ok := permanentClose(err); ok {
-				fmt.Fprintf(os.Stderr, "discord gateway: fatal: %v (close %d); not reconnecting, check the bot token and intents\n", err, code)
+				w.log.Error("gateway closed permanently, not reconnecting, check the bot token and intents", "err", err, "close_code", int(code))
 				return
 			}
-			fmt.Fprintf(os.Stderr, "discord gateway: %v; reconnecting in %s\n", err, backoff)
+			w.log.Warn("gateway connection lost, reconnecting", "err", err, "backoff", backoff.String())
 			select {
 			case <-ctx.Done():
 				return
@@ -99,7 +100,7 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
-	defer closeSocket(c, websocket.StatusNormalClosure, "")
+	defer w.closeSocket(c, websocket.StatusNormalClosure, "")
 	c.SetReadLimit(readLimit)
 
 	hello, err := readPayload(ctx, c)
@@ -157,7 +158,7 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 		}
 		var ix dctl.Interaction
 		if err := json.Unmarshal(d, &ix); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bad interaction: %v\n", err)
+			w.log.Warn("bad interaction payload dropped", "err", err)
 			return
 		}
 		w.bounded(ctx, func() { w.handle(ctx, ix) })
@@ -167,7 +168,7 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 		}
 		var m messageCreate
 		if err := json.Unmarshal(d, &m); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bad message: %v\n", err)
+			w.log.Warn("bad message payload dropped", "err", err)
 			return
 		}
 		w.bounded(ctx, func() { w.onMessage(ctx, m) })
@@ -177,7 +178,7 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 		}
 		var c channelDelete
 		if err := json.Unmarshal(d, &c); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bad %s: %v\n", t, err)
+			w.log.Warn("bad gone payload dropped", "event", t, "err", err)
 			return
 		}
 		if c.ID == "" {
@@ -244,7 +245,7 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 			return
 		case <-t.C:
 			if err := w.sendHeartbeat(ctx, c); err != nil {
-				closeSocket(c, websocket.StatusInternalError, "heartbeat")
+				w.closeSocket(c, websocket.StatusInternalError, "heartbeat")
 				return
 			}
 		}
@@ -297,8 +298,8 @@ func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
 	return p, nil
 }
 
-func closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {
+func (w *ws) closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {
 	if err := c.Close(code, reason); err != nil {
-		warnf("close gateway socket: %v", err)
+		w.log.Warn("close gateway socket failed", "err", err)
 	}
 }

@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -24,12 +25,13 @@ type renderClient interface {
 }
 
 type sink struct {
-	ctx   context.Context
+	run   lifetime
 	rc    renderClient
 	ch    string
 	level func() string
 	owner string
 	tidy  bool
+	log   *slog.Logger
 
 	mu       sync.Mutex
 	pv       *progressView
@@ -39,11 +41,11 @@ type sink struct {
 
 type msgRef struct{ ch, id, author string }
 
-func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string, tidy bool) *sink {
+func newSink(run lifetime, rc renderClient, ch string, level func() string, owner string, tidy bool, log *slog.Logger) *sink {
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner, tidy: tidy}
+	return &sink{run: run, rc: rc, ch: ch, level: level, owner: owner, tidy: tidy, log: log}
 }
 
 func staticLevel(level string) func() string {
@@ -57,21 +59,22 @@ func staticLevels(level string) func(string) string {
 }
 
 type sinks struct {
-	ctx   context.Context
+	run   lifetime
 	rc    renderClient
 	level func(conv string) string
 	owner string
 	tidy  bool
+	log   *slog.Logger
 
 	mu sync.Mutex
 	m  map[string]*sink
 }
 
-func newSinks(ctx context.Context, rc renderClient, level func(conv string) string, owner string, tidy bool) *sinks {
+func newSinks(run lifetime, rc renderClient, level func(conv string) string, owner string, tidy bool, log *slog.Logger) *sinks {
 	if level == nil {
 		level = staticLevels("")
 	}
-	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, tidy: tidy, m: map[string]*sink{}}
+	return &sinks{run: run, rc: rc, level: level, owner: owner, tidy: tidy, log: log, m: map[string]*sink{}}
 }
 
 func (s *sinks) at(convID string) *sink {
@@ -80,7 +83,7 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	v := newSink(s.ctx, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy)
+	v := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.log)
 	s.m[convID] = v
 	return v
 }
@@ -105,9 +108,15 @@ func (s *sink) ack(ch, id, author string) {
 	if id == "" || s.acked == ref {
 		return
 	}
-	if err := s.rc.React(s.ctx, ch, id, ackEmoji); err == nil {
-		s.acked = ref
+	s.addAck(ref)
+}
+
+func (s *sink) addAck(ref msgRef) {
+	if err := s.rc.React(s.run(), ref.chOr(s.ch), ref.id, ackEmoji); err != nil {
+		s.log.Warn("add ack reaction failed", "err", err)
+		return
 	}
+	s.acked = ref
 }
 
 func (s *sink) fail(reason string) {
@@ -117,83 +126,105 @@ func (s *sink) fail(reason string) {
 		s.pv.flush(true)
 		s.pv = nil
 	}
+	ctx := s.run()
 	ch := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
-		if err := s.rc.Unreact(s.ctx, ch, s.acked.id, ackEmoji); err != nil {
-			warnf("remove ack reaction: %v", err)
-		}
-		if err := s.rc.React(s.ctx, ch, s.acked.id, failEmoji); err != nil {
-			warnf("add failure reaction: %v", err)
+		s.clearAck(ch)
+		if err := s.rc.React(ctx, ch, s.acked.id, failEmoji); err != nil {
+			s.log.Warn("add failure reaction failed", "err", err)
 		}
 		s.acked = msgRef{}
 	}
 	if reason == "" {
 		return
 	}
-	for _, part := range chunkText(s.answer(failEmoji+" "+reason), gatewayMaxLen) {
-		if err := s.rc.Post(s.ctx, ch, part); err != nil {
-			warnf("post message part: %v", err)
-		}
-	}
+	s.postParts(ctx, ch, s.answer(failEmoji+" "+reason))
 }
 
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ch := s.ch
-
 	switch e.T {
 	case "human":
-		if level := s.level(); rendersProgress(level) {
-			post := func(id, content string) (string, error) {
-				return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
-			}
-			s.pv = newProgressView(post, level, time.Now())
-		}
-		if s.lastUser.id != "" && s.acked != s.lastUser {
-			if err := s.rc.React(s.ctx, s.lastUser.chOr(ch), s.lastUser.id, ackEmoji); err == nil {
-				s.acked = s.lastUser
-			}
-		}
+		s.onHuman()
 	case "status":
-		if s.pv != nil {
-			tool, detail := splitTool(e.Text)
-			s.pv.add(contracts.BackendEvent{Kind: "tool", Tool: tool, Detail: detail})
-		}
+		s.onStatus(e.Text)
 	case "chunk":
-		if s.pv != nil {
-			s.pv.add(contracts.BackendEvent{Kind: "text", Detail: e.Text})
-		}
+		s.onChunk(e.Text)
 	case "reset":
-		if s.pv != nil {
-			s.pv.reset()
-		}
+		s.onReset()
 	case "abandoned":
-		if s.pv != nil {
-			s.pv.flush(true)
-			s.pv = nil
-		}
-		s.clearAck(ch)
+		s.onAbandoned()
 	case "reply":
-		if !e.Done {
-			return
+		s.onReply(e)
+	}
+}
+
+func (s *sink) onHuman() {
+	if level := s.level(); rendersProgress(level) {
+		s.pv = newProgressView(s.upsertStatus, level, time.Now(), s.log)
+	}
+	if s.lastUser.id != "" && s.acked != s.lastUser {
+		s.addAck(s.lastUser)
+	}
+}
+
+func (s *sink) upsertStatus(id, content string) (string, error) {
+	return s.rc.UpsertStatusMessage(s.run(), s.ch, id, content)
+}
+
+func (s *sink) onStatus(text string) {
+	if s.pv == nil {
+		return
+	}
+	tool, detail := splitTool(text)
+	s.pv.add(contracts.BackendEvent{Kind: "tool", Tool: tool, Detail: detail})
+}
+
+func (s *sink) onChunk(text string) {
+	if s.pv != nil {
+		s.pv.add(contracts.BackendEvent{Kind: "text", Detail: text})
+	}
+}
+
+func (s *sink) onReset() {
+	if s.pv != nil {
+		s.pv.reset()
+	}
+}
+
+func (s *sink) onAbandoned() {
+	if s.pv != nil {
+		s.pv.flush(true)
+		s.pv = nil
+	}
+	s.clearAck(s.ch)
+}
+
+func (s *sink) onReply(e contracts.Event) {
+	if !e.Done {
+		return
+	}
+	ch := s.ch
+	s.postParts(s.run(), ch, s.answer(e.Text))
+	if s.pv != nil {
+		if e.Cost > 0 {
+			s.pv.add(contracts.BackendEvent{Kind: "result", Cost: e.Cost})
 		}
-		for _, part := range chunkText(s.answer(e.Text), gatewayMaxLen) {
-			if err := s.rc.Post(s.ctx, ch, part); err != nil {
-				warnf("post message part: %v", err)
-			}
+		s.pv.finish()
+		s.pv = nil
+	}
+	if s.tidyPing(ch) {
+		return
+	}
+	s.clearAck(ch)
+}
+
+func (s *sink) postParts(ctx context.Context, ch, text string) {
+	for _, part := range chunkText(text, gatewayMaxLen) {
+		if err := s.rc.Post(ctx, ch, part); err != nil {
+			s.log.Warn("post message part failed", "err", err)
 		}
-		if s.pv != nil {
-			if e.Cost > 0 {
-				s.pv.add(contracts.BackendEvent{Kind: "result", Cost: e.Cost})
-			}
-			s.pv.finish()
-			s.pv = nil
-		}
-		if s.tidyPing(ch) {
-			return
-		}
-		s.clearAck(ch)
 	}
 }
 
@@ -204,7 +235,7 @@ func (s *sink) tidyPing(ch string) bool {
 	if s.owner == "" || s.acked.author != s.owner {
 		return false
 	}
-	if err := s.rc.Delete(s.ctx, ch, s.acked.id); err != nil {
+	if err := s.rc.Delete(s.run(), ch, s.acked.id); err != nil {
 		return false
 	}
 	gone := s.acked
@@ -229,8 +260,8 @@ func (s *sink) clearAck(ch string) {
 	if s.acked.id == "" {
 		return
 	}
-	if err := s.rc.Unreact(s.ctx, s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
-		warnf("remove ack reaction: %v", err)
+	if err := s.rc.Unreact(s.run(), s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
+		s.log.Warn("remove ack reaction failed", "err", err)
 	}
 	s.acked = msgRef{}
 }
@@ -242,7 +273,7 @@ func (m msgRef) chOr(def string) string {
 	return m.ch
 }
 
-func splitTool(s string) (tool, detail string) {
+func splitTool(s string) (string, string) {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, ' '); i >= 0 {
 		return s[:i], strings.TrimSpace(s[i+1:])

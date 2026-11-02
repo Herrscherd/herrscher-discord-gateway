@@ -1,8 +1,7 @@
 package discord
 
 import (
-	"fmt"
-	"os"
+	"log/slog"
 	"sync"
 )
 
@@ -21,6 +20,7 @@ func knownBotPolicy(v string) bool {
 }
 
 type accessPolicy struct {
+	log      *slog.Logger
 	owner    string
 	selfID   string
 	users    idSet
@@ -86,7 +86,6 @@ func (p *accessPolicy) warnUnconfigured() {
 		return
 	}
 	p.warn.Do(func() {
-		fmt.Fprintln(os.Stderr, "discord gateway: nobody is authorized, so every message is ignored. "+
-			"Set DISCORD_USER_ID, DISCORD_ALLOWED_USERS, DISCORD_ALLOWED_ROLES or DISCORD_ALLOWED_CHANNELS.")
+		p.log.Warn("nobody is authorized, so every message is ignored; set DISCORD_USER_ID, DISCORD_ALLOWED_USERS, DISCORD_ALLOWED_ROLES or DISCORD_ALLOWED_CHANNELS")
 	})
 }

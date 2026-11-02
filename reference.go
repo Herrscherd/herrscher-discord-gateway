@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"path"
 	"strings"
 
@@ -44,7 +43,7 @@ func (r *router) reference(ctx context.Context, m messageCreate) *dctl.Message {
 	}
 	got, err := r.c.GetMessage(ctx, channel, ref.ID)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: read replied-to message: %v\n", err)
+		r.log.Warn("read replied-to message failed", "err", err)
 		return nil
 	}
 	if got == nil || !carries(*got) {

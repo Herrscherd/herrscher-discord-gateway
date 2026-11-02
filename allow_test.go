@@ -6,7 +6,7 @@ import (
 )
 
 func TestAllowGlobalBootstrap(t *testing.T) {
-	s := newAllowStore(filepath.Join(t.TempDir(), "a.json"))
+	s := newAllowStore(filepath.Join(t.TempDir(), "a.json"), testLog())
 	if !s.Allowed("anyone") {
 		t.Fatal("empty allowlist should allow everyone")
 	}
@@ -23,17 +23,17 @@ func TestAllowGlobalBootstrap(t *testing.T) {
 
 func TestAllowGlobalPersists(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "a.json")
-	s := newAllowStore(path)
+	s := newAllowStore(path, testLog())
 	if err := s.AddGlobal("u1"); err != nil {
 		t.Fatal(err)
 	}
-	if !newAllowStore(path).Allowed("u1") {
+	if !newAllowStore(path, testLog()).Allowed("u1") {
 		t.Fatal("allowlist did not persist across reload")
 	}
 }
 
 func TestAllowSession(t *testing.T) {
-	s := newAllowStore(filepath.Join(t.TempDir(), "a.json"))
+	s := newAllowStore(filepath.Join(t.TempDir(), "a.json"), testLog())
 	if err := s.AddSession("demo", "u1"); err != nil {
 		t.Fatal(err)
 	}

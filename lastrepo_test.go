@@ -120,11 +120,11 @@ func TestANamedRepoStillBeatsTheRemembered(t *testing.T) {
 
 func TestLastRepoSurvivesAReload(t *testing.T) {
 	path := t.TempDir() + "/router.json"
-	s := newBindStore(path)
+	s := newBindStore(path, testLog())
 	if err := s.SetLastRepo("local:herrscher"); err != nil {
 		t.Fatalf("SetLastRepo: %v", err)
 	}
-	if got := newBindStore(path).LastRepo(); got != "local:herrscher" {
+	if got := newBindStore(path, testLog()).LastRepo(); got != "local:herrscher" {
 		t.Errorf("LastRepo after reload = %q, want %q", got, "local:herrscher")
 	}
 }

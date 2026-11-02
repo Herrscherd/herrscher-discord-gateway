@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -37,6 +38,8 @@ var (
 // (EventSink).
 type Gateway struct {
 	c     client
+	run   lifetime
+	log   *slog.Logger
 	slash *slash
 	sinks *sinks
 
@@ -44,7 +47,9 @@ type Gateway struct {
 	selfID  string
 }
 
-func NewGateway(c client) *Gateway { return &Gateway{c: c} }
+func NewGateway(c client, run lifetime, log *slog.Logger) *Gateway {
+	return &Gateway{c: c, run: run, log: log}
+}
 
 // BindSessionControl receives the daemon's runtime session controller and starts
 // the slash command surface (sync + websocket loop). It satisfies
@@ -55,7 +60,7 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 		return
 	}
 	g.slash.ctrl = ctrl
-	go g.slash.start()
+	go g.slash.start(g.run())
 }
 
 func (g *Gateway) Manifest() contracts.Manifest {

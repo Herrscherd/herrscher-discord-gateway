@@ -3,7 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -13,7 +13,7 @@ import (
 )
 
 type slash struct {
-	ctx    context.Context
+	log    *slog.Logger
 	token  string
 	ix     *dctl.Interactions
 	reg    *dctl.Registry
@@ -28,8 +28,8 @@ type acker interface {
 	Ack(ctx context.Context, id, token, content string) error
 }
 
-func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore) *slash {
-	s := &slash{ctx: ctx, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
+	s := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
 	s.reg.
 		Add(commandSet(), s.handleSet).
 		Add(commandSession(), s.handleSession).
@@ -42,26 +42,26 @@ func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token stri
 	return s
 }
 
-func (s *slash) start() {
-	go s.sync()
-	newWS(s.token, s.onInteraction, s.onMessage, s.onGone).run(s.ctx)
+func (s *slash) start(ctx context.Context) {
+	go s.sync(ctx)
+	newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone).run(ctx)
 }
 
 var syncBackoff = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
 
-func (s *slash) sync() { syncWithRetry(s.ctx, s.reg.Sync) }
+func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log) }
 
-func syncWithRetry(ctx context.Context, sync func(context.Context) error) {
+func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger) {
 	for attempt := 0; ; attempt++ {
 		err := sync(ctx)
 		if err == nil {
 			return
 		}
 		if attempt == len(syncBackoff) {
-			fmt.Fprintf(os.Stderr, "discord gateway: command sync gave up after %d attempts: %v\n", attempt+1, err)
+			log.Error("command sync gave up", "attempts", attempt+1, "err", err)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "discord gateway: command sync: %v (retrying in %s)\n", err, syncBackoff[attempt])
+		log.Warn("command sync failed, retrying", "err", err, "retry_in", syncBackoff[attempt].String())
 		select {
 		case <-time.After(syncBackoff[attempt]):
 		case <-ctx.Done():
@@ -89,7 +89,7 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	if !s.allow.Allowed(ix.UserID()) {
 		if s.comp != nil {
 			if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), "tu n'es pas autorisé à utiliser ce menu"); err != nil {
-				warnf("acknowledge component: %v", err)
+				s.log.Warn("acknowledge component failed", "err", err)
 			}
 		}
 		return
@@ -110,7 +110,7 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	}
 	if s.comp != nil {
 		if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg); err != nil {
-			warnf("acknowledge component: %v", err)
+			s.log.Warn("acknowledge component failed", "err", err)
 		}
 	}
 }
@@ -124,7 +124,7 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 	if ix.Type == dctl.InteractionAutocomplete {
 		if !s.allow.Allowed(ix.UserID()) {
 			if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil); err != nil {
-				warnf("answer autocomplete: %v", err)
+				s.log.Warn("answer autocomplete failed", "err", err)
 			}
 			return
 		}
@@ -133,12 +133,12 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 			return
 		}
 		if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), choices); err != nil {
-			warnf("answer autocomplete: %v", err)
+			s.log.Warn("answer autocomplete failed", "err", err)
 		}
 		return
 	}
 	if _, err := s.reg.Dispatch(ctx, ix); err != nil {
-		warnf("dispatch interaction: %v", err)
+		s.log.Warn("dispatch interaction failed", "err", err)
 	}
 }
 
@@ -173,9 +173,9 @@ func (s *slash) handleSession(ctx context.Context, ix dctl.Interaction) (dctl.Re
 		user, _ := ix.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, ix, saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
+			s.respond(ctx, ix, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
 		case "remove":
-			s.respond(ctx, ix, saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
+			s.respond(ctx, ix, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
 		case "list":
 			s.respond(ctx, ix, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
 		}
@@ -193,9 +193,9 @@ func (s *slash) handleAllow(ctx context.Context, ix dctl.Interaction) (dctl.Resp
 	user, _ := ix.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, ix, saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
+		s.respond(ctx, ix, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
 	case "remove":
-		s.respond(ctx, ix, saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
+		s.respond(ctx, ix, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
 	case "list":
 		s.respond(ctx, ix, listUsers("command allowlist", s.allow.ListGlobal()))
 	}
@@ -236,7 +236,7 @@ func (s *slash) setVerbosity(channel, level string) string {
 	if s.binds == nil {
 		return "le store de conversations n'est pas disponible"
 	}
-	return saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
+	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
 }
 
 func (s *slash) handleMode(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
@@ -260,21 +260,21 @@ func (s *slash) setMode(channel, mode string) string {
 	}
 	if mode != normalMode {
 		if err := s.binds.UnbindAll(channel); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+			s.log.Warn("bind store save failed", "err", err)
 		}
 	}
 	switch mode {
 	case supportMode:
-		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
+		return s.saveNote(s.binds.SetMode(channel, supportMode), "bind store",
 			"mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	case ambientMode:
-		return saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
+		return s.saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
 			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	case offMode:
-		return saveNote(s.binds.SetMode(channel, offMode), "bind store",
+		return s.saveNote(s.binds.SetMode(channel, offMode), "bind store",
 			"mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	}
-	return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session")
+	return s.saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session")
 }
 
 func (s *slash) agent() string {
@@ -322,7 +322,7 @@ func (s *slash) dispatch(ctx context.Context, ix dctl.Interaction, args []string
 		return
 	}
 	if err := s.ix.EditResponse(ctx, appID, token, dctl.Response{Content: out}); err != nil {
-		warnf("edit interaction response: %v", err)
+		s.log.Warn("edit interaction response failed", "err", err)
 	}
 }
 
@@ -342,7 +342,7 @@ func (s *slash) run(ctx context.Context, args []string) string {
 
 func (s *slash) respond(ctx context.Context, ix dctl.Interaction, content string) {
 	if err := s.ix.Respond(ctx, ix.ID, ix.Token.Reveal(), dctl.Response{Content: content, Ephemeral: true}); err != nil {
-		warnf("respond to interaction: %v", err)
+		s.log.Warn("respond to interaction failed", "err", err)
 	}
 }
 
@@ -352,9 +352,9 @@ const (
 	optBoolean         = 5
 )
 
-func saveNote(err error, store, ok string) string {
+func (s *slash) saveNote(err error, store, ok string) string {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: %s save failed: %v\n", store, err)
+		s.log.Warn("store save failed", "store", store, "err", err)
 		return ok + " (warning: not saved, will be lost on restart)"
 	}
 	return ok

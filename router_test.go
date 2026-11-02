@@ -91,9 +91,10 @@ func newTestRouter(t *testing.T) (*router, *fakeCtrl, *fakeClient) {
 func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fakeRender) {
 	t.Helper()
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), f, staticLevels("full"), "", false),
+		newSinks(testRun(), f, staticLevels("full"), "", false, testLog()),
+		testLog(),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }

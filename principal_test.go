@@ -30,7 +30,7 @@ func TestAnInteractionNamesItsCallerToTheCore(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix it"))
-	s := &slash{ctx: context.Background(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,

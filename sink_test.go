@@ -86,18 +86,18 @@ func newTestSink(f *fakeRender) *sink {
 	if ch == "" {
 		ch = "c1"
 	}
-	return newSink(context.Background(), f, ch, staticLevel("full"), "", false)
+	return newSink(testRun(), f, ch, staticLevel("full"), "", false, testLog())
 }
 
 func TestSinkDefaultsToSilent(t *testing.T) {
-	if s := newSink(context.Background(), &fakeRender{}, "c1", staticLevel(""), "", false); s.level() != levelSilent {
+	if s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(""), "", false, testLog()); s.level() != levelSilent {
 		t.Fatalf("default level = %q, want %q", s.level(), levelSilent)
 	}
 }
 
 func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 	level := levelSilent
-	s := newSink(context.Background(), &fakeRender{channel: "c1"}, "c1", func() string { return level }, "", false)
+	s := newSink(testRun(), &fakeRender{channel: "c1"}, "c1", func() string { return level }, "", false, testLog())
 
 	s.handle(contracts.Event{T: "human"})
 	if s.pv != nil {
@@ -112,7 +112,7 @@ func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 
 func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "", false, testLog())
 	s.noteUser("c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human"})
@@ -133,7 +133,7 @@ func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 
 func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "", false, testLog())
 	s.noteUser("c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
@@ -149,7 +149,7 @@ func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 
 func TestReplyPingsTheOwner(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "reply", Text: "c'est corrigé", Done: true})
 
@@ -160,7 +160,7 @@ func TestReplyPingsTheOwner(t *testing.T) {
 
 func TestReplyPingKeepsChunksWithinTheLimit(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
 	s.handle(contracts.Event{T: "reply", Text: strings.Repeat("x", gatewayMaxLen), Done: true})
 
 	for i, p := range f.posts {
@@ -175,7 +175,7 @@ func TestReplyPingKeepsChunksWithinTheLimit(t *testing.T) {
 
 func TestEmptyReplyStillAnswers(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "reply", Done: true})
 
@@ -186,7 +186,7 @@ func TestEmptyReplyStillAnswers(t *testing.T) {
 
 func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(context.Background(), f, staticLevels("full"), "", false)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
 
 	set.at("chanA").noteUser("chanA", "mA", "42")
 	set.at("chanB").noteUser("chanB", "mB", "42")
@@ -208,7 +208,7 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 
 func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 	f := &fakeRender{}
-	g := &Gateway{sinks: newSinks(context.Background(), f, staticLevels("full"), "", false)}
+	g := &Gateway{sinks: newSinks(testRun(), f, staticLevels("full"), "", false, testLog())}
 
 	g.EmitTo(contracts.Conversation{ID: "chanA"}, contracts.Event{T: "reply", Text: "hello A", Done: true})
 	g.Emit(contracts.Event{T: "reply", Text: "orphan", Done: true})

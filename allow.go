@@ -3,8 +3,8 @@ package discord
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,15 +18,15 @@ type allowStore struct {
 	Session map[string][]string `json:"session"`
 }
 
-func newAllowStore(path string) *allowStore {
+func newAllowStore(path string, log *slog.Logger) *allowStore {
 	s := &allowStore{path: path, Session: map[string][]string{}}
 	data, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintf(os.Stderr, "discord gateway: allow store %s is unreadable, starting with an empty allowlist: %v\n", path, err)
+		log.Warn("allow store unreadable, starting with an empty allowlist", "path", path, "err", err)
 	}
 	if err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: allow store %s is corrupt, ignoring: %v\n", path, err)
+			log.Warn("allow store corrupt, ignoring it", "path", path, "err", err)
 			s.Global = nil
 			s.Session = map[string][]string{}
 		}
