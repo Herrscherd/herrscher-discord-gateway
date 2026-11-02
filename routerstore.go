@@ -2,16 +2,18 @@ package discord
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 )
 
 type bindStore struct {
-	mu   sync.Mutex
-	path string
+	mu      sync.Mutex
+	writeMu sync.Mutex
+	path    string
+	locked  error
+	write   func(path string, data []byte) error
 
 	Channels map[string]string `json:"channels"`
 	Threads  map[string]bool   `json:"threads,omitempty"`
@@ -23,45 +25,58 @@ type bindStore struct {
 }
 
 func newBindStore(path string, log *slog.Logger) *bindStore {
-	store := &bindStore{path: path, Channels: make(map[string]string), Threads: make(map[string]bool), Levels: make(map[string]string), Modes: make(map[string]string), Repos: make(map[string]string), Parents: make(map[string]string)}
-	if data, err := os.ReadFile(filepath.Clean(path)); err == nil {
-		if err := json.Unmarshal(data, store); err != nil {
-			log.Warn("bind store corrupt, ignoring it", "path", path, "err", err)
-			store.Channels, store.Threads, store.Levels = make(map[string]string), make(map[string]bool), make(map[string]string)
-			store.Modes, store.Repos, store.Parents = make(map[string]string), make(map[string]string), make(map[string]string)
-			store.Last = ""
-		}
-		if store.Channels == nil {
-			store.Channels = make(map[string]string)
-		}
-		if store.Threads == nil {
-			store.Threads = make(map[string]bool)
-		}
-		if store.Levels == nil {
-			store.Levels = make(map[string]string)
-		}
-		if store.Modes == nil {
-			store.Modes = make(map[string]string)
-		}
-		if store.Repos == nil {
-			store.Repos = make(map[string]string)
-		}
-		if store.Parents == nil {
-			store.Parents = make(map[string]string)
-		}
+	store := &bindStore{path: path, write: writeAtomic}
+	if err := loadStoreFile(path, store); err != nil {
+		store.resetMaps()
+		store.locked = fmt.Errorf("%w: %w", errStoreLocked, err)
+		log.Warn("bind store unreadable or corrupt, binding is refused until the file is repaired", "path", path, "err", err)
 	}
+	store.ensureMaps()
 	return store
 }
 
+func (s *bindStore) resetMaps() {
+	s.Channels, s.Threads, s.Levels = make(map[string]string), make(map[string]bool), make(map[string]string)
+	s.Modes, s.Repos, s.Parents = make(map[string]string), make(map[string]string), make(map[string]string)
+	s.Last = ""
+}
+
+func (s *bindStore) ensureMaps() {
+	if s.Channels == nil {
+		s.Channels = make(map[string]string)
+	}
+	if s.Threads == nil {
+		s.Threads = make(map[string]bool)
+	}
+	if s.Levels == nil {
+		s.Levels = make(map[string]string)
+	}
+	if s.Modes == nil {
+		s.Modes = make(map[string]string)
+	}
+	if s.Repos == nil {
+		s.Repos = make(map[string]string)
+	}
+	if s.Parents == nil {
+		s.Parents = make(map[string]string)
+	}
+}
+
 func (s *bindStore) persist(mutate func()) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	s.mu.Lock()
+	if s.locked != nil {
+		s.mu.Unlock()
+		return s.locked
+	}
 	mutate()
 	data, err := json.MarshalIndent(s, "", "  ")
 	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.path, data)
+	return s.write(s.path, data)
 }
 
 func (s *bindStore) Session(channel string) string {

@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -131,5 +132,27 @@ func TestAStoreFromBeforeModesReadsAndWrites(t *testing.T) {
 	if got := newBindStore(path, testLog()); got.Mode("c1") != supportMode || got.Repo("c1") != "local:herrscher" {
 		t.Fatalf("mode = %q, repo = %q, want both persisted alongside the old binding",
 			got.Mode("c1"), got.Repo("c1"))
+	}
+}
+
+func TestBindStoreRefusesWritesOnCorruptFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := newBindStore(path, testLog())
+	if err := s.Bind("c1", "ch-c1"); !errors.Is(err, errStoreLocked) {
+		t.Fatalf("a locked bind store must refuse changes with errStoreLocked, got %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "{not json" {
+		t.Fatalf("a corrupt file must be kept untouched, now %q (%v)", data, err)
+	}
+}
+
+func TestBindStoreRefusesWritesOnUnreadableFile(t *testing.T) {
+	s := newBindStore(t.TempDir(), testLog())
+	if err := s.Bind("c1", "ch-c1"); !errors.Is(err, errStoreLocked) {
+		t.Fatalf("an unreadable bind store must refuse changes, got %v", err)
 	}
 }

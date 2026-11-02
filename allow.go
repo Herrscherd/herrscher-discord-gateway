@@ -3,6 +3,7 @@ package discord
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -10,42 +11,58 @@ import (
 	"sync"
 )
 
+var errStoreLocked = errors.New("the state file cannot be read, so it is kept untouched and changes are refused")
+
 type allowStore struct {
-	mu   sync.Mutex
-	path string
+	mu      sync.Mutex
+	writeMu sync.Mutex
+	path    string
+	locked  error
+	write   func(path string, data []byte) error
 
 	Global  []string            `json:"global"`
 	Session map[string][]string `json:"session"`
 }
 
 func newAllowStore(path string, log *slog.Logger) *allowStore {
-	store := &allowStore{path: path, Session: make(map[string][]string)}
-	data, err := os.ReadFile(filepath.Clean(path))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		log.Warn("allow store unreadable, starting with an empty allowlist", "path", path, "err", err)
+	store := &allowStore{path: path, write: writeAtomic}
+	if err := loadStoreFile(path, store); err != nil {
+		store.Global, store.Session = nil, nil
+		store.locked = fmt.Errorf("%w: %w", errStoreLocked, err)
+		log.Warn("allow store unreadable or corrupt, access is refused until the file is repaired", "path", path, "err", err)
 	}
-	if err == nil {
-		if err := json.Unmarshal(data, store); err != nil {
-			log.Warn("allow store corrupt, ignoring it", "path", path, "err", err)
-			store.Global = nil
-			store.Session = make(map[string][]string)
-		}
-		if store.Session == nil {
-			store.Session = make(map[string][]string)
-		}
+	if store.Session == nil {
+		store.Session = make(map[string][]string)
 	}
 	return store
 }
 
+func loadStoreFile(path string, dst any) error {
+	data, err := os.ReadFile(filepath.Clean(path))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dst)
+}
+
 func (s *allowStore) persist(mutate func()) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	s.mu.Lock()
+	if s.locked != nil {
+		s.mu.Unlock()
+		return s.locked
+	}
 	mutate()
 	data, err := json.MarshalIndent(s, "", "  ")
 	s.mu.Unlock()
 	if err != nil {
 		return err
 	}
-	return writeAtomic(s.path, data)
+	return s.write(s.path, data)
 }
 
 func writeAtomic(path string, data []byte) error {
@@ -84,6 +101,9 @@ func removeTemp(name string) error {
 func (s *allowStore) Allowed(user string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.locked != nil {
+		return false
+	}
 	if len(s.Global) == 0 {
 		return true
 	}
