@@ -3,7 +3,7 @@ package discord
 import (
 	"context"
 	"fmt"
-	"os"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -44,6 +44,7 @@ type router struct {
 	c     client
 	binds *bindStore
 	sinks *sinks
+	log   *slog.Logger
 	cfg   routerConfig
 	acl   *accessPolicy
 
@@ -60,7 +61,7 @@ type job struct {
 	shared bool
 }
 
-func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, cfg routerConfig) *router {
+func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, log *slog.Logger, cfg routerConfig) *router {
 	if cfg.address.appID == "" {
 		cfg.address.appID = cfg.appID
 	}
@@ -69,8 +70,10 @@ func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore,
 		c:     c,
 		binds: binds,
 		sinks: sinks,
+		log:   log,
 		cfg:   cfg,
 		acl: &accessPolicy{
+			log:      log,
 			owner:    cfg.owner,
 			selfID:   cfg.appID,
 			users:    cfg.access.users,
@@ -133,7 +136,7 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 			return
 		}
 		if err := r.binds.Unbind(slot); err != nil {
-			warnf("unbind %s: %v", slot, err)
+			r.log.Warn("unbind slot failed", "slot", slot, "err", err)
 		}
 	}
 	r.ask(ctx, ctrl, m)
@@ -147,7 +150,7 @@ func (r *router) hydrate(ctx context.Context, m messageCreate) messageCreate {
 	}
 	msgs, err := r.c.ReadMessages(ctx, m.ChannelID, hydrateWindow, "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: read blanked message: %v\n", err)
+		r.log.Warn("read blanked message failed", "err", err)
 		return m
 	}
 	for _, prev := range msgs {
@@ -215,7 +218,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messa
 		replyTo = ""
 	}
 	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), opts); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: repo menu: %v\n", err)
+		r.log.Warn("repo menu failed", "err", err)
 		r.mu.Lock()
 		delete(r.pending, conv)
 		delete(r.jobs, conv)
@@ -250,7 +253,7 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 			r.adoptThread(m.ChannelID, id)
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
-		fmt.Fprintf(os.Stderr, "discord gateway: support thread in channel %s: %v\n", m.ChannelID, err)
+		r.log.Warn("support thread failed", "channel", m.ChannelID, "err", err)
 		r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois.")
 		return here
 	}
@@ -265,21 +268,21 @@ func (r *router) conversation(ctx context.Context, m messageCreate) job {
 			return job{conv: id, thread: true, parent: m.ChannelID}
 		}
 	}
-	fmt.Fprintf(os.Stderr, "discord gateway: private thread in channel %s: %v\n", m.ChannelID, err)
+	r.log.Warn("private thread failed", "channel", m.ChannelID, "err", err)
 	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
 	return here
 }
 
 func (r *router) adoptThread(channel, thread string) {
 	if err := r.binds.MarkThread(thread, channel); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		r.log.Warn("bind store save failed", "err", err)
 	}
 	lv := r.binds.Level(channel)
 	if lv == "" {
 		return
 	}
 	if err := r.binds.SetLevel(thread, lv); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		r.log.Warn("bind store save failed", "err", err)
 	}
 }
 
@@ -340,15 +343,15 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 		save = func(slot, session string) error { return r.binds.BindThread(slot, j.conv, j.parent, session) }
 	}
 	if err := save(j.slot, spec.Name); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		r.log.Warn("bind store save failed", "err", err)
 	}
 	if r.binds.Mode(j.parent) == supportMode {
 		if err := r.binds.SetRepo(j.parent, value); err != nil {
-			fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
 	if err := r.binds.SetLastRepo(value); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: bind store save failed: %v\n", err)
+		r.log.Warn("bind store save failed", "err", err)
 	}
 	if buffered {
 		r.submit(ctx, ctrl, spec.Name, j.conv, m, true, j.shared)
@@ -503,7 +506,7 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 	}
 	msgs, err := r.c.ReadMessages(ctx, m.ChannelID, r.cfg.contextMessages, "")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: context read: %v\n", err)
+		r.log.Warn("context read failed", "err", err)
 		return ""
 	}
 	var b strings.Builder
@@ -523,6 +526,6 @@ func (r *router) context(ctx context.Context, m messageCreate) string {
 
 func (r *router) post(ctx context.Context, channel, text string) {
 	if _, err := r.c.Send(ctx, channel, text); err != nil {
-		fmt.Fprintf(os.Stderr, "discord gateway: post: %v\n", err)
+		r.log.Warn("post failed", "err", err)
 	}
 }

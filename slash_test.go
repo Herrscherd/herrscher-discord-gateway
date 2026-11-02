@@ -84,7 +84,7 @@ func TestListUsers(t *testing.T) {
 
 func testAllowStore(t *testing.T) *allowStore {
 	t.Helper()
-	return newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
+	return newAllowStore(filepath.Join(t.TempDir(), "allow.json"), testLog())
 }
 
 type fakeAcker struct{ acked []string }
@@ -98,7 +98,7 @@ func TestComponentInteractionRoutesToPickNotTheRegistry(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.live["ch-c1"] = true
 	ack := &fakeAcker{}
-	s := &slash{ctx: context.Background(), router: r, comp: ack, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), router: r, comp: ack, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -118,7 +118,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix it"))
-	s := &slash{ctx: context.Background(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -134,7 +134,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 func TestUnknownComponentIsDropped(t *testing.T) {
 	r, _, _ := newTestRouter(t)
 	ack := &fakeAcker{}
-	s := &slash{ctx: context.Background(), router: r, comp: ack, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), router: r, comp: ack, allow: testAllowStore(t)}
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type: dctl.InteractionComponent,
 		Data: dctl.InteractionData{CustomID: "someone-elses-menu", Values: []string{"x"}},
@@ -145,11 +145,11 @@ func TestUnknownComponentIsDropped(t *testing.T) {
 }
 
 func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
-	allow := newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
+	allow := newAllowStore(filepath.Join(t.TempDir(), "allow.json"), testLog())
 	if err := allow.AddGlobal("owner1"); err != nil {
 		t.Fatal(err)
 	}
-	s := &slash{ctx: context.Background(), allow: allow}
+	s := &slash{log: testLog(), allow: allow}
 	if !s.gate(context.Background(), dctl.Interaction{User: dctl.Author{ID: "owner1"}}) {
 		t.Fatal("the owner was denied in a DM")
 	}
@@ -164,7 +164,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctrl.live["ch-c1"] = true
-	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), router: r, ctrl: ctrl}
 
 	if got := s.stop("c1", "", true); !strings.Contains(got, "interrompu") {
 		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
@@ -176,15 +176,15 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 
 func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
-	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), router: r, ctrl: ctrl}
 	if got := s.stop("c1", "", true); !strings.Contains(got, "aucun tour") {
 		t.Fatalf("stop = %q, want it to report no live turn", got)
 	}
 }
 
 func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 
 	if got := s.setVerbosity("c1", levelFull); !strings.Contains(got, levelFull) {
 		t.Fatalf("setVerbosity = %q, want the new level confirmed", got)
@@ -198,8 +198,8 @@ func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 }
 
 func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 
 	if got := s.setVerbosity("c1", "loud"); !strings.Contains(got, "inconnu") {
 		t.Fatalf("setVerbosity = %q, want it refused", got)
@@ -210,7 +210,7 @@ func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
 }
 
 func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	if err := binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
@@ -226,8 +226,8 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 }
 
 func TestSupportModeUnbindsTheChannel(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 	if err := binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
@@ -247,8 +247,8 @@ func TestSupportModeUnbindsTheChannel(t *testing.T) {
 }
 
 func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 	if got := s.setMode("c1", supportMode); got == "" {
 		t.Fatal("setMode said nothing")
 	}
@@ -262,8 +262,8 @@ func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
 }
 
 func TestAnUnknownModeIsRefused(t *testing.T) {
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 
 	if got := s.setMode("c1", "helpdesk"); !strings.Contains(got, "inconnu") {
 		t.Fatalf("setMode = %q, want it refused", got)
@@ -285,7 +285,7 @@ func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
 			return errors.New("429: You are being rate limited")
 		}
 		return nil
-	})
+	}, testLog())
 
 	if calls != 3 {
 		t.Fatalf("calls = %d, want the sync retried until it landed", calls)
@@ -301,7 +301,7 @@ func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
 	syncWithRetry(context.Background(), func(context.Context) error {
 		calls++
 		return errors.New("nope")
-	})
+	}, testLog())
 
 	if calls != len(syncBackoff)+1 {
 		t.Fatalf("calls = %d, want %d attempts then a report", calls, len(syncBackoff)+1)
@@ -320,7 +320,7 @@ func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
 		syncWithRetry(ctx, func(context.Context) error {
 			cancel()
 			return errors.New("429")
-		})
+		}, testLog())
 	}()
 
 	select {
@@ -349,7 +349,7 @@ func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
 				t.Fatal(err)
 			}
 			ack := &fakeAcker{}
-			s := &slash{ctx: context.Background(), router: r, comp: ack, allow: allow}
+			s := &slash{log: testLog(), router: r, comp: ack, allow: allow}
 
 			s.onInteraction(context.Background(), dctl.Interaction{
 				Type:      dctl.InteractionComponent,

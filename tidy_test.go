@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -9,7 +8,7 @@ import (
 )
 
 func tidySink(f *fakeRender, ch string) *sink {
-	return newSink(context.Background(), f, ch, staticLevel(levelSilent), "42", true)
+	return newSink(testRun(), f, ch, staticLevel(levelSilent), "42", true, testLog())
 }
 
 func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
@@ -31,7 +30,7 @@ func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 
 func TestTidyOffKeepsThePing(t *testing.T) {
 	f := &fakeRender{}
-	s := newSink(context.Background(), f, "c1", staticLevel(levelSilent), "42", false)
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
 	s.ack("c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 

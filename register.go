@@ -5,6 +5,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,8 +55,10 @@ func init() {
 				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "contribute the `message delete` verb, so an agent can delete messages this bot sent (default off; the verb is absent entirely until this is set, and even then it refuses any message another author wrote)"},
 			},
 		},
-		Gateway: NewGatewaySet,
-		Skills:  shipSkills,
+		Gateway: func(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
+			return NewGatewaySet(ctx, cfg, slog.Default())
+		},
+		Skills: shipSkills,
 	})
 }
 
@@ -63,26 +66,28 @@ func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return
 
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
-func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
+func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
+	log = log.With("gateway", "discord")
+	run := lifetimeFrom(ctx)
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
 	c := dctl.New(token, "", dctl.WithGlobalCommands())
-	gw := NewGateway(discordClient{c})
+	gw := NewGateway(discordClient{c}, run, log)
 	plat := NewPlatform(c)
-	bindPath, err := bindStorePath()
+	bindPath, err := bindStorePath(log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
-	binds := newBindStore(bindPath)
+	binds := newBindStore(bindPath, log)
 	plat.binds = binds
 
 	level := verbositySetting(cfg.Get("verbosity"))
-	s := newSinks(ctx, renderAdapter{plat}, func(conv string) string {
+	s := newSinks(run, renderAdapter{plat}, func(conv string) string {
 		if v := binds.Level(conv); v != "" {
 			return v
 		}
 		return level
-	}, owner, boolSetting(cfg.Get("tidy_pings")))
+	}, owner, boolSetting(cfg.Get("tidy_pings")), log)
 	gw.sinks = s
 	plat.sinks = s
 
@@ -94,11 +99,11 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	gw.deletes = boolSetting(cfg.Get("message_deletes"))
 	gw.selfID = appID
 
-	allowPath, err := allowStorePath()
+	allowPath, err := allowStorePath(log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
-	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowPath), binds)
+	gw.slash = newSlash(c.Interactions(), c.Components(), token, newAllowStore(allowPath, log), binds, log)
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
@@ -110,12 +115,12 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 
 	agent := cfg.Get("agent")
 	if !address.free.empty() && agent == "" {
-		fmt.Fprintln(os.Stderr, "discord gateway: free_response_channels is set with no agent configured, so the bot answers unprompted there with no persona gating its tools")
+		log.Warn("free response channels set without an agent, so replies there get no persona gating their tools")
 	}
 
 	gw.slash.router = newRouter(
 		func() contracts.SessionControl { return gw.slash.ctrl },
-		discordClient{c}, binds, s,
+		discordClient{c}, binds, s, log,
 		routerConfig{
 			owner:           owner,
 			appID:           appID,
@@ -142,7 +147,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	}, nil
 }
 
-func stateDir() (string, error) {
+func stateDir(log *slog.Logger) (string, error) {
 	dir := os.Getenv("DCTL_STATE_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -152,17 +157,21 @@ func stateDir() (string, error) {
 		dir = filepath.Join(home, ".config", "dctl")
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		warnf("create the state directory %s: %v", dir, err)
+		log.Warn("create state directory failed", "dir", dir, "err", err)
 	}
 	return dir, nil
 }
 
-func allowStorePath() (string, error) { return storePath("discord-allow.json") }
+func allowStorePath(log *slog.Logger) (string, error) {
+	return storePath(log, "discord-allow.json")
+}
 
-func bindStorePath() (string, error) { return storePath("discord-router.json") }
+func bindStorePath(log *slog.Logger) (string, error) {
+	return storePath(log, "discord-router.json")
+}
 
-func storePath(name string) (string, error) {
-	dir, err := stateDir()
+func storePath(log *slog.Logger, name string) (string, error) {
+	dir, err := stateDir(log)
 	if err != nil {
 		return "", err
 	}

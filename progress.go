@@ -2,6 +2,7 @@ package discord
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,6 +30,7 @@ type progressView struct {
 	level     string
 	start     time.Time
 	now       func() time.Time
+	log       *slog.Logger
 	lines     []string
 	elided    bool
 	lastLine  string
@@ -42,8 +44,8 @@ type progressView struct {
 	dirty     bool
 }
 
-func newProgressView(post func(string, string) (string, error), level string, start time.Time) *progressView {
-	return &progressView{post: post, level: level, start: start, now: time.Now, counts: map[string]int{}}
+func newProgressView(post func(string, string) (string, error), level string, start time.Time, log *slog.Logger) *progressView {
+	return &progressView{post: post, level: level, start: start, now: time.Now, log: log, counts: map[string]int{}}
 }
 
 func (p *progressView) add(ev contracts.BackendEvent) {
@@ -109,7 +111,7 @@ func (p *progressView) finish() {
 		return
 	}
 	if _, err := p.post(p.msgID, p.summary()); err != nil {
-		warnf("progress message: %v", err)
+		p.log.Warn("progress message update failed", "err", err)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 
 func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(context.Background(), f, staticLevels("full"), "", false)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
 	p := &Platform{sinks: set}
 
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
@@ -37,7 +37,7 @@ func TestPlatformSatisfiesRenderClientViaAdapter(t *testing.T) {
 }
 
 func TestPlatformStillReadsAnUnboundChannel(t *testing.T) {
-	p := &Platform{binds: newBindStore(t.TempDir() + "/router.json")}
+	p := &Platform{binds: newBindStore(t.TempDir()+"/router.json", testLog())}
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
 		return []rawMsg{{id: "1", bot: false, msg: contracts.Message{ChannelID: "c9"}}}, nil
 	}

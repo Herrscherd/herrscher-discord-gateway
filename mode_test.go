@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,10 +10,10 @@ import (
 
 func modeSlash(t *testing.T, agent string) (*slash, *bindStore) {
 	t.Helper()
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
-	s := &slash{ctx: context.Background(), binds: binds}
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	s := &slash{log: testLog(), binds: binds}
 	if agent != "" {
-		s.router = newRouter(func() contracts.SessionControl { return nil }, &fakeClient{}, binds, nil,
+		s.router = newRouter(func() contracts.SessionControl { return nil }, &fakeClient{}, binds, nil, testLog(),
 			routerConfig{appID: "app1", agent: agent})
 	}
 	return s, binds

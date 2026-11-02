@@ -38,7 +38,7 @@ func TestIdentifyRequestsOnlyNonPrivilegedMessageIntents(t *testing.T) {
 func TestDispatchRoutesMessageCreate(t *testing.T) {
 	msgs := make(chan messageCreate, 1)
 	ixs := make(chan dctl.Interaction, 1)
-	w := newWS("t",
+	w := newWS("t", testLog(),
 		func(_ context.Context, ix dctl.Interaction) { ixs <- ix },
 		func(_ context.Context, m messageCreate) { msgs <- m },
 		nil,
@@ -77,7 +77,7 @@ func TestDispatchRoutesMessageCreate(t *testing.T) {
 
 func TestDispatchIgnoresUnknownEvents(t *testing.T) {
 	called := make(chan struct{}, 2)
-	w := newWS("t",
+	w := newWS("t", testLog(),
 		func(context.Context, dctl.Interaction) { called <- struct{}{} },
 		func(context.Context, messageCreate) { called <- struct{}{} },
 		func(context.Context, string) { called <- struct{}{} },
@@ -95,7 +95,7 @@ func TestDispatchIgnoresUnknownEvents(t *testing.T) {
 func TestDispatchRoutesDeletes(t *testing.T) {
 	for _, event := range []string{"CHANNEL_DELETE", "THREAD_DELETE"} {
 		gone := make(chan string, 1)
-		w := newWS("t", nil, nil, func(_ context.Context, id string) { gone <- id })
+		w := newWS("t", testLog(), nil, nil, func(_ context.Context, id string) { gone <- id })
 		w.dispatch(context.Background(), event, json.RawMessage(`{"id":"c1","guild_id":"g1"}`))
 		if id := <-gone; id != "c1" {
 			t.Fatalf("%s delivered id %q, want c1", event, id)
@@ -110,7 +110,7 @@ func TestIntentsIncludeGuilds(t *testing.T) {
 }
 
 func TestBoundedRespectsCancelledContext(t *testing.T) {
-	w := newWS("t", nil, nil, nil)
+	w := newWS("t", testLog(), nil, nil, nil)
 	for range maxInFlight {
 		w.sem <- struct{}{}
 	}
