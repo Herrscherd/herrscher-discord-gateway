@@ -25,9 +25,6 @@ func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 	}
 }
 
-// Fifteen lines carrying 120 runes of detail each run past Discord's 2000-rune
-// message limit. Discord rejects an oversized edit and flush swallows the error,
-// so the live message would freeze for the rest of the turn.
 func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	var last string
 	pv := newProgressView(func(id, content string) (string, error) {
@@ -51,8 +48,6 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	}
 }
 
-// quiet is the privacy level: the channel still sees that the agent is working,
-// never what it worked on. A leaked absolute path is the whole reason it exists.
 func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	var last string
 	pv := newProgressView(func(id, content string) (string, error) {
@@ -75,8 +70,6 @@ func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	}
 }
 
-// Stripped of details, repeated tools all render the same line; left alone they
-// would flush the 15-line window with copies of one another.
 func TestRepeatedLinesCollapse(t *testing.T) {
 	var last string
 	pv := newProgressView(func(id, content string) (string, error) {
@@ -101,7 +94,6 @@ func TestRepeatedLinesCollapse(t *testing.T) {
 	}
 }
 
-// full is unchanged: details are what make it useful, and it stays the default.
 func TestFullKeepsDetail(t *testing.T) {
 	var last string
 	pv := newProgressView(func(id, content string) (string, error) {

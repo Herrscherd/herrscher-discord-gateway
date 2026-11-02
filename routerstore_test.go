@@ -46,13 +46,10 @@ func TestCorruptBindStoreStartsEmpty(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := newBindStore(path).Session("c1"); got != "" {
-		t.Fatalf("corrupt store resolved %q — it must ask again, never guess a repo", got)
+		t.Fatalf("corrupt store resolved %q, it must ask again, never guess a repo", got)
 	}
 }
 
-// A half-decoded store must not leave a channel marked as one of our private
-// threads: there a plain message from the owner makes the bot act, with no
-// @mention to ask for it.
 func TestCorruptBindStoreKeepsNoThreads(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	if err := os.WriteFile(path, []byte(`{"threads":{"c1":true},"channels":`), 0o600); err != nil {
@@ -63,9 +60,6 @@ func TestCorruptBindStoreKeepsNoThreads(t *testing.T) {
 	}
 }
 
-// The render level survives a restart — the operator sets it once, not on every
-// boot — and an empty level puts the conversation back on the configured default
-// rather than storing a meaningless override.
 func TestLevelRoundTripsAndResets(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	s := newBindStore(path)
@@ -86,8 +80,6 @@ func TestLevelRoundTripsAndResets(t *testing.T) {
 	}
 }
 
-// Closing a session must not reset how loud the room is: the level describes the
-// room, and the next job lands in the same one.
 func TestUnbindKeepsTheRenderLevel(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	s := newBindStore(path)
@@ -105,8 +97,6 @@ func TestUnbindKeepsTheRenderLevel(t *testing.T) {
 	}
 }
 
-// Unbinding drops the session, not the fact that the conversation is a private
-// thread the gateway opened: the thread outlives the session running in it.
 func TestUnbindKeepsTheThreadFlag(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	s := newBindStore(path)
@@ -122,8 +112,6 @@ func TestUnbindKeepsTheThreadFlag(t *testing.T) {
 	}
 }
 
-// Every store written before /mode existed has neither map. Reading one must not
-// leave a nil map behind for the first write to panic on.
 func TestAStoreFromBeforeModesReadsAndWrites(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "router.json")
 	if err := os.WriteFile(path, []byte(`{"channels":{"c1":"ch-c1"}}`), 0o600); err != nil {

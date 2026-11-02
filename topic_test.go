@@ -19,14 +19,11 @@ func TestMatchRepoReadsTheRepoOutOfThePing(t *testing.T) {
 		{"bare name", "regarde le bug de auth dans herrscher stp", "herrscher"},
 		{"case insensitive", "dans Herrscher il y a un souci", "herrscher"},
 		{"punctuation around it", "bug sur herrscher, urgent.", "herrscher"},
-		// A hyphenated name is one word: it must not also read as the shorter
-		// repo it starts with, or every ping would look ambiguous.
 		{"longest name wins on its own", "PR sur herrscher-discord-gateway", "herrscher-discord-gateway"},
 		{"full owner/repo", "un fix dans Herrscherd/dctl", "Herrscherd/dctl"},
 		{"bare name of an owner/repo", "un fix dans dctl", "Herrscherd/dctl"},
 		{"nothing named", "corrige le bug de connexion", ""},
 		{"two repos named", "aligne herrscher et dctl", ""},
-		// Below the length floor a repo name is a word people write by accident.
 		{"too short to be a name", "le web est cassé", ""},
 		{"a substring is not a mention", "herrschers", ""},
 	}
@@ -46,8 +43,6 @@ func TestMatchRepoReadsTheRepoOutOfThePing(t *testing.T) {
 	}
 }
 
-// The same repo listed as a checkout and as a remote is one answer. Preferring
-// the checkout skips a clone of something already on disk.
 func TestMatchRepoPrefersTheLocalCheckout(t *testing.T) {
 	repos := []contracts.RepoRef{{Name: "Herrscherd/dctl"}, {Name: "dctl", Local: true}}
 	got, ok := matchRepo("un fix dans dctl", repos)
@@ -66,9 +61,9 @@ func TestWantsThread(t *testing.T) {
 	}
 	no := []string{
 		"corrige le bug de connexion",
-		"regarde le profil de l'utilisateur", // "profil" is not "fil"
-		"le fichier threads.go est à revoir", // "threads.go" is one token
-		"privée sur la page",                 // not the standalone word
+		"regarde le profil de l'utilisateur",
+		"le fichier threads.go est à revoir",
+		"privée sur la page",
 	}
 	for _, s := range yes {
 		if !wantsThread(s) {

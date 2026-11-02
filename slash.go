@@ -12,12 +12,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// slash owns every Discord slash command the gateway exposes. It translates an
-// interaction into either a neutral argv it hands to the core SessionControl
-// seam (session/service/set commands) or a mutation of the plugin-local allow
-// store (allow lists). All command policy lives here on the gateway side: the
-// core never learns the Discord command surface — only the neutral argv crosses
-// the boundary via ctrl.Dispatch.
 type slash struct {
 	ctx    context.Context
 	token  string
@@ -30,16 +24,10 @@ type slash struct {
 	router *router
 }
 
-// acker acknowledges a select-menu click so the dropdown collapses instead of
-// spinning. *dctl.Components satisfies it; tests substitute a recorder.
 type acker interface {
 	Ack(ctx context.Context, id, token, content string) error
 }
 
-// newSlash builds the slash runtime and registers the command catalog + handlers
-// on the interactions registry. ctrl is bound later (BindSessionControl) once the
-// daemon hands the gateway its runtime session controller; router is assigned by
-// the factory once the application id it needs has been resolved.
 func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore) *slash {
 	s := &slash{ctx: ctx, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
 	s.reg.
@@ -54,24 +42,11 @@ func newSlash(ctx context.Context, ix *dctl.Interactions, comp acker, token stri
 	return s
 }
 
-// start syncs the command catalog to Discord and runs the gateway websocket loop
-// until the daemon context is cancelled. It is called once the session
-// controller is bound, so dispatch always has a live ctrl.
 func (s *slash) start() {
-	// The sync runs beside the websocket, not before it: Discord rate-limits the
-	// command catalog hard, and a boot that lands on a 429 used to give up for the
-	// lifetime of the process — which means a command added in a release is simply
-	// never published, silently, and the operator types a name Discord has never
-	// heard of. Retrying costs nothing, and the commands already registered keep
-	// working while it does.
 	go s.sync()
 	newWS(s.token, s.onInteraction, s.onMessage, s.onGone).run(s.ctx)
 }
 
-// syncBackoff is how long to wait between attempts at publishing the command
-// catalog. It grows because a 429 here is Discord saying the whole route is
-// spent, and it stops: past a few minutes the answer is not a rate limit but
-// something the operator has to look at.
 var syncBackoff = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
 
 func (s *slash) sync() { syncWithRetry(s.ctx, s.reg.Sync) }
@@ -95,26 +70,18 @@ func syncWithRetry(ctx context.Context, sync func(context.Context) error) {
 	}
 }
 
-// onMessage hands every MESSAGE_CREATE to the router, which decides whether it
-// is the owner addressing the bot.
 func (s *slash) onMessage(ctx context.Context, m messageCreate) {
 	if s.router != nil {
 		s.router.onMessage(ctx, m)
 	}
 }
 
-// onGone hands a deleted channel or thread to the router, which closes whatever
-// session was driving it.
 func (s *slash) onGone(ctx context.Context, id string) {
 	if s.router != nil {
 		s.router.onChannelGone(ctx, id)
 	}
 }
 
-// onComponent answers a select-menu click: a repo-binding menu creates the
-// session, a session-choice menu answers the agent's pending question. A click
-// that belongs to neither is dropped — an unknown custom_id is not ours to
-// acknowledge.
 func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	if s.router == nil {
 		return
@@ -144,32 +111,13 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 	}
 }
 
-// onInteraction is the gateway's single entry point from the websocket loop. It
-// routes command interactions through the registry (whose handlers respond
-// themselves) and autocomplete interactions through the autocomplete dispatcher.
 func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
-	// Who is asking rides the context, named once here, ahead of every branch.
-	// The daemon decides what a caller may run from that name, so this line is
-	// what makes `role grant discord:1234 operator` reach the verbs this gateway
-	// forwards. The allow list still runs and answers a different question: it
-	// says who may talk to this gateway at all, and the role says what the
-	// daemon will do once they have.
-	//
-	// Only this path is named, because only this path crosses ctrl.Dispatch. A
-	// mention in a channel reaches the core through the typed seam instead
-	// (Create, Submit), which decides nothing from a principal, so naming one
-	// there would be a value nothing reads.
 	ctx = contracts.WithPrincipal(ctx, principalOf(ix))
-	// A component click is not a command: it answers a menu this gateway posted,
-	// and the custom_id says which one. Route it before the command registry,
-	// which has no handler for it.
 	if ix.Type == dctl.InteractionComponent {
 		s.onComponent(ctx, ix)
 		return
 	}
 	if ix.Type == dctl.InteractionAutocomplete {
-		// Gate autocomplete too: an unallowed user must not be able to enumerate
-		// session names (the suggestions would otherwise leak the topology).
 		if !s.allow.Allowed(ix.UserID()) {
 			_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil)
 			return
@@ -181,16 +129,9 @@ func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
 		_ = s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), choices)
 		return
 	}
-	// Handlers respond internally (Defer + EditResponse, or a direct Respond), so
-	// the returned Response is intentionally discarded.
 	_, _ = s.reg.Dispatch(ctx, ix)
 }
 
-// --- command handlers ---
-
-// routeAndDispatch is the plain path shared by `set` and `service` (and the
-// non-allow tail of `session`): gate, resolve the command path, hand the neutral
-// argv to the core seam.
 func (s *slash) routeAndDispatch(ctx context.Context, ix dctl.Interaction) {
 	path, leaves := route(ix.Data)
 	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
@@ -217,7 +158,6 @@ func (s *slash) handleSession(ctx context.Context, ix dctl.Interaction) (dctl.Re
 		return dctl.Response{}, nil
 	}
 	path, _ := route(ix.Data)
-	// `/session allow …` is gateway-local policy, not a core command.
 	if len(path) >= 3 && path[1] == "allow" {
 		name, _ := ix.Data.Opt("name")
 		user, _ := ix.Data.Opt("user")
@@ -260,11 +200,6 @@ func (s *slash) handleStop(ctx context.Context, ix dctl.Interaction) (dctl.Respo
 	return dctl.Response{}, nil
 }
 
-// stop cancels the turn running in the conversation the command was typed in.
-// It takes no session name on purpose: the operator asks for it from the room
-// the runaway turn is talking in, and that room plus who typed it already says
-// which session it is. Without it the only way out of a turn gone wrong is
-// `/session close`, which also throws away the worktree and everything in it.
 func (s *slash) stop(channel, user string, direct bool) string {
 	if s.ctrl == nil || s.router == nil {
 		return "session control is not available yet"
@@ -272,7 +207,7 @@ func (s *slash) stop(channel, user string, direct bool) string {
 	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
 		return "aucun tour en cours ici"
 	}
-	return "⏹️ tour interrompu — la conversation est gardée, dis-moi la suite"
+	return "⏹️ tour interrompu, la conversation est gardée, dis-moi la suite"
 }
 
 func (s *slash) handleVerbosity(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
@@ -284,11 +219,6 @@ func (s *slash) handleVerbosity(ctx context.Context, ix dctl.Interaction) (dctl.
 	return dctl.Response{}, nil
 }
 
-// setVerbosity retunes one conversation. The level is stored per conversation
-// rather than per session because it describes the room: the same operator wants
-// a live tool trace in his own thread and nothing but the answer in a channel his
-// team reads, and DISCORD_VERBOSITY can only say one of those, daemon-wide, until
-// the next restart.
 func (s *slash) setVerbosity(channel, level string) string {
 	if !knownLevel(level) {
 		return "niveau inconnu : " + level
@@ -344,8 +274,6 @@ func (s *slash) agent() string {
 	return s.router.cfg.agent
 }
 
-// autoSession suggests existing session names for any `name` option that opts
-// into autocomplete (close/who/allow), filtered by what the user has typed.
 func (s *slash) autoSession(ctx context.Context, ix dctl.Interaction) ([]dctl.AutocompleteChoice, error) {
 	_, val, _ := ix.Data.Focused()
 	val = strings.ToLower(val)
@@ -358,12 +286,6 @@ func (s *slash) autoSession(ctx context.Context, ix dctl.Interaction) ([]dctl.Au
 	return out, nil
 }
 
-// --- helpers ---
-
-// gate enforces the global command allowlist, replying ephemerally when denied.
-// The caller id comes from UserID(), not member.user: this bot follows its owner
-// into DMs, where Discord carries the caller somewhere else entirely and a
-// populated allowlist would otherwise deny him in his own DM.
 func (s *slash) gate(ctx context.Context, ix dctl.Interaction) bool {
 	if s.allow.Allowed(ix.UserID()) {
 		return true
@@ -379,9 +301,6 @@ func (s *slash) sessions() []contracts.SessionInfo {
 	return s.ctrl.Sessions()
 }
 
-// dispatch defers the interaction (operator output is ephemeral), runs the
-// neutral argv through the core SessionControl seam, then fills in the deferred
-// reply with the result.
 func (s *slash) dispatch(ctx context.Context, ix dctl.Interaction, args []string) {
 	token := ix.Token.Reveal()
 	if err := s.ix.Defer(ctx, ix.ID, token, true); err != nil {
@@ -409,22 +328,16 @@ func (s *slash) run(ctx context.Context, args []string) string {
 	return out
 }
 
-// respond sends an immediate ephemeral reply (used by the fast allow-list paths).
 func (s *slash) respond(ctx context.Context, ix dctl.Interaction, content string) {
 	_ = s.ix.Respond(ctx, ix.ID, ix.Token.Reveal(), dctl.Response{Content: content, Ephemeral: true})
 }
 
-// Discord application-command option types (subset we branch on), mirroring the
-// named gateway opcodes in ws.go rather than trusting bare-int comments.
 const (
 	optSubCommand      = 1
 	optSubCommandGroup = 2
 	optBoolean         = 5
 )
 
-// saveNote returns the success message, or that message annotated with a
-// not-persisted warning (and logs the cause) when the store write failed — so the
-// operator is not told a change stuck when it was lost.
 func saveNote(err error, store, ok string) string {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "discord gateway: %s save failed: %v\n", store, err)
@@ -433,9 +346,6 @@ func saveNote(err error, store, ok string) string {
 	return ok
 }
 
-// route walks the option tree, following sub-command groups and sub-commands, and
-// returns the resolved command path (top-level name plus the group/sub names)
-// together with the leaf options of the deepest sub.
 func route(d dctl.InteractionData) (path []string, leaves []dctl.InteractionOption) {
 	path = []string{d.Name}
 	opts := d.Options
@@ -456,8 +366,6 @@ func route(d dctl.InteractionData) (path []string, leaves []dctl.InteractionOpti
 	return path, opts
 }
 
-// flagsFrom turns leaf options into the `--name value` (or bare `--name` for a
-// true boolean) argv the core CLI registry parses.
 func flagsFrom(leaves []dctl.InteractionOption) []string {
 	var out []string
 	for _, o := range leaves {
@@ -503,10 +411,6 @@ func lastOf(path []string) string {
 	return path[len(path)-1]
 }
 
-// --- command catalog (old dctl catalog, minus workspace, plus set home/source) ---
-
-// Every command gates to members with Manage Server by default (Perms); the
-// allow store is the finer per-user gate once populated.
 func commandSet() *dctl.Command {
 	return dctl.NewCommand("set", "configure the daemon").
 		Perms(dctl.PermManageGuild).
@@ -561,8 +465,6 @@ func commandService() *dctl.Command {
 		)
 }
 
-// commandStop is deliberately flat and argument-free: it is typed in a panic,
-// in the room the runaway turn is in.
 func commandStop() *dctl.Command {
 	return dctl.NewCommand("stop", "cancel the turn running in this conversation").
 		Perms(dctl.PermManageGuild)
@@ -574,10 +476,10 @@ func commandVerbosity() *dctl.Command {
 		With(
 			dctl.String("level", "how much of a turn to show here", true).
 				Choices(
-					dctl.NewChoice("silent — the answer and nothing else", levelSilent),
-					dctl.NewChoice("quiet — adds a live list of tool names", levelQuiet),
-					dctl.NewChoice("actions — adds each tool's detail", levelActions),
-					dctl.NewChoice("full — adds the assistant's text", levelFull),
+					dctl.NewChoice("silent, the answer and nothing else", levelSilent),
+					dctl.NewChoice("quiet, adds a live list of tool names", levelQuiet),
+					dctl.NewChoice("actions, adds each tool's detail", levelActions),
+					dctl.NewChoice("full, adds the assistant's text", levelFull),
 				),
 		)
 }

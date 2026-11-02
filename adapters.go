@@ -9,7 +9,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// Discord channel-type ints (GUILD_CATEGORY is 4; dctl exports ChannelForum=15).
 const channelCategory = 4
 
 // ChannelAdmin adapts the dctl client to contracts.ChannelAdmin: session channel
@@ -77,15 +76,12 @@ func (a *ChannelAdmin) ChannelRef(id string) string { return "<#" + id + ">" }
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct {
-	c     *dctl.Client
-	sinks *sinks
-	// binds tells which channels the router already drives by push; those are
-	// skipped by Read (see there).
+	c        *dctl.Client
+	sinks    *sinks
 	binds    *bindStore
 	readImpl func(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error)
 }
 
-// rawMsg is the minimal shape Read needs to track the last user message.
 type rawMsg struct {
 	id  string
 	bot bool
@@ -102,8 +98,6 @@ func (p *Platform) Enabled() bool          { return p.c.Enabled() }
 func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
 
 func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (contracts.Channel, error) {
-	// With a parent category, ensure the channel under it; otherwise ensure a
-	// top-level text channel in the sole guild.
 	ensure := func() (*dctl.Channel, error) {
 		if parentID != "" {
 			return p.c.Channels().EnsureUnder(ctx, parentID, name)
@@ -120,8 +114,6 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 	return contracts.Channel{ID: ch.ID, Name: ch.Name}, nil
 }
 
-// readDctl is the production read seam: it pulls messages via dctl and adapts
-// them to rawMsg (carrying the fully-mapped contracts.Message).
 func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error) {
 	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
 	if err != nil {
@@ -171,8 +163,6 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	for _, r := range raws {
 		out = append(out, r.msg)
 		if !r.bot && p.sinks != nil {
-			// Newest non-bot id wins (messages are oldest→newest), recorded on the
-			// sink of the channel the message actually came from.
 			p.sinks.at(r.msg.ChannelID).noteUser(r.msg.ChannelID, r.id, r.msg.AuthorID)
 		}
 	}
@@ -209,10 +199,6 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	return contracts.MessageID(m.ID), nil
 }
 
-// renderAdapter exposes the exact renderClient surface the sink needs, backed by
-// the dctl client. UpsertStatusMessage/Unreact reuse Platform's logic;
-// Post/React go straight to dctl. Every method takes its channel, so one adapter
-// serves every conversation's sink.
 type renderAdapter struct{ p *Platform }
 
 func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
@@ -260,7 +246,6 @@ func (p *Prober) Probe(ctx context.Context) (int64, error) {
 	return time.Since(start).Milliseconds(), nil
 }
 
-// Compile-time proof the Discord adapters satisfy the neutral channel ports.
 var (
 	_ contracts.ChannelReader = (*Platform)(nil)
 	_ contracts.MenuRouter    = (*Platform)(nil)

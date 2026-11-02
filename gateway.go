@@ -8,36 +8,17 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// client is the subset of *dctl.Client the adapter needs (injected for tests).
 type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
-	// Unreact removes a reaction this bot added. It backs the contributed
-	// `message unreact` verb; the rendering path reaches it through Platform.
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
-	// ReadMessages backs the router's channel context. REST reads are not gated by
-	// the message-content intent, which is how the bot sees what everyone said
-	// without asking Discord for a privileged intent.
 	ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error)
-	// GetMessage reads one message by id, for the one the ping replies to: it is
-	// blanked like every other dispatch, and it is far past the window a channel
-	// read covers — a reply target is whatever the operator scrolled back to.
 	GetMessage(ctx context.Context, channelID, messageID string) (*dctl.Message, error)
-	// CreatePrivateThread opens a thread nobody can see until they are added, and
-	// AddThreadMember is what adds them. A private thread is created off the
-	// channel rather than off a message, so the channel keeps no trace of it.
 	CreatePrivateThread(ctx context.Context, channelID, name string) (string, error)
 	AddThreadMember(ctx context.Context, threadID, userID string) error
-	// StartThread opens a public thread hanging off a message. Everyone who reads
-	// the channel sees it and its author is a member without being added, which
-	// is what a support room wants — and it is the one kind of thread that does
-	// not need the "create private threads" permission.
 	StartThread(ctx context.Context, channelID, messageID, name string) (string, error)
-	// EditMessage and DeleteMessage back the optional MessageEditor port. They
-	// are on the narrow client interface like everything else here, so the tests
-	// can drive them without a Discord.
 	EditMessage(ctx context.Context, channelID, messageID, content string) (*dctl.Message, error)
 	DeleteMessage(ctx context.Context, channelID, messageID string) error
 }
@@ -59,16 +40,8 @@ type Gateway struct {
 	slash *slash
 	sinks *sinks
 
-	// deletes is the operator's opt-in for the `message delete` verb, and it
-	// gates whether that verb is contributed at all. Everything an agent reads
-	// out of a channel is text other people wrote, and delete is the only verb
-	// it could ask for that nothing undoes — so the deployment where nobody
-	// wants it does not merely refuse it, it never offers it.
 	deletes bool
-	// selfID is the bot's own user id, which is what makes "did this bot write
-	// that message" answerable at all. Empty outside the real factory, and a
-	// delete refuses rather than guesses when it is.
-	selfID string
+	selfID  string
 }
 
 func NewGateway(c client) *Gateway { return &Gateway{c: c} }
@@ -87,19 +60,16 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 
 func (g *Gateway) Manifest() contracts.Manifest {
 	return contracts.Manifest{
-		Kind:         "discord",
-		Category:     contracts.CategoryGateway,
-		Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
-		// The host downloads the attachment urls this gateway hands it, and pins
-		// them to what the gateway vouches for. Without this the allowlist is
-		// empty and every screenshot is refused before it is fetched.
+		Kind:            "discord",
+		Category:        contracts.CategoryGateway,
+		Capabilities:    contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 		AttachmentHosts: attachmentHosts,
 	}
 }
 
 // EmitTo renders one live turn event into the conversation the host routed it
 // to. It satisfies contracts.RoutedEventSink, which the host prefers over the
-// flat EventSink — so each session renders into its own channel instead of one
+// flat EventSink, so each session renders into its own channel instead of one
 // global default.
 func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
 	if g.sinks == nil || conv.ID == "" {
@@ -141,8 +111,6 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	// customID carries the conversation id so a click routes its component
-	// interaction back to the originating conversation.
 	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
@@ -171,8 +139,6 @@ func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error
 	return nil
 }
 
-// discordClient adapts *dctl.Client's sub-clients to the narrow client seam the
-// Gateway needs (and that tests fake).
 type discordClient struct{ c *dctl.Client }
 
 func (d discordClient) Send(ctx context.Context, channelID, content string) (*dctl.Message, error) {

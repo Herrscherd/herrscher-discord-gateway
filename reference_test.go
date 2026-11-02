@@ -9,8 +9,6 @@ import (
 	"github.com/Herrscherd/dctl"
 )
 
-// boundRouter is the setup every reply test shares: a channel that already has a
-// session, so the ping goes straight to submit rather than into the repo menu.
 func boundRouter(t *testing.T) (*router, *fakeCtrl, *fakeClient) {
 	t.Helper()
 	r, ctrl, c := newTestRouter(t)
@@ -21,17 +19,12 @@ func boundRouter(t *testing.T) (*router, *fakeCtrl, *fakeClient) {
 	return r, ctrl, c
 }
 
-// replyTo turns a ping into a reply to messageID, the way Discord delivers one
-// without the message-content intent: the target is named and its body blanked.
 func replyTo(text, messageID string) messageCreate {
 	m := ownerPing(text)
 	m.Referenced = &dctl.Message{ID: messageID, ChannelID: "c1", Author: dctl.Author{ID: "app1", Username: "apyr"}}
 	return m
 }
 
-// "regarde ça" under someone's bug report is the whole request. The dispatch
-// blanks the report, and it is older than any channel read reaches, so it has to
-// be re-read by id and put in front of the agent.
 func TestRepliedToMessageIsReadAndQuoted(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -54,8 +47,6 @@ func TestRepliedToMessageIsReadAndQuoted(t *testing.T) {
 	}
 }
 
-// The instruction is what the quote is about, so the quote belongs next to it
-// rather than behind the whole channel history.
 func TestQuoteSitsBetweenTheChannelContextAndTheInstruction(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.read = []dctl.Message{{ID: "a", Content: "salut", Author: dctl.Author{Username: "kim"}}}
@@ -69,8 +60,6 @@ func TestQuoteSitsBetweenTheChannelContextAndTheInstruction(t *testing.T) {
 	}
 }
 
-// A dispatch that already carried the body — the target @mentioned the app — is
-// complete. Re-reading it would be a REST call for nothing.
 func TestRepliedToMessageAlreadyCarriedIsNotReRead(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	m := replyTo("regarde ça", "old1")
@@ -85,10 +74,6 @@ func TestRepliedToMessageAlreadyCarriedIsNotReRead(t *testing.T) {
 	}
 }
 
-// The screenshots are the point of the question. A bot's report puts them inside
-// an embed rather than on the message, and the operator's own upload still comes
-// first: the host caps how many files it downloads, and the operator chose that
-// one deliberately.
 func TestRepliedToFilesAndEmbedImagesReachTheAgent(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -117,7 +102,6 @@ func TestRepliedToFilesAndEmbedImagesReachTheAgent(t *testing.T) {
 			t.Fatalf("attachments = %v, want %v in that order", names, want)
 		}
 	}
-	// The signature must survive: it is what makes the url fetchable.
 	if last := in.Attachments[2]; !strings.Contains(last.URL, "ex=abc") {
 		t.Fatalf("embed image url = %q, want the signed url untouched", last.URL)
 	}
@@ -126,10 +110,6 @@ func TestRepliedToFilesAndEmbedImagesReachTheAgent(t *testing.T) {
 	}
 }
 
-// An embed can name any url on the internet. The host would refuse it and the
-// refusal would still spend one of the few download slots a message gets, so it
-// is never handed over — but the url is named in the text, which is the only
-// trace the agent gets of a picture it cannot open.
 func TestEmbedImageOffTheCDNIsNamedButNotHandedOver(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -147,8 +127,6 @@ func TestEmbedImageOffTheCDNIsNamedButNotHandedOver(t *testing.T) {
 	}
 }
 
-// A link preview's image lives on a third-party site; Discord's copy of it does
-// not, and the copy is the one the host will agree to download.
 func TestEmbedImagePrefersDiscordsOwnCopy(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -166,8 +144,6 @@ func TestEmbedImagePrefersDiscordsOwnCopy(t *testing.T) {
 	}
 }
 
-// A thumbnail is the same picture, smaller. Taking both would spend the host's
-// per-message cap twice on one image.
 func TestEmbedThumbnailIsUsedOnlyWhenThereIsNoImage(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -189,8 +165,6 @@ func TestEmbedThumbnailIsUsedOnlyWhenThereIsNoImage(t *testing.T) {
 	}
 }
 
-// A message that cannot be re-read must not cost the turn: the ping still says
-// something on its own.
 func TestUnreadableReplyTargetStillLetsTheTurnThrough(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getErr = errors.New("410 gone")
@@ -205,7 +179,6 @@ func TestUnreadableReplyTargetStillLetsTheTurnThrough(t *testing.T) {
 	}
 }
 
-// A ping that replies to nothing must not spend a REST call looking.
 func TestAPingThatRepliesToNothingReadsNothing(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	r.onMessage(context.Background(), ownerPing("fais le truc"))
@@ -218,9 +191,6 @@ func TestAPingThatRepliesToNothingReadsNothing(t *testing.T) {
 	}
 }
 
-// A bot reports through embeds with an empty body. Skipping messages with no
-// text made a whole channel of those reports invisible — which is most of what
-// there is to read in a channel a bot posts into.
 func TestChannelContextKeepsMessagesThatAreOnlyEmbeds(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.read = []dctl.Message{{
@@ -241,10 +211,6 @@ func TestChannelContextKeepsMessagesThatAreOnlyEmbeds(t *testing.T) {
 	}
 }
 
-// An embed body is free text with newlines in it, and both places a described
-// line lands frame it by prefixing it — "> " for the quote, an author name for
-// the channel context. A line that breaks in the middle walks out of that frame
-// and reads as the operator's own instruction.
 func TestADescribedLineNeverBreaksItsFrame(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getMsg = &dctl.Message{
@@ -267,8 +233,6 @@ func TestADescribedLineNeverBreaksItsFrame(t *testing.T) {
 	}
 }
 
-// An embed description runs to 4096 characters, and the channel context renders
-// every embed of the last thirty messages. Unbounded, a chatty bot is the turn.
 func TestADescribedLineIsBounded(t *testing.T) {
 	m := dctl.Message{Embeds: []dctl.Embed{{Description: strings.Repeat("a", 5000)}}}
 	lines := describe(m)
@@ -280,9 +244,6 @@ func TestADescribedLineIsBounded(t *testing.T) {
 	}
 }
 
-// A bot that files several embeds off one screenshot is the ordinary case, and
-// the host only downloads a few files per message: the same picture must not be
-// asked for twice.
 func TestTheSameEmbedImageIsHandedOverOnce(t *testing.T) {
 	shot := "https://cdn.discordapp.com/attachments/1/2/shot.png?ex=a"
 	m := dctl.Message{Embeds: []dctl.Embed{
@@ -296,9 +257,6 @@ func TestTheSameEmbedImageIsHandedOverOnce(t *testing.T) {
 	}
 }
 
-// Discord signs its media urls, so the query string sits between the extension
-// and the end of the url. The host reads the extension to decide it is looking
-// at an image, and it only ever sees the filename this produces.
 func TestCDNNameStripsTheSignature(t *testing.T) {
 	cases := []struct {
 		raw  string
@@ -307,8 +265,6 @@ func TestCDNNameStripsTheSignature(t *testing.T) {
 	}{
 		{"https://cdn.discordapp.com/attachments/1/2/shot.png?ex=a&is=b&hm=c", "shot.png", true},
 		{"https://media.discordapp.net/external/x/y.webp", "y.webp", true},
-		// A host name is case-insensitive, and so is the host's own check
-		// against the list this gateway hands it.
 		{"https://CDN.DiscordApp.com/a/shot.png", "shot.png", true},
 		{"https://cdn.discordapp.com/", "", false},
 		{"http://cdn.discordapp.com/a/shot.png", "", false},

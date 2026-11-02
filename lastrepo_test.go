@@ -8,8 +8,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// pingIn is ownerPing addressed to a named channel, for the tests that need a
-// second conversation somewhere other than c1.
 func pingIn(channel, text string) messageCreate {
 	m := ownerPing(text)
 	m.ChannelID = channel
@@ -21,7 +19,6 @@ func TestASecondRoomReusesTheLastRepoInsteadOfAsking(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "Herrscherd/dctl"}}
 
-	// The operator answers the question once, in c1.
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
@@ -29,7 +26,7 @@ func TestASecondRoomReusesTheLastRepoInsteadOfAsking(t *testing.T) {
 	r.onMessage(context.Background(), pingIn("c2", "tu as accès au skill ?"))
 
 	if len(c.menus) != menusBefore {
-		t.Fatalf("menus = %+v, want no new question — the operator already answered it", c.menus)
+		t.Fatalf("menus = %+v, want no new question, the operator already answered it", c.menus)
 	}
 	if len(ctrl.created) != 2 {
 		t.Fatalf("created = %+v, want a second session on the remembered repo", ctrl.created)
@@ -39,8 +36,6 @@ func TestASecondRoomReusesTheLastRepoInsteadOfAsking(t *testing.T) {
 	}
 }
 
-// A guess that is never stated is a guess the operator finds out about later,
-// once the work has already gone to the wrong repo.
 func TestReusingTheLastRepoSaysWhichOne(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
@@ -58,15 +53,11 @@ func TestReusingTheLastRepoSaysWhichOne(t *testing.T) {
 	if !strings.Contains(said, "herrscher") {
 		t.Fatalf("said %q in c2, want it to name the repo it picked", said)
 	}
-	// The menu encoding is an internal detail; "local:herrscher" in a channel is
-	// noise the operator has to decode.
 	if strings.Contains(said, "local:") {
 		t.Errorf("said %q, want the value rendered without its encoding prefix", said)
 	}
 }
 
-// The ping still replays: reusing the answer must not cost the message that
-// prompted it, which is the whole reason the conversation opened.
 func TestTheReusedRepoStillReplaysThePing(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
@@ -96,8 +87,6 @@ func TestTheFirstPingEverStillAsks(t *testing.T) {
 	}
 }
 
-// A repo that has since been renamed or lost must not be bound blind: the
-// failure would surface far from here, as a path error.
 func TestAVanishedRepoFallsBackToTheQuestion(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
@@ -116,8 +105,6 @@ func TestAVanishedRepoFallsBackToTheQuestion(t *testing.T) {
 	}
 }
 
-// A repo named in the ping still wins: the operator saying where beats the
-// gateway remembering where.
 func TestANamedRepoStillBeatsTheRemembered(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}, {Name: "dctl", Local: true}}
@@ -137,8 +124,6 @@ func TestLastRepoSurvivesAReload(t *testing.T) {
 	if err := s.SetLastRepo("local:herrscher"); err != nil {
 		t.Fatalf("SetLastRepo: %v", err)
 	}
-	// A daemon restart must not cost the answer: being asked again after every
-	// restart is the friction this removes.
 	if got := newBindStore(path).LastRepo(); got != "local:herrscher" {
 		t.Errorf("LastRepo after reload = %q, want %q", got, "local:herrscher")
 	}

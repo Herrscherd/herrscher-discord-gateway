@@ -10,7 +10,7 @@ import (
 func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(context.Background(), f, staticLevels("full"), "", false)
-	p := &Platform{sinks: set} // c left nil: readImpl is injected below
+	p := &Platform{sinks: set}
 
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
 		return []rawMsg{
@@ -28,7 +28,7 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 		t.Fatalf("c1 lastUser = %+v, want 3 in c1", got)
 	}
 	if got := set.at("c2").lastUser; got != (msgRef{ch: "c2", id: "9"}) {
-		t.Fatalf("c2 lastUser = %+v, want 9 in c2 — the ack must follow the message's own channel", got)
+		t.Fatalf("c2 lastUser = %+v, want 9 in c2, the ack must follow the message's own channel", got)
 	}
 }
 
@@ -36,10 +36,6 @@ func TestPlatformSatisfiesRenderClientViaAdapter(t *testing.T) {
 	var _ renderClient = (*renderAdapter)(nil)
 }
 
-// TestReadIsSuppressedForPushDrivenChannels covers the guard firing. This covers
-// it not firing: the guard is per channel, not global, and an unbound channel
-// still has the poller as its only inbound path. Silencing it there would trade
-// a bot that answers twice for a bot that never answers at all.
 func TestPlatformStillReadsAnUnboundChannel(t *testing.T) {
 	p := &Platform{binds: newBindStore(t.TempDir() + "/router.json")}
 	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {

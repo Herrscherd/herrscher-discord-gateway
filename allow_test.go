@@ -7,7 +7,6 @@ import (
 
 func TestAllowGlobalBootstrap(t *testing.T) {
 	s := newAllowStore(filepath.Join(t.TempDir(), "a.json"))
-	// Empty global list allows everyone so the first operator can bootstrap.
 	if !s.Allowed("anyone") {
 		t.Fatal("empty allowlist should allow everyone")
 	}
@@ -28,7 +27,6 @@ func TestAllowGlobalPersists(t *testing.T) {
 	if err := s.AddGlobal("u1"); err != nil {
 		t.Fatal(err)
 	}
-	// A fresh store over the same file sees the persisted entry.
 	if !newAllowStore(path).Allowed("u1") {
 		t.Fatal("allowlist did not persist across reload")
 	}
