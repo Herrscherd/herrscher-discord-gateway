@@ -230,6 +230,8 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 
 type renderAdapter struct{ p *Platform }
 
+var _ renderClient = renderAdapter{}
+
 func (r renderAdapter) UpsertStatusMessage(ctx context.Context, ch, id, content string) (string, error) {
 	return r.p.UpsertStatusMessage(ctx, ch, id, content)
 }
