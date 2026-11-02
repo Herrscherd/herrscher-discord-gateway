@@ -200,7 +200,8 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != "answer A" {
 		t.Fatalf("conversation A posts = %v, want [answer A]", got)
 	}
-	if set.at("chanA") != set.at("chanA") {
+	first := set.at("chanA")
+	if first != set.at("chanA") {
 		t.Fatal("at() returned a fresh sink for a known conversation, per-turn state would be lost")
 	}
 }

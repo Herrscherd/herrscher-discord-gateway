@@ -266,13 +266,13 @@ func (s *slash) setMode(channel, mode string) string {
 	switch mode {
 	case supportMode:
 		return saveNote(s.binds.SetMode(channel, supportMode), "bind store",
-			"mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
+			"mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	case ambientMode:
 		return saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
-			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
+			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	case offMode:
 		return saveNote(s.binds.SetMode(channel, offMode), "bind store",
-			"mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon continuent de tourner, `/session close` si tu n'en veux plus.")
+			"mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
 	}
 	return saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session")
 }

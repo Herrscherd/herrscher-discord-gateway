@@ -55,7 +55,7 @@ func TestQuoteSitsBetweenTheChannelContextAndTheInstruction(t *testing.T) {
 
 	text := ctrl.submitted["ch-c1"][0].Text
 	ctx, quoted, instr := strings.Index(text, "salut"), strings.Index(text, "le rapport"), strings.Index(text, "regarde ça")
-	if ctx < 0 || quoted < 0 || instr < 0 || !(ctx < quoted && quoted < instr) {
+	if ctx < 0 || quoted < 0 || instr < 0 || ctx >= quoted || quoted >= instr {
 		t.Fatalf("order = context %d, quote %d, instruction %d in:\n%s", ctx, quoted, instr, text)
 	}
 }

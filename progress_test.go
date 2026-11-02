@@ -32,7 +32,7 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 		return "m1", nil
 	}, levelFull, time.Unix(0, 0))
 
-	for i := 0; i < maxLines*2; i++ {
+	for i := range maxLines * 2 {
 		pv.add(contracts.BackendEvent{
 			Kind: "tool", Tool: "Bash",
 			Detail: strconv.Itoa(i) + strings.Repeat("x", 200),
@@ -77,7 +77,7 @@ func TestRepeatedLinesCollapse(t *testing.T) {
 		return "m1", nil
 	}, "quiet", time.Unix(0, 0))
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "a.go"})
 	}
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Bash", Detail: "go test"})

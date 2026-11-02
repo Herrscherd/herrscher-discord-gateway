@@ -111,7 +111,7 @@ func TestIntentsIncludeGuilds(t *testing.T) {
 
 func TestBoundedRespectsCancelledContext(t *testing.T) {
 	w := newWS("t", nil, nil, nil)
-	for i := 0; i < maxInFlight; i++ {
+	for range maxInFlight {
 		w.sem <- struct{}{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
