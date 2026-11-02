@@ -235,6 +235,7 @@ func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
 		return false
 	}
 	if err := s.rc.Delete(ctx, channelID, s.acked.id); err != nil {
+		s.log.Warn("delete the opening ping failed", "err", err)
 		return false
 	}
 	gone := s.acked

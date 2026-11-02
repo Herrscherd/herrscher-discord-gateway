@@ -188,6 +188,8 @@ linters:
       - path: ^(cmd|tools)/
         linters: [gosec]
         text: "^G(304|703):"
+      - path: ^ws\.go$
+        linters: [bodyclose]
 
 formatters:
   enable:

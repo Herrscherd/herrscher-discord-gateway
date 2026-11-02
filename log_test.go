@@ -21,19 +21,15 @@ func bufferLog(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(buf, nil))
 }
 
-func TestStateDirWarnsWhenItCannotBeCreated(t *testing.T) {
+func TestStateDirFailsWhenItCannotBeCreated(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(blocker, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("DCTL_STATE_DIR", filepath.Join(blocker, "dctl"))
 
-	var logs bytes.Buffer
-	if _, err := stateDir(bufferLog(&logs)); err != nil {
-		t.Fatalf("stateDir returned an error, want only a warning: %v", err)
-	}
-	if !strings.Contains(logs.String(), "create state directory failed") {
-		t.Fatalf("no warning logged, got %q", logs.String())
+	if _, err := stateDir(); err == nil {
+		t.Fatal("stateDir returned no error for an uncreatable directory, so the stores would open on a missing path")
 	}
 }
 

@@ -101,6 +101,7 @@ func (p *progressView) flush(force bool) {
 	}
 	postedID, err := p.post(p.msgID, p.render())
 	if err != nil {
+		p.log.Warn("progress message update failed", "err", err)
 		return
 	}
 	p.msgID = postedID
