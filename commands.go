@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 var _ contracts.CommandSource = (*Gateway)(nil)

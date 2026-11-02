@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // outMsg and outMenu record where an outbound call landed, not just what it
@@ -61,10 +61,12 @@ func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message,
 	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
+
 func (f *fakeClient) Reply(_ context.Context, ch, to, content string) (*dctl.Message, error) {
 	f.replied = append(f.replied, outReply{ch, to, content})
 	return &dctl.Message{ID: "m2"}, nil
 }
+
 func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
 	if f.reactErr != nil {
 		return f.reactErr
@@ -72,6 +74,7 @@ func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
 	f.reacted = append(f.reacted, outReact{ch, msg, emoji})
 	return nil
 }
+
 func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
 	if f.menuErr != nil {
 		return nil, f.menuErr
@@ -79,6 +82,7 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
 }
+
 func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ string) ([]dctl.Message, error) {
 	f.readLimit = limit
 	if f.readErr != nil {
@@ -86,6 +90,7 @@ func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ stri
 	}
 	return f.read, nil
 }
+
 func (f *fakeClient) Unreact(_ context.Context, ch, msg, emoji string) error {
 	if f.unreactErr != nil {
 		return f.unreactErr
@@ -93,6 +98,7 @@ func (f *fakeClient) Unreact(_ context.Context, ch, msg, emoji string) error {
 	f.unreacted = append(f.unreacted, outReact{ch, msg, emoji})
 	return nil
 }
+
 func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message, error) {
 	f.got = append(f.got, outMsg{ch, id})
 	if f.getErr != nil {
@@ -100,6 +106,7 @@ func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message
 	}
 	return f.getMsg, nil
 }
+
 func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (string, error) {
 	if f.threadErr != nil {
 		return "", f.threadErr
@@ -110,6 +117,7 @@ func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (st
 	}
 	return f.nextThreadID, nil
 }
+
 func (f *fakeClient) StartThread(_ context.Context, ch, msg, name string) (string, error) {
 	if f.publicErr != nil {
 		return "", f.publicErr
@@ -118,6 +126,7 @@ func (f *fakeClient) StartThread(_ context.Context, ch, msg, name string) (strin
 	f.started++
 	return fmt.Sprintf("%s-t%d", ch, f.started), nil
 }
+
 func (f *fakeClient) AddThreadMember(_ context.Context, thread, user string) error {
 	if f.memberErr != nil {
 		return f.memberErr

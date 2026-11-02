@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 // client is the subset of *dctl.Client the adapter needs (injected for tests).
