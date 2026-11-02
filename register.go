@@ -14,19 +14,9 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// skills carries the playbook that teaches an agent when to reach for the verbs
-// this gateway contributes. It is embedded, and hung on the Plugin rather than on
-// a built GatewaySet, on purpose: the skill installs on a machine where this
-// gateway is compiled in, token or no token, and nowhere else. A Discord playbook
-// on a host with no Discord is noise in every agent's context forever, for a
-// capability that does not exist there.
-//
 //go:embed skills
 var skillsFS embed.FS
 
-// skills is that tree rooted at the skills dir, so its entries are the skill
-// names the host installs ("discord-conversations/SKILL.md") and not a "skills/"
-// prefix leaking this repo's layout into ~/.claude/skills.
 var skills = func() fs.FS {
 	sub, err := fs.Sub(skillsFS, "skills")
 	if err != nil {
@@ -35,10 +25,6 @@ var skills = func() fs.FS {
 	return sub
 }()
 
-// init self-registers the Discord gateway into the global plugin registry. A
-// blank import of this package (in the host's generated plugins.go) is enough to
-// make the gateway discoverable — no wiring in the host. The factory builds its
-// own dctl client from config so the plugin stays self-contained.
 func init() {
 	contracts.Register(contracts.Plugin{
 		Manifest: contracts.Manifest{
@@ -73,9 +59,6 @@ func init() {
 	})
 }
 
-// shipSkills hands the embedded tree over unconditionally. The contract asks for
-// a factory so a plugin can look at the machine and decline; this one has nothing
-// to look at — where the gateway is compiled in, its playbook belongs.
 func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return skills, nil }
 
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
@@ -83,23 +66,12 @@ func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
-	// No default channel: the bot is bound to an operator, not to a room, and it
-	// always answers in the conversation it was addressed in. Global commands for
-	// the same reason — the bot follows its owner across every server it is in,
-	// so its slash surface cannot belong to one of them.
 	c := dctl.New(token, "", dctl.WithGlobalCommands())
 	gw := NewGateway(discordClient{c})
 	plat := NewPlatform(c)
 	binds := newBindStore(bindStorePath())
 	plat.binds = binds
 
-	// One shared set of per-conversation renderers: the gateway feeds it routed
-	// events (EmitTo) and the router records the triggering message id for the ACK
-	// of the conversation that message belongs to.
-	//
-	// DISCORD_VERBOSITY is only the default a conversation falls back on: `/verbosity`
-	// retunes one room without touching the others and without a daemon restart,
-	// so the level is read from the store on every turn, not captured here.
 	level := verbositySetting(cfg.Get("verbosity"))
 	s := newSinks(ctx, renderAdapter{plat}, func(conv string) string {
 		if v := binds.Level(conv); v != "" {
@@ -115,18 +87,10 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: resolve application id: %w", err)
 	}
 
-	// The delete verb is contributed only where an operator asked for it, and it
-	// needs the bot's own id to tell its own messages from everyone else's — the
-	// same id the mention trigger matches on.
 	gw.deletes = boolSetting(cfg.Get("message_deletes"))
 	gw.selfID = appID
 
-	// The slash surface lives entirely in the plugin: it builds its own dctl
-	// command catalog + allow store and only crosses the boundary through the
-	// neutral SessionControl seam bound later (BindSessionControl).
 	gw.slash = newSlash(ctx, c.Interactions(), c.Components(), token, newAllowStore(allowStorePath()), binds)
-	// The router reads the controller through a closure because it is bound after
-	// the plugin is built (BindSessionControl), not before.
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
@@ -170,9 +134,6 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig) (contracts.G
 	}, nil
 }
 
-// stateDir is the gateway's own data dir: beside the daemon state
-// (DCTL_STATE_DIR) so it shares the instance's data dir, falling back to
-// ~/.config/dctl.
 func stateDir() string {
 	dir := os.Getenv("DCTL_STATE_DIR")
 	if dir == "" {
@@ -183,14 +144,10 @@ func stateDir() string {
 	return dir
 }
 
-// allowStorePath is where the gateway persists its permission store.
 func allowStorePath() string { return filepath.Join(stateDir(), "discord-allow.json") }
 
-// bindStorePath sits beside the allow store, under the same state dir.
 func bindStorePath() string { return filepath.Join(stateDir(), "discord-router.json") }
 
-// intSetting parses a numeric setting, falling back to def for empty or invalid
-// values — a typo must not silently disable channel context.
 func intSetting(v string, def int) int {
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
@@ -199,7 +156,6 @@ func intSetting(v string, def int) int {
 	return n
 }
 
-// knownLevel reports whether v is one of the four render levels.
 func knownLevel(v string) bool {
 	switch v {
 	case levelSilent, levelQuiet, levelActions, levelFull:
@@ -208,12 +164,6 @@ func knownLevel(v string) bool {
 	return false
 }
 
-// verbositySetting maps the configured render level onto the four the renderer
-// knows, falling back to silent for anything else. Silent is the only safe
-// default: the bot is meant to be pinged in channels other people read, where
-// a live list of tools, paths and shell commands is both noise and machine
-// layout. Showing more than the answer has to be asked for, and a typo must not
-// turn it on by accident.
 func verbositySetting(v string) string {
 	if knownLevel(v) {
 		return v
@@ -221,9 +171,6 @@ func verbositySetting(v string) string {
 	return defaultLevel
 }
 
-// boolSetting reads an opt-in switch. Only the spellings people actually write
-// count as on; anything else — including a typo — leaves it off, which is what a
-// setting that deletes messages has to do when it is not sure.
 func boolSetting(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "1", "true", "yes", "on":

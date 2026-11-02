@@ -20,20 +20,12 @@ func TestPrincipalOfNamesTheCallerInAGuildAndInADM(t *testing.T) {
 	}
 }
 
-// A payload with no user id is not a caller named "discord:", it is a caller
-// with no name. Inventing one would mint a principal an operator could grant a
-// role to, and hand that role to every nameless payload at once.
 func TestPrincipalOfNamesNobodyWhenThereIsNoUser(t *testing.T) {
 	if got := principalOf(dctl.Interaction{}); got != "" {
 		t.Fatalf("principal = %q, want nothing", got)
 	}
 }
 
-// The daemon decides what a caller may run from the principal on the context,
-// and the interaction is the only place Discord's identity and the core's
-// context meet. If onInteraction stopped naming the caller, every human would
-// arrive unnamed, the role table would decide nothing about any of them, and
-// nothing would say so.
 func TestAnInteractionNamesItsCallerToTheCore(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}

@@ -9,49 +9,41 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// outMsg and outMenu record where an outbound call landed, not just what it
-// said: the router's whole job is choosing the right channel and custom_id.
 type outMsg struct{ channel, content string }
 
 type outMenu struct{ channel, content, customID string }
 
 type outEdit struct{ channel, id, content string }
 
-// outReply records which message a reply was aimed at, not just its content: a
-// reply landing on the wrong message id is not something a retry fixes either.
 type outReply struct{ channel, to, content string }
 
-// outReact records the channel and message id a reaction call was aimed at, so
-// a handler that read the wrong arg (e.g. "msg" swapped for "id") is caught.
 type outReact struct{ channel, msg, emoji string }
 
 type fakeClient struct {
-	sent    []outMsg
-	replied []outReply
-	reacted []outReact
-	menus   []outMenu
-	menuErr error // fails SendSelectMenu
-	read    []dctl.Message
-	// readLimit is the size the last read asked for, which is how the cap is
-	// checked: the caller's --limit never reaches Discord unbounded.
+	sent       []outMsg
+	replied    []outReply
+	reacted    []outReact
+	menus      []outMenu
+	menuErr    error
+	read       []dctl.Message
 	readLimit  int
-	readErr    error // fails ReadMessages
+	readErr    error
 	unreacted  []outReact
-	reactErr   error // fails React
-	unreactErr error // fails Unreact
+	reactErr   error
+	unreactErr error
 
-	threads      []outMsg // channel the thread was opened in, and its name
-	members      []outMsg // thread id, and the user added to it
-	public       []outMsg // message a public thread was started on, and its name
-	threadErr    error    // fails CreatePrivateThread
-	publicErr    error    // fails StartThread
-	memberErr    error    // fails AddThreadMember
+	threads      []outMsg
+	members      []outMsg
+	public       []outMsg
+	threadErr    error
+	publicErr    error
+	memberErr    error
 	nextThreadID string
-	started      int // public threads opened so far, so each gets its own id
+	started      int
 
-	got    []outMsg      // channel and id of every GetMessage call
-	getMsg *dctl.Message // what GetMessage answers
-	getErr error         // fails GetMessage
+	got    []outMsg
+	getMsg *dctl.Message
+	getErr error
 
 	edited  []outEdit
 	deleted []string
@@ -156,9 +148,6 @@ func TestGatewayManifest(t *testing.T) {
 	if !m.Capabilities.Reactions || !m.Capabilities.SelectMenus || !m.Capabilities.Replies {
 		t.Fatalf("discord should announce all capabilities: %+v", m.Capabilities)
 	}
-	// Undeclared, the host's attachment allowlist is empty and every screenshot
-	// is refused before it is fetched — silently, since a dropped attachment is
-	// never worth failing a turn over.
 	hosts := map[string]bool{}
 	for _, h := range m.AttachmentHosts {
 		hosts[h] = true
@@ -188,9 +177,6 @@ func TestGatewayImplementsEventSink(t *testing.T) {
 	var _ contracts.EventSink = (*Gateway)(nil)
 }
 
-// The gateway satisfies the optional editor port, and each call reaches the
-// client with the ids it was given — a delete aimed at the wrong message is not
-// something a retry fixes.
 func TestGatewayEditsAndDeletes(t *testing.T) {
 	var _ contracts.MessageEditor = (*Gateway)(nil)
 

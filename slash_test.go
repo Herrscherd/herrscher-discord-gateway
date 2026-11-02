@@ -13,9 +13,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// route walks groups + sub-commands and returns the command path plus the leaf
-// options of the deepest sub. This is the crux of keeping the core neutral: the
-// path becomes the argv the SessionControl seam dispatches.
 func TestRouteSubcommand(t *testing.T) {
 	d := dctl.InteractionData{
 		Name: "set",
@@ -56,8 +53,6 @@ func TestRouteGroup(t *testing.T) {
 	}
 }
 
-// flagsFrom turns leaf options into the `--name value` / bare `--flag` argv the
-// core CLI registry parses; a false bool emits nothing.
 func TestFlagsFrom(t *testing.T) {
 	leaves := []dctl.InteractionOption{
 		{Name: "name", Type: 3, Value: "demo"},
@@ -92,7 +87,6 @@ func testAllowStore(t *testing.T) *allowStore {
 	return newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
 }
 
-// fakeAcker records the acknowledgement a component click is answered with.
 type fakeAcker struct{ acked []string }
 
 func (f *fakeAcker) Ack(_ context.Context, _, _, content string) error {
@@ -137,8 +131,6 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 	}
 }
 
-// An unknown custom_id belongs to nobody: it must not reach the command registry
-// (which has no handler for a component) nor be acknowledged as if it worked.
 func TestUnknownComponentIsDropped(t *testing.T) {
 	r, _, _ := newTestRouter(t)
 	ack := &fakeAcker{}
@@ -152,9 +144,6 @@ func TestUnknownComponentIsDropped(t *testing.T) {
 	}
 }
 
-// The bot follows its owner into DMs, where Discord carries the caller under
-// `user` rather than `member.user`. Reading the wrong one made a populated
-// allowlist deny the owner in his own DM.
 func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
 	allow := newAllowStore(filepath.Join(t.TempDir(), "allow.json"))
 	if err := allow.AddGlobal("owner1"); err != nil {
@@ -169,8 +158,6 @@ func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
 	}
 }
 
-// /stop takes no session name: it is typed in the room the runaway turn is
-// talking in, and that room already says which session it is.
 func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
@@ -187,8 +174,6 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 	}
 }
 
-// A /stop with nothing running must say so. Claiming it stopped a turn would
-// send the operator off waiting for an answer that is still coming.
 func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	s := &slash{ctx: context.Background(), router: r, ctrl: ctrl}
@@ -197,8 +182,6 @@ func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	}
 }
 
-// The level belongs to the room: retuning one conversation must leave every
-// other one on what it had.
 func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	s := &slash{ctx: context.Background(), binds: binds}
@@ -210,12 +193,10 @@ func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 		t.Fatalf("level(c1) = %q, want %q", got, levelFull)
 	}
 	if got := binds.Level("c2"); got != "" {
-		t.Fatalf("level(c2) = %q — retuning one room changed another", got)
+		t.Fatalf("level(c2) = %q, retuning one room changed another", got)
 	}
 }
 
-// A level the renderer does not know must be refused rather than stored: stored,
-// it would render as junk forever with the operator told it worked.
 func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	s := &slash{ctx: context.Background(), binds: binds}
@@ -244,8 +225,6 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 	}
 }
 
-// A channel bound before the mode was set would keep sending every ping to that
-// one session, and the mode would look like it did nothing.
 func TestSupportModeUnbindsTheChannel(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
 	s := &slash{ctx: context.Background(), binds: binds}
@@ -263,7 +242,7 @@ func TestSupportModeUnbindsTheChannel(t *testing.T) {
 		t.Fatalf("session(c1) = %q, want the old binding dropped", got)
 	}
 	if got := binds.Mode("c2"); got != "" {
-		t.Fatalf("mode(c2) = %q — one room's mode changed another", got)
+		t.Fatalf("mode(c2) = %q, one room's mode changed another", got)
 	}
 }
 
@@ -277,8 +256,6 @@ func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
 	if got := s.setMode("c1", normalMode); !strings.Contains(got, "normal") {
 		t.Fatalf("setMode = %q, want the mode confirmed", got)
 	}
-	// Stored as no mode at all, which is what every channel written before the
-	// command existed already means.
 	if got := binds.Mode("c1"); got != "" {
 		t.Fatalf("mode(c1) = %q, want nothing stored", got)
 	}
@@ -296,9 +273,6 @@ func TestAnUnknownModeIsRefused(t *testing.T) {
 	}
 }
 
-// Discord rate-limits the command catalog hard. A boot that lands on a 429 used
-// to give up for the lifetime of the process, so a command added in a release
-// was never published and the operator typed a name Discord had never heard of.
 func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
 	restore := syncBackoff
 	syncBackoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
@@ -318,8 +292,6 @@ func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
 	}
 }
 
-// Past a few minutes the answer is not a rate limit but something the operator
-// has to look at, and a loop that never stops would hide it.
 func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
 	restore := syncBackoff
 	syncBackoff = []time.Duration{time.Millisecond}
@@ -336,7 +308,6 @@ func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
 	}
 }
 
-// A daemon shutting down must not be held by a sync waiting out a backoff.
 func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
 	restore := syncBackoff
 	syncBackoff = []time.Duration{time.Hour}

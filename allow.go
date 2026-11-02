@@ -10,11 +10,6 @@ import (
 	"sync"
 )
 
-// allowStore is the gateway's own permission store, persisted as JSON beside the
-// daemon state. It holds the global command allowlist (who may run slash
-// commands at all) and a per-session allowlist (who may take part in a given
-// session). It lives entirely in the plugin: the core never learns about it,
-// keeping all Discord permission policy on the gateway side.
 type allowStore struct {
 	mu   sync.Mutex
 	path string
@@ -31,9 +26,6 @@ func newAllowStore(path string) *allowStore {
 	}
 	if err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
-			// A corrupt store must not silently degrade to an empty (allow-everyone)
-			// store: surface it so the operator can fix the file, and keep the
-			// bootstrap defaults rather than acting on partial decode.
 			fmt.Fprintf(os.Stderr, "discord gateway: allow store %s is corrupt, ignoring: %v\n", path, err)
 			s.Global = nil
 			s.Session = map[string][]string{}
@@ -45,9 +37,6 @@ func newAllowStore(path string) *allowStore {
 	return s
 }
 
-// persist mutates the store under the lock, snapshots the serialized bytes while
-// still holding it, then writes to disk outside the critical section so a slow
-// disk write cannot block the permission checks on the interaction hot path.
 func (s *allowStore) persist(mutate func()) error {
 	s.mu.Lock()
 	mutate()
@@ -59,8 +48,6 @@ func (s *allowStore) persist(mutate func()) error {
 	return writeAtomic(s.path, data)
 }
 
-// writeAtomic writes via a temp file + rename so a crash mid-write cannot leave a
-// truncated store behind (a truncated store would read as allow-everyone).
 func writeAtomic(path string, data []byte) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp")
 	if err != nil {
@@ -82,8 +69,6 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(tmpName, path)
 }
 
-// Allowed reports whether a user may run slash commands. An empty global list
-// means "allow everyone" so the first operator can bootstrap by adding people.
 func (s *allowStore) Allowed(user string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

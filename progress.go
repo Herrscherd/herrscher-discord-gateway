@@ -9,21 +9,10 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// maxLines caps how many lines of activity the live progress body shows; older
-// lines are elided with a leading "…". It bounds the message visually — the
-// hard byte budget is enforced by render, since 15 lines of tool detail can
-// exceed Discord's limit on their own.
 const maxLines = 15
 
-// progressInterval throttles live edits so a tool-heavy turn does not hammer
-// Discord's per-channel edit rate limit. Events are coalesced between edits.
 const progressInterval = 1500 * time.Millisecond
 
-// Render levels, quietest first. silent posts nothing at all: no live message,
-// no summary, only the reply the turn ends on. It is the default because the
-// bot is pinged in rooms other people read, and a wall of tool names is noise
-// there — the levels above it are opt-in for when the operator is watching a
-// turn and wants to see it work.
 const (
 	levelSilent  = "silent"
 	levelQuiet   = "quiet"
@@ -33,20 +22,15 @@ const (
 	defaultLevel = levelSilent
 )
 
-// rendersProgress reports whether a level posts anything before the reply.
 func rendersProgress(level string) bool { return level != levelSilent }
 
-// progressView accumulates one turn's activity and pushes it to a single
-// live-updating Discord message, then collapses it to a one-line summary. post
-// creates (empty id) or edits (non-empty id) the message and returns its id.
-// It is never built at the silent level — see sink.handle.
 type progressView struct {
 	post      func(msgID, content string) (string, error)
-	level     string // levelQuiet | levelActions | levelFull
+	level     string
 	start     time.Time
 	now       func() time.Time
 	lines     []string
-	elided    bool // older lines were dropped past maxLines (render shows a leading "…")
+	elided    bool
 	lastLine  string
 	lastCount int
 	counts    map[string]int
@@ -79,9 +63,6 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 		p.counts[ev.Tool]++
 		p.actions++
 		line := emojiFor(ev.Tool) + " " + ev.Tool
-		// A tool detail is a file path, a shell command or a search pattern: it
-		// exposes the machine's layout to everyone who can read the channel.
-		// "quiet" keeps the pulse of the turn and drops what it was aimed at.
 		if d := clip(flatten(ev.Detail), 120); d != "" && p.level != levelQuiet {
 			line += " · " + d
 		}
@@ -89,8 +70,6 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 	default:
 		return
 	}
-	// Only the last maxLines are ever rendered; drop the tail past that so the
-	// slice does not retain every line for the whole turn.
 	if len(p.lines) > maxLines {
 		p.lines = append(p.lines[:0], p.lines[len(p.lines)-maxLines:]...)
 		p.elided = true
@@ -99,9 +78,6 @@ func (p *progressView) add(ev contracts.BackendEvent) {
 	p.flush(false)
 }
 
-// push appends a rendered line, collapsing an immediate repeat into "×N".
-// Stripped of their details ("quiet"), a burst of the same tool is a run of
-// identical lines that would push everything else out of the 15-line window.
 func (p *progressView) push(line string) {
 	if p.lastCount > 0 && line == p.lastLine {
 		p.lastCount++
@@ -128,9 +104,6 @@ func (p *progressView) flush(force bool) {
 	p.dirty = false
 }
 
-// finish collapses the turn to its one-line summary. A turn that rendered
-// nothing and never created a message is left alone: posting a summary then
-// would add a message where the level asked for none.
 func (p *progressView) finish() {
 	if p.post == nil || (p.msgID == "" && len(p.lines) == 0) {
 		return
@@ -138,10 +111,6 @@ func (p *progressView) finish() {
 	_, _ = p.post(p.msgID, p.summary())
 }
 
-// reset discards the current turn's accumulated activity after a backend
-// crash+retry, keeping the same live message and elapsed clock so the retried
-// turn keeps rendering in place. The turn is not over, so it must NOT collapse
-// to a summary (that is what the old finish-on-reset path got wrong).
 func (p *progressView) reset() {
 	p.lines = nil
 	p.elided = false
@@ -151,17 +120,12 @@ func (p *progressView) reset() {
 	p.cost = 0
 	p.actions = 0
 	if p.msgID == "" {
-		return // nothing shown yet; let the retried turn create the message
+		return
 	}
 	p.dirty = true
 	p.flush(true)
 }
 
-// render draws the live body, dropping oldest lines until it fits Discord's
-// per-message limit. maxLines alone does not guarantee that: at the "actions"
-// and "full" levels a line carries up to 120 runes of detail, so a full window
-// runs past 2000. Discord rejects an oversized edit outright, and flush ignores
-// the error — the live message would simply freeze for the rest of the turn.
 func (p *progressView) render() string {
 	lines, elided := p.lines, p.elided
 	for {

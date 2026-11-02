@@ -9,22 +9,12 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// gatewayMaxLen is Discord's hard per-message limit; long replies are chunked.
 const gatewayMaxLen = 2000
 
-// ackEmoji marks a received turn on the triggering user message; removed when
-// the turn finishes.
 const ackEmoji = "⏳"
 
-// failEmoji replaces the ⏳ when a ping ends without ever becoming a turn. The
-// hourglass says "taken, working"; if the work never starts, nothing else in the
-// flow ever comes back to it, and the ping sits pending forever while the reason
-// goes to the daemon's stderr where the operator will never read it.
 const failEmoji = "❌"
 
-// renderClient is the narrow Discord surface the sink needs (faked in tests).
-// It has no DefaultChannel: a sink is told which conversation it renders into,
-// so nothing here can fall back to a single global channel.
 type renderClient interface {
 	UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error)
 	Post(ctx context.Context, channelID, content string) error
@@ -33,37 +23,20 @@ type renderClient interface {
 	Delete(ctx context.Context, channelID, messageID string) error
 }
 
-// sink renders the live turn-event stream into ONE Discord conversation: one
-// in-flight turn at a time, guarded by mu. Several sinks coexist (see sinks),
-// one per conversation the bot is talking in.
 type sink struct {
-	ctx context.Context
-	rc  renderClient
-	ch  string // the conversation this sink renders into
-	// level is resolved at the start of each turn rather than fixed at
-	// construction: `/verbosity` changes how loud a conversation is while its
-	// sink is alive, and a sink outlives every turn it renders.
+	ctx   context.Context
+	rc    renderClient
+	ch    string
 	level func() string
-	owner string // the operator every answer pings
-	// tidy turns on deleting the ping once its answer is posted, so a channel
-	// keeps the work and not the requests for it. Off by default: deleting
-	// somebody's message is not undoable.
-	tidy bool
+	owner string
+	tidy  bool
 
 	mu       sync.Mutex
 	pv       *progressView
-	lastUser msgRef // the message that triggered the current/next turn
-	acked    msgRef // the message currently carrying the ⏳ reaction
+	lastUser msgRef
+	acked    msgRef
 }
 
-// msgRef points at one message. The channel travels with the id because a sink
-// does not always render where its trigger lives: a job moved into a private
-// thread renders there, while the ping that opened it stays in the channel it
-// was written in, and reacting to it in the wrong channel is a 404.
-// author is the platform id of who wrote it. It travels too because not every
-// message recorded here belongs to the operator: the polling reader records the
-// last non-bot message whoever wrote it, and tidy must never delete a bystander's
-// message.
 type msgRef struct{ ch, id, author string }
 
 func newSink(ctx context.Context, rc renderClient, ch string, level func() string, owner string, tidy bool) *sink {
@@ -73,31 +46,19 @@ func newSink(ctx context.Context, rc renderClient, ch string, level func() strin
 	return &sink{ctx: ctx, rc: rc, ch: ch, level: level, owner: owner, tidy: tidy}
 }
 
-// staticLevel resolves to one fixed render level, normalized. It is what a
-// conversation that nobody can retune uses — tests, and the fallback when no
-// resolver was wired.
 func staticLevel(level string) func() string {
 	level = verbositySetting(level)
 	return func() string { return level }
 }
 
-// staticLevels resolves every conversation to the same fixed render level.
 func staticLevels(level string) func(string) string {
 	level = verbositySetting(level)
 	return func(string) string { return level }
 }
 
-// sinks is the set of live per-conversation renderers. The gateway is no longer
-// mono-channel: one sink per conversation, each with its own in-flight turn
-// state, created on first use and kept for the process's life (a conversation
-// the bot has spoken in is cheap to keep, and its ack/progress ids must survive
-// between turns).
 type sinks struct {
-	ctx context.Context
-	rc  renderClient
-	// level answers "how loud is this conversation" for any conversation id. It
-	// is a function, not a value, because the answer is the operator's to change
-	// at any moment (see sink.level).
+	ctx   context.Context
+	rc    renderClient
 	level func(conv string) string
 	owner string
 	tidy  bool
@@ -113,7 +74,6 @@ func newSinks(ctx context.Context, rc renderClient, level func(conv string) stri
 	return &sinks{ctx: ctx, rc: rc, level: level, owner: owner, tidy: tidy, m: map[string]*sink{}}
 }
 
-// at returns the renderer for one conversation, creating it on first use.
 func (s *sinks) at(convID string) *sink {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -125,29 +85,18 @@ func (s *sinks) at(convID string) *sink {
 	return v
 }
 
-// drop forgets one conversation's renderer. Sinks are otherwise kept for the
-// process's life — a conversation the bot has spoken in is cheap, and its
-// ack/progress ids must survive between turns — but a deleted conversation will
-// never have another turn, and a bot that opens a thread per ping would
-// accumulate one dead sink per job forever.
 func (s *sinks) drop(convID string) {
 	s.mu.Lock()
 	delete(s.m, convID)
 	s.mu.Unlock()
 }
 
-// noteUser records the latest user (non-bot) message, so the next turn's ACK
-// reaction lands on it.
 func (s *sink) noteUser(ch, id, author string) {
 	s.mu.Lock()
 	s.lastUser = msgRef{ch: ch, id: id, author: author}
 	s.mu.Unlock()
 }
 
-// ack marks a message as received now, without waiting for a turn to start.
-// Some pings are answered by a question rather than by work — the repo menu —
-// and there is no "human" event to hang the ⏳ on, so the ping would sit
-// unmarked while the operator decides, reading as ignored.
 func (s *sink) ack(ch, id, author string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -161,15 +110,6 @@ func (s *sink) ack(ch, id, author string) {
 	}
 }
 
-// fail resolves the ⏳ into a ❌ and says why, in the channel the ping was
-// written in. It is the counterpart of the ack: every path that marks a ping as
-// taken must end either in a turn — which clears the ⏳ — or here.
-//
-// The reason goes where the reaction goes, not into the sink's own conversation:
-// a job that moved into a thread is answered there, but the operator is still
-// looking at the message they wrote, and a failure they cannot see is the same
-// as no failure at all. An empty reason marks the ping and posts nothing, for
-// callers that already answer through another surface (an interaction reply).
 func (s *sink) fail(reason string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,12 +131,6 @@ func (s *sink) fail(reason string) {
 	}
 }
 
-// handle renders one live turn event onto Discord. It holds s.mu across the
-// event's blocking REST I/O (React, UpsertStatusMessage, Post, Unreact) on
-// purpose: one turn at a time per conversation, so the inbound goroutine's
-// noteUser briefly serializes behind a single event's render — acceptable and
-// intentional for this single-in-flight-turn design. Other conversations render
-// on their own sink and are never blocked by this one.
 func (s *sink) handle(e contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -204,17 +138,12 @@ func (s *sink) handle(e contracts.Event) {
 
 	switch e.T {
 	case "human":
-		// At the silent level there is no live view at all: no progress message
-		// is ever posted, so every "if s.pv != nil" below is skipped and the turn
-		// shows up as the ⏳ and then the answer.
 		if level := s.level(); rendersProgress(level) {
 			post := func(id, content string) (string, error) {
 				return s.rc.UpsertStatusMessage(s.ctx, ch, id, content)
 			}
 			s.pv = newProgressView(post, level, time.Now())
 		}
-		// Already marked when the ping was received (see ack): reacting twice
-		// would be a wasted call, and the same ⏳ already says "received".
 		if s.lastUser.id != "" && s.acked != s.lastUser {
 			if err := s.rc.React(s.ctx, s.lastUser.chOr(ch), s.lastUser.id, ackEmoji); err == nil {
 				s.acked = s.lastUser
@@ -230,20 +159,10 @@ func (s *sink) handle(e contracts.Event) {
 			s.pv.add(contracts.BackendEvent{Kind: "text", Detail: e.Text})
 		}
 	case "reset":
-		// A backend crash+retry discards the partial turn, but the SAME turn
-		// continues (the prompt is resent). Drop the partial render in place and
-		// keep the ⏳ ACK so the retried turn keeps updating the live message,
-		// rather than stranding it on a misleading summary and going dark.
 		if s.pv != nil {
 			s.pv.reset()
 		}
 	case "abandoned":
-		// The turn ended without a reply (backend/bridge dropped, or the daemon
-		// is shutting down). Clear the ⏳ ACK so the message no longer reads as
-		// pending and drop the live view so the next turn starts fresh. The
-		// partial progress message stays as the last honest state of the turn —
-		// the host left the choice of presentation to us. Force a final flush
-		// first so lines coalesced inside the throttle window are not lost.
 		if s.pv != nil {
 			s.pv.flush(true)
 			s.pv = nil
@@ -270,25 +189,6 @@ func (s *sink) handle(e contracts.Event) {
 	}
 }
 
-// tidyPing deletes the message that opened this turn, now that its answer is
-// posted, and reports whether it did. The ping has served its purpose — the
-// answer quotes nothing from it but says everything about it — and a channel
-// that keeps only the answers reads as a log of work rather than of requests.
-//
-// It is deliberately narrow. Deleting a message is not undoable, so it happens
-// only when the operator asked for it (tidy), only for a turn that produced an
-// answer — "abandoned" never comes through here, so a turn that died leaves the
-// ping that explains what was wanted — and only for a ping written in the very
-// conversation the answer landed in. That last condition is not caution but
-// correctness: a support channel starts its thread ON the ping, and Discord
-// deletes a thread along with the message it hangs off, so tidying there would
-// delete the answer and the whole conversation with it. The same test excludes
-// a job forked into a private thread, whose ping stays in the public channel.
-//
-// And only ever the operator's own message. A channel driven by polling rather
-// than by the router records the last non-bot message whoever wrote it, so
-// without this the bot would delete a bystander's message on their behalf —
-// which is not tidying, it is moderating.
 func (s *sink) tidyPing(ch string) bool {
 	if !s.tidy || s.acked.id == "" || s.acked.chOr(ch) != ch {
 		return false
@@ -297,27 +197,16 @@ func (s *sink) tidyPing(ch string) bool {
 		return false
 	}
 	if err := s.rc.Delete(s.ctx, ch, s.acked.id); err != nil {
-		// The ⏳ is still on a message that is still there; let the caller clear it
-		// rather than leaving the turn looking pending.
 		return false
 	}
-	// The reaction went with the message, so there is nothing left to unreact.
 	gone := s.acked
 	s.acked = msgRef{}
-	// Only when it is still the same message: a ping that arrived mid-turn is
-	// already recorded here and is waiting for its own ⏳.
 	if s.lastUser == gone {
 		s.lastUser = msgRef{}
 	}
 	return true
 }
 
-// answer prepares the text a finished turn is posted as. It opens with the
-// operator's @mention: a turn runs for minutes and its answer is a plain post
-// in whatever conversation the job lives in — without a mention Discord tells
-// nobody, and the operator has to go looking. A turn that ends with nothing to
-// say still gets a line, because the alternative is the ⏳ silently vanishing,
-// which reads exactly like a bot that died.
 func (s *sink) answer(text string) string {
 	if text == "" {
 		text = "✅ terminé"
@@ -328,7 +217,6 @@ func (s *sink) answer(text string) string {
 	return "<@" + s.owner + "> " + text
 }
 
-// clearAck removes the ⏳ reaction left on the triggering message, if any.
 func (s *sink) clearAck(ch string) {
 	if s.acked.id == "" {
 		return
@@ -337,8 +225,6 @@ func (s *sink) clearAck(ch string) {
 	s.acked = msgRef{}
 }
 
-// chOr falls back to the sink's own conversation for a ref recorded without a
-// channel of its own.
 func (m msgRef) chOr(def string) string {
 	if m.ch == "" {
 		return def
@@ -346,8 +232,6 @@ func (m msgRef) chOr(def string) string {
 	return m.ch
 }
 
-// splitTool recovers the tool name and detail from a status line emitted as
-// "Tool Detail" so the progress view can group and icon by tool name.
 func splitTool(s string) (tool, detail string) {
 	s = strings.TrimSpace(s)
 	if i := strings.IndexByte(s, ' '); i >= 0 {
@@ -356,17 +240,11 @@ func splitTool(s string) (tool, detail string) {
 	return s, ""
 }
 
-// chunkText splits s into pieces of at most max runes, preferring a newline
-// break within the limit. It counts and slices in rune space so multibyte
-// runes (accents, "…") are never split into invalid UTF-8 and the 2000-rune
-// limit is measured in characters, not bytes.
 func chunkText(s string, max int) []string {
 	var out []string
 	r := []rune(s)
 	for len(r) > max {
 		cut := max
-		// Prefer the last newline within the limit, but only past the
-		// halfway point so a stray early newline does not yield tiny chunks.
 		for i := max - 1; i > max/2; i-- {
 			if r[i] == '\n' {
 				cut = i

@@ -13,61 +13,35 @@ import (
 	"github.com/coder/websocket"
 )
 
-// gatewayURL is the Discord Gateway v10 endpoint (JSON encoding). Interactions
-// are delivered regardless of intents; everything else needs the non-privileged
-// intents in wsIntents.
 const gatewayURL = "wss://gateway.discord.gg/?v=10&encoding=json"
 
-// Gateway opcodes (v10) we handle.
 const (
-	opDispatch       = 0
-	opHeartbeat      = 1
-	opIdentify       = 2
-	opReconnect      = 7
-	opInvalidSession = 9
-	opHello          = 10
-	opHeartbeatACK   = 11
-	// readLimit caps one gateway frame. It is well above what a dispatch we act on
-	// needs: it is sized for GUILD_CREATE, which the GUILDS intent delivers once
-	// per guild on connect carrying every channel, role and emoji. Exceeding the
-	// limit fails the read, which drops the connection — so a guild too big for
-	// the cap would not degrade, it would reconnect forever.
+	opDispatch          = 0
+	opHeartbeat         = 1
+	opIdentify          = 2
+	opReconnect         = 7
+	opInvalidSession    = 9
+	opHello             = 10
+	opHeartbeatACK      = 11
 	readLimit           = 8 << 20
 	maxReconnectBackoff = 30 * time.Second
-	// maxInFlight bounds concurrent dispatch handlers so a burst of
-	// INTERACTION_CREATE / MESSAGE_CREATE dispatches cannot spawn arbitrarily many
-	// goroutines / in-flight REST calls; the read loop back-pressures once it is
-	// saturated.
-	maxInFlight = 64
-	// wsIntents is GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES. All three are
-	// non-privileged. GUILDS is what delivers CHANNEL_DELETE and THREAD_DELETE,
-	// which is how the gateway learns a conversation it drives no longer exists;
-	// without it those dispatches never arrive and a deleted room leaves its
-	// session running forever. MESSAGE_CONTENT (1<<15) is deliberately absent:
-	// without it Discord still populates content and attachments for messages that
-	// mention the app (and for DMs), which is exactly the set the trigger filter
-	// keeps — and channel context is read over REST, which the intent does not gate.
-	wsIntents = 1 | (1 << 9) | (1 << 12)
+	maxInFlight         = 64
+	wsIntents           = 1 | (1 << 9) | (1 << 12)
 )
 
-// ws is the Discord Gateway websocket client. It connects, identifies, keeps the
-// connection alive with heartbeats, and forwards every INTERACTION_CREATE to
-// handle, every MESSAGE_CREATE to onMessage and every deleted channel or thread
-// to onGone. It reconnects with exponential backoff until its context is
-// cancelled.
 type ws struct {
 	token     string
 	handle    func(context.Context, dctl.Interaction)
 	onMessage func(context.Context, messageCreate)
 	onGone    func(context.Context, string)
 
-	mu    sync.Mutex // serializes writes (only one Write may be in flight)
+	mu    sync.Mutex
 	acked atomic.Bool
 	seq   struct {
 		sync.Mutex
 		n int
 	}
-	sem chan struct{} // bounds concurrent interaction handlers (maxInFlight)
+	sem chan struct{}
 }
 
 type gwPayload struct {
@@ -81,21 +55,13 @@ func newWS(token string, handle func(context.Context, dctl.Interaction), onMessa
 	return &ws{token: token, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
 }
 
-// run is the supervised connect loop: it keeps a session up, reconnecting with
-// exponential backoff, until ctx is cancelled.
 func (w *ws) run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
-		// connected resets the backoff once a session is actually established, so a
-		// long-lived connection that later drops reconnects at the base delay
-		// instead of the last ramped-up value.
 		connected := func() { backoff = time.Second }
 		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
 			if code, ok := permanentClose(err); ok {
-				// Reconnecting cannot succeed (bad token, bad intents, unsupported
-				// API version); stop the loop instead of respamming a doomed
-				// IDENTIFY every backoff. The operator must fix DISCORD_TOKEN/intents.
-				fmt.Fprintf(os.Stderr, "discord gateway: fatal: %v (close %d); not reconnecting — check the bot token and intents\n", err, code)
+				fmt.Fprintf(os.Stderr, "discord gateway: fatal: %v (close %d); not reconnecting, check the bot token and intents\n", err, code)
 				return
 			}
 			fmt.Fprintf(os.Stderr, "discord gateway: %v; reconnecting in %s\n", err, backoff)
@@ -111,12 +77,6 @@ func (w *ws) run(ctx context.Context) {
 	}
 }
 
-// permanentClose reports whether err is a Discord gateway close for a condition
-// that reconnecting cannot resolve, returning the close code. These are the
-// non-recoverable v10 codes: 4004 authentication failed (invalid token), 4010
-// invalid shard, 4011 sharding required, 4012 invalid API version, 4013 invalid
-// intent(s), 4014 disallowed intent(s). errors.As (via CloseStatus) unwraps, so
-// a wrapped close is still recognized.
 func permanentClose(err error) (websocket.StatusCode, bool) {
 	code := websocket.CloseStatus(err)
 	switch code {
@@ -126,8 +86,6 @@ func permanentClose(err error) (websocket.StatusCode, bool) {
 	return code, false
 }
 
-// session runs one connection: dial, HELLO, IDENTIFY, then read until error.
-// connected is invoked once the connection is established (after IDENTIFY).
 func (w *ws) session(ctx context.Context, connected func()) error {
 	c, _, err := websocket.Dial(ctx, gatewayURL, nil)
 	if err != nil {
@@ -155,9 +113,6 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	}
 	connected()
 
-	// A fresh connection starts "acked" so the first heartbeat is allowed; each
-	// heartbeat then requires the previous one to have been ACKed (see
-	// sendHeartbeat), which is how a half-dead connection is detected.
 	w.acked.Store(true)
 	hbCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -175,8 +130,6 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 		case opDispatch:
 			w.dispatch(ctx, p.T, p.D)
 		case opHeartbeat:
-			// An explicit server request to beat now; honor it without the
-			// missed-ACK check (that gate belongs to the periodic loop).
 			if err := w.writeHeartbeat(ctx, c); err != nil {
 				return err
 			}
@@ -188,9 +141,6 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	}
 }
 
-// dispatch fans one gateway dispatch out to the right decoder. Unknown event
-// types are dropped: the intents we identify with deliver a good many events we
-// do not act on, and they must cost nothing.
 func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 	switch t {
 	case "INTERACTION_CREATE":
@@ -214,9 +164,6 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 		}
 		w.bounded(ctx, func() { w.onMessage(ctx, m) })
 	case "CHANNEL_DELETE", "THREAD_DELETE":
-		// Both carry the same thing worth reading — the id of what is gone — so
-		// they share a decoder. A thread is a channel as far as this gateway is
-		// concerned: either can be the conversation a session drives.
 		if w.onGone == nil {
 			return
 		}
@@ -226,15 +173,12 @@ func (w *ws) dispatch(ctx context.Context, t string, d json.RawMessage) {
 			return
 		}
 		if c.ID == "" {
-			// Nothing to close, and an empty id would be looked up as a conversation.
 			return
 		}
 		w.bounded(ctx, func() { w.onGone(ctx, c.ID) })
 	}
 }
 
-// bounded runs fn on its own goroutine under the in-flight semaphore, so a burst
-// of dispatches cannot spawn arbitrarily many handlers.
 func (w *ws) bounded(ctx context.Context, fn func()) {
 	select {
 	case w.sem <- struct{}{}:
@@ -292,8 +236,6 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 			return
 		case <-t.C:
 			if err := w.sendHeartbeat(ctx, c); err != nil {
-				// Close so the blocked read loop unblocks and session() returns,
-				// triggering a reconnect (a zombie connection is otherwise invisible).
 				c.Close(websocket.StatusInternalError, "heartbeat")
 				return
 			}
@@ -301,8 +243,6 @@ func (w *ws) heartbeatLoop(ctx context.Context, c *websocket.Conn, interval time
 	}
 }
 
-// sendHeartbeat is the periodic beat: it first checks the previous beat was
-// ACKed (else the connection is a zombie and it errors to force a reconnect).
 func (w *ws) sendHeartbeat(ctx context.Context, c *websocket.Conn) error {
 	if !w.acked.Swap(false) {
 		return fmt.Errorf("heartbeat not acknowledged")
