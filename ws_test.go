@@ -3,9 +3,14 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
+	"github.com/coder/websocket"
 )
 
 func TestIdentifyRequestsOnlyNonPrivilegedMessageIntents(t *testing.T) {
@@ -122,5 +127,106 @@ func TestBoundedRespectsCancelledContext(t *testing.T) {
 	case <-ran:
 		t.Fatal("bounded ran fn despite a saturated semaphore and a cancelled context")
 	default:
+	}
+}
+
+const lifetimeRounds = 50
+
+func fakeGateway(t *testing.T, script func(context.Context, *websocket.Conn)) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(rw, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer func() {
+			if err := conn.CloseNow(); err != nil {
+				t.Error(err)
+			}
+		}()
+		script(r.Context(), conn)
+	}))
+	t.Cleanup(srv.Close)
+	return "ws" + strings.TrimPrefix(srv.URL, "http")
+}
+
+func serveOneInteraction(ctx context.Context, conn *websocket.Conn) {
+	if err := conn.Write(ctx, websocket.MessageText, []byte(`{"op":10,"d":{"heartbeat_interval":3600000}}`)); err != nil {
+		return
+	}
+	if _, _, err := conn.Read(ctx); err != nil {
+		return
+	}
+	for _, frame := range []string{
+		`{"op":0,"s":1,"t":"READY","d":{}}`,
+		`{"op":0,"s":2,"t":"INTERACTION_CREATE","d":{}}`,
+	} {
+		if err := conn.Write(ctx, websocket.MessageText, []byte(frame)); err != nil {
+			return
+		}
+	}
+	for {
+		if _, _, err := conn.Read(ctx); err != nil {
+			return
+		}
+	}
+}
+
+func TestRunReturnsOnlyAfterInFlightHandlersFinish(t *testing.T) {
+	for range lifetimeRounds {
+		started, finished := make(chan struct{}), make(chan struct{})
+		handle := func(ctx context.Context, _ dctl.Interaction) {
+			close(started)
+			<-ctx.Done()
+			runtime.Gosched()
+			close(finished)
+		}
+		w := newWS("t", testLog(), handle, nil, nil)
+		w.url = fakeGateway(t, serveOneInteraction)
+		ctx, cancel := context.WithCancel(context.Background())
+		runDone := make(chan struct{})
+		go func() {
+			defer close(runDone)
+			w.run(ctx)
+		}()
+		<-started
+		cancel()
+		<-runDone
+		select {
+		case <-finished:
+		default:
+			t.Fatal("run returned while an interaction handler was still running")
+		}
+	}
+}
+
+func TestStartReturnsOnlyAfterCommandSyncFinishes(t *testing.T) {
+	for range lifetimeRounds {
+		finished := make(chan struct{})
+		s := &slash{
+			log:     testLog(),
+			token:   "t",
+			gateway: "ws://127.0.0.1:1",
+			syncCommands: func(ctx context.Context) error {
+				<-ctx.Done()
+				runtime.Gosched()
+				close(finished)
+				return nil
+			},
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		startDone := make(chan struct{})
+		go func() {
+			defer close(startDone)
+			s.start(ctx)
+		}()
+		cancel()
+		<-startDone
+		select {
+		case <-finished:
+		default:
+			t.Fatal("start returned while the command sync was still running")
+		}
 	}
 }

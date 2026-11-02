@@ -22,6 +22,9 @@ type slash struct {
 	ctrl   contracts.SessionControl
 	comp   acker
 	router *router
+
+	gateway      string
+	syncCommands func(context.Context) error
 }
 
 type acker interface {
@@ -29,7 +32,8 @@ type acker interface {
 }
 
 func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
-	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds, gateway: gatewayURL}
+	handler.syncCommands = handler.reg.Sync
 	handler.reg.
 		Add(commandSet(), handler.handleSet).
 		Add(commandSession(), handler.handleSession).
@@ -48,7 +52,9 @@ func (s *slash) start(ctx context.Context) {
 		defer close(syncDone)
 		s.sync(ctx)
 	}()
-	newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone).run(ctx)
+	gateway := newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone)
+	gateway.url = s.gateway
+	gateway.run(ctx)
 	<-syncDone
 }
 
@@ -56,7 +62,7 @@ func syncBackoffs() []time.Duration {
 	return []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
 }
 
-func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log, syncBackoffs()) }
+func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.syncCommands, s.log, syncBackoffs()) }
 
 func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger, backoff []time.Duration) {
 	for attempt := 0; ; attempt++ {
@@ -192,9 +198,9 @@ func (s *slash) handleSession(ctx context.Context, interaction dctl.Interaction)
 		user, _ := interaction.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("ajouté <@%s> à la session %q", user, name)))
 		case "remove":
-			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("retiré <@%s> de la session %q", user, name)))
 		case "list":
 			s.respond(ctx, interaction, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
 		}
@@ -212,9 +218,9 @@ func (s *slash) handleAllow(ctx context.Context, interaction dctl.Interaction) (
 	user, _ := interaction.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("<@%s> est autorisé à utiliser le bot", user)))
 	case "remove":
-		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("<@%s> retiré de la liste", user)))
 	case "list":
 		s.respond(ctx, interaction, listUsers("command allowlist", s.allow.ListGlobal()))
 	}
@@ -231,7 +237,7 @@ func (s *slash) handleStop(ctx context.Context, interaction dctl.Interaction) (d
 
 func (s *slash) stop(channel, user string, direct bool) string {
 	if s.ctrl == nil || s.router == nil {
-		return "session control is not available yet"
+		return "le contrôle des sessions n'est pas encore disponible"
 	}
 	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
 		return "aucun tour en cours ici"
@@ -335,11 +341,13 @@ func (s *slash) sessions() []contracts.SessionInfo {
 func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args []string) {
 	token := interaction.Token.Reveal()
 	if err := s.ix.Defer(ctx, interaction.ID, token, true); err != nil {
+		s.log.Warn("defer interaction failed", "err", err)
 		return
 	}
 	out := s.run(ctx, args)
 	appID, err := s.ix.AppID(ctx)
 	if err != nil {
+		s.log.Warn("resolve application id for the response failed", "err", err)
 		return
 	}
 	if err := s.ix.EditResponse(ctx, appID, token, dctl.Response{Content: out}); err != nil {
@@ -349,14 +357,14 @@ func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args
 
 func (s *slash) run(ctx context.Context, args []string) string {
 	if s.ctrl == nil {
-		return "session control is not available yet"
+		return "le contrôle des sessions n'est pas encore disponible"
 	}
 	out, err := s.ctrl.Dispatch(ctx, args)
 	if err != nil {
-		return "error: " + err.Error()
+		return "erreur : " + err.Error()
 	}
 	if out == "" {
-		return "done"
+		return "fait"
 	}
 	return out
 }
@@ -376,7 +384,7 @@ const (
 func (s *slash) saveNote(err error, store, ok string) string {
 	if err != nil {
 		s.log.Warn("store save failed", "store", store, "err", err)
-		return ok + " (warning: not saved, will be lost on restart)"
+		return ok + " (attention : non sauvegardé, perdu au prochain lancement)"
 	}
 	return ok
 }
