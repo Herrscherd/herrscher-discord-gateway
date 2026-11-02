@@ -5,26 +5,25 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-var attachmentHosts = []string{
-	"cdn.discordapp.com",
-	"media.discordapp.net",
-	"images-ext-1.discordapp.net",
-	"images-ext-2.discordapp.net",
+func attachmentHostList() []string {
+	return []string{
+		"cdn.discordapp.com",
+		"media.discordapp.net",
+		"images-ext-1.discordapp.net",
+		"images-ext-2.discordapp.net",
+	}
 }
 
-var attachmentHost = func() map[string]bool {
-	m := make(map[string]bool, len(attachmentHosts))
-	for _, h := range attachmentHosts {
-		m[h] = true
-	}
-	return m
-}()
+func isAttachmentHost(host string) bool {
+	return slices.Contains(attachmentHostList(), host)
+}
 
 func (r *router) reference(ctx context.Context, m messageCreate) *dctl.Message {
 	if m.Referenced == nil {
@@ -141,7 +140,7 @@ func label(u string) string {
 
 func cdnName(raw string) (string, bool) {
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || !attachmentHost[strings.ToLower(u.Hostname())] {
+	if err != nil || u.Scheme != "https" || !isAttachmentHost(strings.ToLower(u.Hostname())) {
 		return "", false
 	}
 	name := path.Base(u.Path)

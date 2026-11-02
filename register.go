@@ -18,13 +18,13 @@ import (
 //go:embed skills
 var skillsFS embed.FS
 
-var skills = func() fs.FS {
+func embeddedSkills() (fs.FS, error) {
 	sub, err := fs.Sub(skillsFS, "skills")
 	if err != nil {
-		panic("discord gateway: embedded skills tree: " + err.Error())
+		return nil, fmt.Errorf("discord gateway: embedded skills tree: %w", err)
 	}
-	return sub
-}()
+	return sub, nil
+}
 
 func init() {
 	contracts.Register(contracts.Plugin{
@@ -62,7 +62,7 @@ func init() {
 	})
 }
 
-func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return skills, nil }
+func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return embeddedSkills() }
 
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.

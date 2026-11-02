@@ -3,11 +3,14 @@ package discord
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
 func testLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
@@ -41,5 +44,19 @@ func TestUnconfiguredAccessWarnsOnce(t *testing.T) {
 	p.warnUnconfigured()
 	if n := strings.Count(logs.String(), "nobody is authorized"); n != 1 {
 		t.Fatalf("warning logged %d times, want once: %q", n, logs.String())
+	}
+}
+
+func TestEmbeddedSkillsTreeShips(t *testing.T) {
+	skillsTree, err := shipSkills(context.Background(), contracts.PluginConfig{})
+	if err != nil {
+		t.Fatalf("shipSkills: %v", err)
+	}
+	entries, err := fs.ReadDir(skillsTree, ".")
+	if err != nil {
+		t.Fatalf("read embedded skills: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("the embedded skills tree is empty")
 	}
 }

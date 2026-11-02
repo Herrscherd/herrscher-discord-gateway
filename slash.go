@@ -47,23 +47,25 @@ func (s *slash) start(ctx context.Context) {
 	newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone).run(ctx)
 }
 
-var syncBackoff = []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
+func syncBackoffs() []time.Duration {
+	return []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
+}
 
-func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log) }
+func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log, syncBackoffs()) }
 
-func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger) {
+func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger, backoff []time.Duration) {
 	for attempt := 0; ; attempt++ {
 		err := sync(ctx)
 		if err == nil {
 			return
 		}
-		if attempt == len(syncBackoff) {
+		if attempt == len(backoff) {
 			log.Error("command sync gave up", "attempts", attempt+1, "err", err)
 			return
 		}
-		log.Warn("command sync failed, retrying", "err", err, "retry_in", syncBackoff[attempt].String())
+		log.Warn("command sync failed, retrying", "err", err, "retry_in", backoff[attempt].String())
 		select {
-		case <-time.After(syncBackoff[attempt]):
+		case <-time.After(backoff[attempt]):
 		case <-ctx.Done():
 			return
 		}
