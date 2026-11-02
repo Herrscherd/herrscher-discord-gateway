@@ -89,32 +89,44 @@ func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
 		return
 	}
 	if !s.allow.Allowed(ix.UserID()) {
-		if s.comp != nil {
-			if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), "tu n'es pas autorisé à utiliser ce menu"); err != nil {
-				s.log.Warn("acknowledge component failed", "err", err)
-			}
-		}
+		s.ackComponent(ctx, ix, "tu n'es pas autorisé à utiliser ce menu")
 		return
 	}
-	value := ""
-	if len(ix.Data.Values) > 0 {
-		value = ix.Data.Values[0]
+	msg, ok := s.componentReply(ctx, ix, firstValue(ix.Data.Values))
+	if !ok {
+		return
 	}
-	var msg string
+	s.ackComponent(ctx, ix, msg)
+}
+
+func (s *slash) componentReply(ctx context.Context, ix dctl.Interaction, value string) (string, bool) {
 	if channel, ok := ParseBindCustomID(ix.Data.CustomID); ok {
-		msg = s.router.onBindPick(ctx, channel, ix.UserID(), value)
-	} else if session, ok := ParseChoiceCustomID(ix.Data.CustomID); ok {
-		if msg = s.router.onChoicePick(ctx, session, ix.UserID(), ix.GuildID == "", value); msg == "" {
-			msg = "choix enregistré : " + value
-		}
-	} else {
+		return s.router.onBindPick(ctx, channel, ix.UserID(), value), true
+	}
+	session, ok := ParseChoiceCustomID(ix.Data.CustomID)
+	if !ok {
+		return "", false
+	}
+	if msg := s.router.onChoicePick(ctx, session, ix.UserID(), ix.GuildID == "", value); msg != "" {
+		return msg, true
+	}
+	return "choix enregistré : " + value, true
+}
+
+func (s *slash) ackComponent(ctx context.Context, ix dctl.Interaction, msg string) {
+	if s.comp == nil {
 		return
 	}
-	if s.comp != nil {
-		if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg); err != nil {
-			s.log.Warn("acknowledge component failed", "err", err)
-		}
+	if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg); err != nil {
+		s.log.Warn("acknowledge component failed", "err", err)
 	}
+}
+
+func firstValue(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
