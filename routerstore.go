@@ -23,31 +23,31 @@ type bindStore struct {
 }
 
 func newBindStore(path string, log *slog.Logger) *bindStore {
-	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}, Modes: map[string]string{}, Repos: map[string]string{}, Parents: map[string]string{}}
+	s := &bindStore{path: path, Channels: make(map[string]string), Threads: make(map[string]bool), Levels: make(map[string]string), Modes: make(map[string]string), Repos: make(map[string]string), Parents: make(map[string]string)}
 	if data, err := os.ReadFile(filepath.Clean(path)); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			log.Warn("bind store corrupt, ignoring it", "path", path, "err", err)
-			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}
-			s.Modes, s.Repos, s.Parents = map[string]string{}, map[string]string{}, map[string]string{}
+			s.Channels, s.Threads, s.Levels = make(map[string]string), make(map[string]bool), make(map[string]string)
+			s.Modes, s.Repos, s.Parents = make(map[string]string), make(map[string]string), make(map[string]string)
 			s.Last = ""
 		}
 		if s.Channels == nil {
-			s.Channels = map[string]string{}
+			s.Channels = make(map[string]string)
 		}
 		if s.Threads == nil {
-			s.Threads = map[string]bool{}
+			s.Threads = make(map[string]bool)
 		}
 		if s.Levels == nil {
-			s.Levels = map[string]string{}
+			s.Levels = make(map[string]string)
 		}
 		if s.Modes == nil {
-			s.Modes = map[string]string{}
+			s.Modes = make(map[string]string)
 		}
 		if s.Repos == nil {
-			s.Repos = map[string]string{}
+			s.Repos = make(map[string]string)
 		}
 		if s.Parents == nil {
-			s.Parents = map[string]string{}
+			s.Parents = make(map[string]string)
 		}
 	}
 	return s

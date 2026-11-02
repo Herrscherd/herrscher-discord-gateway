@@ -12,7 +12,7 @@ import (
 
 func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
 	}, "full", time.Unix(0, 0), testLog())
@@ -27,7 +27,7 @@ func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 
 func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
 	}, levelFull, time.Unix(0, 0), testLog())
@@ -50,7 +50,7 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 
 func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
 	}, "quiet", time.Unix(0, 0), testLog())
@@ -72,7 +72,7 @@ func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 
 func TestRepeatedLinesCollapse(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
 	}, "quiet", time.Unix(0, 0), testLog())
@@ -96,7 +96,7 @@ func TestRepeatedLinesCollapse(t *testing.T) {
 
 func TestFullKeepsDetail(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
 	}, "full", time.Unix(0, 0), testLog())
@@ -109,7 +109,7 @@ func TestFullKeepsDetail(t *testing.T) {
 
 func TestProgressViewSummaryCountsActions(t *testing.T) {
 	posted := []string{}
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		posted = append(posted, content)
 		return "m1", nil
 	}, "full", time.Unix(0, 0), testLog())

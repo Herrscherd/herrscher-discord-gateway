@@ -177,7 +177,7 @@ func uploads(as []dctl.Attachment) []contracts.Attachment {
 
 func embedImages(m dctl.Message) []contracts.Attachment {
 	var out []contracts.Attachment
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, e := range m.Embeds {
 		u := mediaURL(e.Image)
 		if u == "" {

@@ -5,7 +5,7 @@ import "strings"
 type idSet map[string]bool
 
 func newIDSet(csv string) idSet {
-	s := idSet{}
+	s := make(idSet)
 	for _, raw := range strings.Split(csv, ",") {
 		v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "#"))
 		if v != "" {

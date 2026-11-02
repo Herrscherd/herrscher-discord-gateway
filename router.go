@@ -83,8 +83,8 @@ func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore,
 			allowAll: cfg.access.allowAll,
 			bots:     cfg.access.bots,
 		},
-		pending: map[string]messageCreate{},
-		jobs:    map[string]job{},
+		pending: make(map[string]messageCreate),
+		jobs:    make(map[string]job),
 	}
 }
 
@@ -495,28 +495,25 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 }
 
 func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message, opening, shared bool) string {
-	var b strings.Builder
+	var parts []string
 	if shared && opening {
-		b.WriteString(sharedRule)
+		parts = append(parts, sharedRule)
 	}
 	if lines := r.context(ctx, m); lines != "" {
-		b.WriteString("Contexte du salon (messages précédents, tous auteurs) :\n")
-		b.WriteString(lines)
-		b.WriteString("\n---\n\n")
+		parts = append(parts, "Contexte du salon (messages précédents, tous auteurs) :\n", lines, "\n---\n\n")
 	}
 	if q := quote(ref); q != "" {
-		b.WriteString(q)
-		b.WriteString("\n---\n\n")
+		parts = append(parts, q, "\n---\n\n")
 	}
 	if opening && r.cfg.playbook != "" {
-		fmt.Fprintf(&b, "Pour finir ce travail, suis la skill %q.\n\n", r.cfg.playbook)
+		parts = append(parts, fmt.Sprintf("Pour finir ce travail, suis la skill %q.\n\n", r.cfg.playbook))
 	}
-	b.WriteString(turnRule)
+	parts = append(parts, turnRule)
 	if shared {
-		fmt.Fprintf(&b, "[%s] ", m.Author.Username)
+		parts = append(parts, "["+m.Author.Username+"] ")
 	}
-	b.WriteString(m.Content)
-	return b.String()
+	parts = append(parts, m.Content)
+	return strings.Join(parts, "")
 }
 
 func (r *router) context(ctx context.Context, m messageCreate) string {

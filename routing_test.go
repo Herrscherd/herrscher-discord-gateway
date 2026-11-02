@@ -245,7 +245,7 @@ func TestRepoMenuOutlivingItsPendingPingStaysOwned(t *testing.T) {
 			})
 			r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 			r.mu.Lock()
-			r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+			r.pending, r.jobs = make(map[string]messageCreate), make(map[string]job)
 			r.mu.Unlock()
 
 			r.onBindPick(context.Background(), "c1", tc.clicker, "local:herrscher")
@@ -276,7 +276,7 @@ func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
 		t.Fatal("the thread the menu was posted in is not registered as one")
 	}
 	r.mu.Lock()
-	r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+	r.pending, r.jobs = make(map[string]messageCreate), make(map[string]job)
 	r.mu.Unlock()
 
 	r.onBindPick(context.Background(), thread, "u1", "local:herrscher")

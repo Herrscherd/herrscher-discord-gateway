@@ -15,8 +15,11 @@ const channelCategory = 4
 // creation/archival and posting.
 type ChannelAdmin struct{ c *dctl.Client }
 
+// NewChannelAdmin returns a ChannelAdmin that works through the dctl client c.
 func NewChannelAdmin(c *dctl.Client) *ChannelAdmin { return &ChannelAdmin{c: c} }
 
+// Kind reports what the channel id names: "category" for a category, "forum" for a
+// forum, and an empty string for any other channel.
 func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 	t, err := a.c.Channels().Type(ctx, id)
 	if err != nil {
@@ -32,6 +35,8 @@ func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 	}
 }
 
+// CreateUnder creates a channel named name under parentID and returns its id. It
+// returns an empty id when Discord answers without a channel.
 func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (string, error) {
 	ch, err := a.c.Channels().CreateUnder(ctx, parentID, name)
 	if err != nil {
@@ -43,6 +48,9 @@ func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (
 	return ch.ID, nil
 }
 
+// ForumPost opens a post named name with content in the forum forumID and returns
+// the id of the post's thread. It returns an empty id when Discord answers without
+// a thread.
 func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content string) (string, error) {
 	ch, err := a.c.Threads().ForumPost(ctx, forumID, name, content)
 	if err != nil {
@@ -54,6 +62,8 @@ func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content str
 	return ch.ID, nil
 }
 
+// Archive archives the channel id. It returns an error that wraps the Discord
+// failure.
 func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
 	if err := a.c.Channels().Archive(ctx, id); err != nil {
 		return fmt.Errorf("discord archive channel: %w", err)
@@ -61,6 +71,8 @@ func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
 	return nil
 }
 
+// Send posts content as a message in channelID. It returns an error that wraps
+// the Discord failure.
 func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) error {
 	if _, err := a.c.Messages().Send(ctx, channelID, content); err != nil {
 		return fmt.Errorf("discord send: %w", err)
@@ -88,15 +100,21 @@ type rawMsg struct {
 	msg contracts.Message
 }
 
+// NewPlatform returns a Platform that works through the dctl client c.
 func NewPlatform(c *dctl.Client) *Platform {
 	p := &Platform{c: c}
 	p.readImpl = p.readDctl
 	return p
 }
 
+// Enabled reports whether the underlying dctl client is enabled.
 func (p *Platform) Enabled() bool          { return p.c.Enabled() }
+// DefaultChannel returns the default channel id of the underlying dctl client.
 func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
 
+// EnsureChannel returns the channel named name, created under parentID when parentID
+// is set and at the top level otherwise. It returns an error that wraps the Discord
+// failure.
 func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (contracts.Channel, error) {
 	ensure := func() (*dctl.Channel, error) {
 		if parentID != "" {
@@ -171,6 +189,8 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	return out, nil
 }
 
+// Unreact removes the emoji from the message messageID in channelID. It returns an
+// error that wraps the Discord failure.
 func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji string) error {
 	if err := p.c.Reactions().Remove(ctx, channelID, messageID, emoji); err != nil {
 		return fmt.Errorf("discord unreact: %w", err)
@@ -178,6 +198,10 @@ func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji stri
 	return nil
 }
 
+// UpsertStatusMessage edits the message messageID in channelID to content. When
+// messageID is empty, or Discord no longer has that message, it posts content as a
+// new message. It returns the id of the message it edited or posted, and an error
+// that wraps the Discord failure.
 func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error) {
 	id, err := p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
 	if err != nil {
@@ -186,6 +210,8 @@ func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID
 	return id, nil
 }
 
+// RouteMenu sends prompt in reply to replyTo with a select menu of opts whose picks
+// are routed to the session route. It returns the id of the menu message.
 func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, route string, opts []contracts.Choice) (contracts.MessageID, error) {
 	out := make([]dctl.SelectOption, 0, len(opts))
 	for _, o := range opts {
@@ -237,8 +263,12 @@ var _ renderClient = (*renderAdapter)(nil)
 // Prober adapts a cheap REST round-trip (/users/@me) to contracts.Prober.
 type Prober struct{ c *dctl.Client }
 
+// NewProber returns a Prober that measures round-trips through the dctl client c.
 func NewProber(c *dctl.Client) *Prober { return &Prober{c: c} }
 
+// Probe measures one REST round-trip to Discord and returns its duration in
+// milliseconds. On failure it returns the duration of the failed attempt and an error
+// that wraps the Discord failure.
 func (p *Prober) Probe(ctx context.Context) (int64, error) {
 	start := time.Now()
 	_, err := p.c.Interactions().AppID(ctx)

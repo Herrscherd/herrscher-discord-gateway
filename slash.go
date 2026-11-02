@@ -298,7 +298,7 @@ func (s *slash) agent() string {
 	return s.router.cfg.agent
 }
 
-func (s *slash) autoSession(ctx context.Context, ix dctl.Interaction) ([]dctl.AutocompleteChoice, error) {
+func (s *slash) autoSession(_ context.Context, ix dctl.Interaction) ([]dctl.AutocompleteChoice, error) {
 	_, val, _ := ix.Data.Focused()
 	val = strings.ToLower(val)
 	var out []dctl.AutocompleteChoice

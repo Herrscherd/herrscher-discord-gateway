@@ -32,7 +32,7 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	}
 }
 
-func TestPlatformSatisfiesRenderClientViaAdapter(t *testing.T) {
+func TestPlatformSatisfiesRenderClientViaAdapter(_ *testing.T) {
 	var _ renderClient = (*renderAdapter)(nil)
 }
 
