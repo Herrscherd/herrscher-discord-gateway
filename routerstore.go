@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 )
@@ -23,7 +24,7 @@ type bindStore struct {
 
 func newBindStore(path string, log *slog.Logger) *bindStore {
 	s := &bindStore{path: path, Channels: map[string]string{}, Threads: map[string]bool{}, Levels: map[string]string{}, Modes: map[string]string{}, Repos: map[string]string{}, Parents: map[string]string{}}
-	if data, err := os.ReadFile(path); err == nil {
+	if data, err := os.ReadFile(filepath.Clean(path)); err == nil {
 		if err := json.Unmarshal(data, s); err != nil {
 			log.Warn("bind store corrupt, ignoring it", "path", path, "err", err)
 			s.Channels, s.Threads, s.Levels = map[string]string{}, map[string]bool{}, map[string]string{}

@@ -29,7 +29,7 @@ func embeddedSkills() (fs.FS, error) {
 func init() {
 	contracts.Register(contracts.Plugin{
 		Manifest: contracts.Manifest{
-			Kind:         "discord",
+			Kind:         gatewayKind,
 			Category:     contracts.CategoryGateway,
 			Status:       contracts.StatusLive,
 			Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
@@ -67,7 +67,7 @@ func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
-	log = log.With("gateway", "discord")
+	log = log.With("gateway", gatewayKind)
 	run := lifetimeFrom(ctx)
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
@@ -156,6 +156,7 @@ func stateDir(log *slog.Logger) (string, error) {
 		}
 		dir = filepath.Join(home, ".config", "dctl")
 	}
+	dir = filepath.Clean(dir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		log.Warn("create state directory failed", "dir", dir, "err", err)
 	}
