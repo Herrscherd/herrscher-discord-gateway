@@ -79,7 +79,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	bot := dctl.New(token, "", dctl.WithGlobalCommands())
 	gateway := NewGateway(discordClient{bot}, run, log)
 	plat := NewPlatform(bot)
-	bindPath, err := bindStorePath(log)
+	bindPath, err := bindStorePath()
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
@@ -92,7 +92,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 			return v
 		}
 		return level
-	}, owner, boolSetting(cfg.Get("tidy_pings")), log)
+	}, owner, switchSetting(cfg.Get("tidy_pings"), false), log)
 	gateway.sinks = sinks
 	plat.sinks = sinks
 
@@ -101,10 +101,10 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: resolve application id: %w", err)
 	}
 
-	gateway.deletes = boolSetting(cfg.Get("message_deletes"))
+	gateway.deletes = switchSetting(cfg.Get("message_deletes"), false)
 	gateway.selfID = appID
 
-	allowPath, err := allowStorePath(log)
+	allowPath, err := allowStorePath()
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
@@ -137,7 +137,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 				roles:    newIDSet(cfg.Get("allowed_roles")),
 				channels: newIDSet(cfg.Get("allowed_channels")),
 				ignored:  newIDSet(cfg.Get("ignored_channels")),
-				allowAll: boolSetting(cfg.Get("allow_all_users")),
+				allowAll: switchSetting(cfg.Get("allow_all_users"), false),
 				bots:     botsSetting(cfg.Get("allow_bots")),
 			},
 			address: address,
@@ -152,7 +152,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	}, nil
 }
 
-func stateDir(log *slog.Logger) (string, error) {
+func stateDir() (string, error) {
 	dir := os.Getenv("DCTL_STATE_DIR")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -162,21 +162,21 @@ func stateDir(log *slog.Logger) (string, error) {
 		dir = filepath.Join(home, ".config", "dctl")
 	}
 	if err := os.MkdirAll(filepath.Clean(dir), stateDirPerm); err != nil {
-		log.Warn("create state directory failed", "dir", dir, "err", err)
+		return "", fmt.Errorf("create the state directory: %w", err)
 	}
 	return dir, nil
 }
 
-func allowStorePath(log *slog.Logger) (string, error) {
-	return storePath(log, "discord-allow.json")
+func allowStorePath() (string, error) {
+	return storePath("discord-allow.json")
 }
 
-func bindStorePath(log *slog.Logger) (string, error) {
-	return storePath(log, "discord-router.json")
+func bindStorePath() (string, error) {
+	return storePath("discord-router.json")
 }
 
-func storePath(log *slog.Logger, name string) (string, error) {
-	dir, err := stateDir(log)
+func storePath(name string) (string, error) {
+	dir, err := stateDir()
 	if err != nil {
 		return "", err
 	}
@@ -204,14 +204,6 @@ func verbositySetting(raw string) string {
 		return raw
 	}
 	return defaultLevel
-}
-
-func boolSetting(v string) bool {
-	switch strings.ToLower(strings.TrimSpace(v)) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
 }
 
 func switchSetting(v string, def bool) bool {

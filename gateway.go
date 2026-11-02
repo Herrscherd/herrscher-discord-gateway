@@ -49,8 +49,6 @@ type Gateway struct {
 	selfID  string
 }
 
-var _ contracts.EventSink = (*Gateway)(nil)
-
 // NewGateway returns a Gateway that sends through c, runs its slash surface on the
 // lifetime run and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
@@ -149,12 +147,6 @@ func (g *Gateway) Edit(ctx context.Context, channelID, messageID, content string
 }
 
 // Delete removes a message already sent. It satisfies contracts.MessageEditor.
-//
-// It deletes what it is told to and checks nothing: the authorship bound lives
-// in the `message delete` handler, which already fetches the message to apply
-// it, and repeating the check here would buy a second REST round-trip for the
-// only caller that has it. A future caller reaching this port directly owns
-// that bound itself.
 func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error {
 	if err := g.c.DeleteMessage(ctx, channelID, messageID); err != nil {
 		return fmt.Errorf("discord delete: %w", err)

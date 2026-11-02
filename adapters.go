@@ -181,13 +181,22 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	}
 	out := make([]contracts.Message, 0, len(raws))
 	for i := range raws {
+		out = append(out, raws[i].msg)
+	}
+	p.noteHumanReads(raws)
+	return out, nil
+}
+
+func (p *Platform) noteHumanReads(raws []rawMsg) {
+	if p.sinks == nil {
+		return
+	}
+	for i := range raws {
 		raw := raws[i]
-		out = append(out, raw.msg)
-		if !raw.bot && p.sinks != nil {
+		if !raw.bot {
 			p.sinks.at(raw.msg.ChannelID).noteUser(raw.msg.ChannelID, raw.id, raw.msg.AuthorID)
 		}
 	}
-	return out, nil
 }
 
 // Unreact removes the emoji from the message messageID in channelID. It returns an
@@ -260,8 +269,6 @@ func (r renderAdapter) Delete(ctx context.Context, ch, id string) error {
 	}
 	return nil
 }
-
-var _ renderClient = (*renderAdapter)(nil)
 
 // Prober adapts a cheap REST round-trip (/users/@me) to contracts.Prober.
 type Prober struct{ c *dctl.Client }
