@@ -43,8 +43,13 @@ func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore
 }
 
 func (s *slash) start(ctx context.Context) {
-	go s.sync(ctx)
+	syncDone := make(chan struct{})
+	go func() {
+		defer close(syncDone)
+		s.sync(ctx)
+	}()
 	newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone).run(ctx)
+	<-syncDone
 }
 
 func syncBackoffs() []time.Duration {

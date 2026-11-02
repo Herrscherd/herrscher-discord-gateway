@@ -66,7 +66,8 @@ type ws struct {
 
 		n int
 	}
-	sem chan struct{}
+	sem     chan struct{}
+	workers sync.WaitGroup
 }
 
 type gwPayload struct {
@@ -81,6 +82,9 @@ func newWS(token string, log *slog.Logger, handle func(context.Context, dctl.Int
 }
 
 func (w *ws) run(ctx context.Context) {
+	defer w.workers.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	backoff := time.Second
 	for ctx.Err() == nil {
 		connected := func() { backoff = time.Second }
@@ -146,9 +150,16 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	connected()
 
 	w.acked.Store(true)
-	hbCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go w.heartbeatLoop(hbCtx, conn, time.Duration(handshake.HeartbeatInterval)*time.Millisecond)
+	hbCtx, cancelHeartbeat := context.WithCancel(ctx)
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		w.heartbeatLoop(hbCtx, conn, time.Duration(handshake.HeartbeatInterval)*time.Millisecond)
+	}()
+	defer func() {
+		cancelHeartbeat()
+		<-heartbeatDone
+	}()
 
 	for {
 		payload, err := readPayload(ctx, conn)
@@ -217,7 +228,9 @@ func (w *ws) bounded(ctx context.Context, work func()) {
 	case <-ctx.Done():
 		return
 	}
+	w.workers.Add(1)
 	go func() {
+		defer w.workers.Done()
 		defer func() { <-w.sem }()
 		work()
 	}()
