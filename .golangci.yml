@@ -180,6 +180,9 @@ linters:
     rules:
       - path: ^register\.go$
         linters: [gochecknoinits]
+      - path: ^register\.go$
+        linters: [gosec]
+        text: "^G703:"
       - path: _test\.go
         linters: [forbidigo, err113, gosec, goconst, mnd, varnamelen]
       - path: ^(cmd|tools)/

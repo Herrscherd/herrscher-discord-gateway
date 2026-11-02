@@ -69,10 +69,10 @@ func (g *Gateway) Commands() []contracts.Cmd {
 	return cmds
 }
 
-func (g *Gateway) readChannel(ctx context.Context, in contracts.Input) (string, error) {
-	limit, _ := in.Lookup("limit")
-	after, _ := in.Lookup("after")
-	msgs, err := g.c.ReadMessages(ctx, in.Args["id"], capLimit(limit), after)
+func (g *Gateway) readChannel(ctx context.Context, input contracts.Input) (string, error) {
+	limit, _ := input.Lookup("limit")
+	after, _ := input.Lookup("after")
+	msgs, err := g.c.ReadMessages(ctx, input.Args["id"], capLimit(limit), after)
 	if err != nil {
 		return "", fmt.Errorf("discord channel read: %w", err)
 	}
@@ -80,19 +80,19 @@ func (g *Gateway) readChannel(ctx context.Context, in contracts.Input) (string, 
 }
 
 func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (string, error) {
-	m, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
+	sent, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
 	if err != nil {
 		return "", fmt.Errorf("discord channel post: %w", err)
 	}
-	return "posted " + string(msgID(m)), nil
+	return "posted " + string(msgID(sent)), nil
 }
 
 func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (string, error) {
-	m, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
+	sent, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
 	if err != nil {
 		return "", fmt.Errorf("discord message reply: %w", err)
 	}
-	return "replied " + string(msgID(m)), nil
+	return "replied " + string(msgID(sent)), nil
 }
 
 func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (string, error) {
@@ -116,11 +116,11 @@ func (g *Gateway) editMessage(ctx context.Context, in contracts.Input) (string, 
 	return "edited", nil
 }
 
-func (g *Gateway) deleteMessage(ctx context.Context, in contracts.Input) (string, error) {
-	if err := g.ownMessage(ctx, in.Args["id"], in.Args["msg"]); err != nil {
+func (g *Gateway) deleteMessage(ctx context.Context, input contracts.Input) (string, error) {
+	if err := g.ownMessage(ctx, input.Args["id"], input.Args["msg"]); err != nil {
 		return "", err
 	}
-	if err := g.Delete(ctx, in.Args["id"], in.Args["msg"]); err != nil {
+	if err := g.Delete(ctx, input.Args["id"], input.Args["msg"]); err != nil {
 		return "", err
 	}
 	return "deleted", nil
@@ -136,62 +136,62 @@ func (g *Gateway) ownMessage(ctx context.Context, channelID, messageID string) e
 	if g.selfID == "" {
 		return fmt.Errorf("discord message delete: %w", errOwnIDUnknown)
 	}
-	m, err := g.c.GetMessage(ctx, channelID, messageID)
+	fetched, err := g.c.GetMessage(ctx, channelID, messageID)
 	if err != nil {
 		return fmt.Errorf("discord message delete: read message %s: %w", messageID, err)
 	}
-	if m == nil {
+	if fetched == nil {
 		return fmt.Errorf("discord message delete: message %s is not in channel %s: %w", messageID, channelID, errMessageGone)
 	}
-	if m.Author.ID != g.selfID {
-		return fmt.Errorf("discord message delete: message %s was written by %s, not by this bot: %w", messageID, authorOf(*m), errNotOwnMessage)
+	if fetched.Author.ID != g.selfID {
+		return fmt.Errorf("discord message delete: message %s was written by %s, not by this bot: %w", messageID, authorOf(*fetched), errNotOwnMessage)
 	}
 	return nil
 }
 
 func capLimit(v string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil || n < 1 || n > readCap {
+	number, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || number < 1 || number > readCap {
 		return readCap
 	}
-	return n
+	return number
 }
 
 func renderMessages(msgs []dctl.Message) string {
 	if len(msgs) == 0 {
 		return "(no messages)"
 	}
-	var b strings.Builder
+	var builder strings.Builder
 	for i := range msgs {
-		m := msgs[i]
-		fmt.Fprintf(&b, "%s %s: %s  [%s]\n",
-			authorOf(m), m.Timestamp, bodyOf(m), m.ID)
+		msg := msgs[i]
+		fmt.Fprintf(&builder, "%s %s: %s  [%s]\n",
+			authorOf(msg), msg.Timestamp, bodyOf(msg), msg.ID)
 	}
-	return b.String()
+	return builder.String()
 }
 
-func bodyOf(m dctl.Message) string {
-	body := flattenLines(strings.TrimSpace(m.Content))
+func bodyOf(msg dctl.Message) string {
+	body := flattenLines(strings.TrimSpace(msg.Content))
 	if body != "" {
 		return body
 	}
-	if n := len(m.Attachments); n > 0 {
-		return fmt.Sprintf("(%d attachment(s): %s)", n, m.Attachments[0].Filename)
+	if n := len(msg.Attachments); n > 0 {
+		return fmt.Sprintf("(%d attachment(s): %s)", n, msg.Attachments[0].Filename)
 	}
-	if len(m.Embeds) > 0 {
+	if len(msg.Embeds) > 0 {
 		return "(embed)"
 	}
 	return ""
 }
 
-func flattenLines(s string) string {
+func flattenLines(text string) string {
 	r := strings.NewReplacer("\r\n", `\n`, "\n", `\n`, "\r", `\n`)
-	return r.Replace(s)
+	return r.Replace(text)
 }
 
-func authorOf(m dctl.Message) string {
-	if m.Author.Username != "" {
-		return m.Author.Username
+func authorOf(msg dctl.Message) string {
+	if msg.Author.Username != "" {
+		return msg.Author.Username
 	}
-	return m.Author.ID
+	return msg.Author.ID
 }

@@ -18,7 +18,10 @@ import (
 //go:embed skills
 var skillsFS embed.FS
 
-const defaultContextMessages = 30
+const (
+	defaultContextMessages = 30
+	stateDirPerm           = 0o700
+)
 
 func embeddedSkills() (fs.FS, error) {
 	sub, err := fs.Sub(skillsFS, "skills")
@@ -73,9 +76,9 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	run := lifetimeFrom(ctx)
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
-	c := dctl.New(token, "", dctl.WithGlobalCommands())
-	gw := NewGateway(discordClient{c}, run, log)
-	plat := NewPlatform(c)
+	bot := dctl.New(token, "", dctl.WithGlobalCommands())
+	gateway := NewGateway(discordClient{bot}, run, log)
+	plat := NewPlatform(bot)
 	bindPath, err := bindStorePath(log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
@@ -84,28 +87,28 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	plat.binds = binds
 
 	level := verbositySetting(cfg.Get("verbosity"))
-	s := newSinks(run, renderAdapter{plat}, func(conv string) string {
+	sinks := newSinks(run, renderAdapter{plat}, func(conv string) string {
 		if v := binds.Level(conv); v != "" {
 			return v
 		}
 		return level
 	}, owner, boolSetting(cfg.Get("tidy_pings")), log)
-	gw.sinks = s
-	plat.sinks = s
+	gateway.sinks = sinks
+	plat.sinks = sinks
 
-	appID, err := c.Interactions().AppID(ctx)
+	appID, err := bot.Interactions().AppID(ctx)
 	if err != nil {
 		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: resolve application id: %w", err)
 	}
 
-	gw.deletes = boolSetting(cfg.Get("message_deletes"))
-	gw.selfID = appID
+	gateway.deletes = boolSetting(cfg.Get("message_deletes"))
+	gateway.selfID = appID
 
 	allowPath, err := allowStorePath(log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
-	gw.slash = newSlash(c.Interactions(), c.Components(), token, newAllowStore(allowPath, log), binds, log)
+	gateway.slash = newSlash(bot.Interactions(), bot.Components(), token, newAllowStore(allowPath, log), binds, log)
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
@@ -120,9 +123,9 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		log.Warn("free response channels set without an agent, so replies there get no persona gating their tools")
 	}
 
-	gw.slash.router = newRouter(
-		func() contracts.SessionControl { return gw.slash.ctrl },
-		discordClient{c}, binds, s, log,
+	gateway.slash.router = newRouter(
+		func() contracts.SessionControl { return gateway.slash.ctrl },
+		discordClient{bot}, binds, sinks, log,
 		routerConfig{
 			owner:           owner,
 			appID:           appID,
@@ -142,10 +145,10 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		},
 	)
 	return contracts.GatewaySet{
-		Gateway: gw,
+		Gateway: gateway,
 		Reader:  plat,
-		Admin:   NewChannelAdmin(c),
-		Prober:  NewProber(c),
+		Admin:   NewChannelAdmin(bot),
+		Prober:  NewProber(bot),
 	}, nil
 }
 
@@ -158,7 +161,7 @@ func stateDir(log *slog.Logger) (string, error) {
 		}
 		dir = filepath.Join(home, ".config", "dctl")
 	}
-	if err := os.MkdirAll(filepath.Clean(dir), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Clean(dir), stateDirPerm); err != nil {
 		log.Warn("create state directory failed", "dir", dir, "err", err)
 	}
 	return dir, nil
@@ -181,11 +184,11 @@ func storePath(log *slog.Logger, name string) (string, error) {
 }
 
 func intSetting(v string, def int) int {
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 0 {
+	number, err := strconv.Atoi(v)
+	if err != nil || number < 0 {
 		return def
 	}
-	return n
+	return number
 }
 
 func knownLevel(v string) bool {
@@ -196,9 +199,9 @@ func knownLevel(v string) bool {
 	return false
 }
 
-func verbositySetting(v string) string {
-	if knownLevel(v) {
-		return v
+func verbositySetting(raw string) string {
+	if knownLevel(raw) {
+		return raw
 	}
 	return defaultLevel
 }
@@ -228,9 +231,9 @@ func botsSetting(v string) string {
 	return botsNone
 }
 
-func strSetting(v, def string) string {
-	if v == "" {
+func strSetting(value, def string) string {
+	if value == "" {
 		return def
 	}
-	return v
+	return value
 }

@@ -5,9 +5,9 @@ import "github.com/Herrscherd/dctl"
 const principalPrefix = "discord:"
 
 func principalOf(ix dctl.Interaction) string {
-	id := ix.UserID()
-	if id == "" {
+	userID := ix.UserID()
+	if userID == "" {
 		return ""
 	}
-	return principalPrefix + id
+	return principalPrefix + userID
 }

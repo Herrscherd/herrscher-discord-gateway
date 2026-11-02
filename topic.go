@@ -68,12 +68,12 @@ func repoBase(name string) string {
 
 func tokenSet(text string) map[string]bool {
 	out := make(map[string]bool)
-	for _, tok := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		switch r {
+	for _, tok := range strings.FieldsFunc(strings.ToLower(text), func(char rune) bool {
+		switch char {
 		case '-', '_', '.', '/':
 			return false
 		}
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		return !unicode.IsLetter(char) && !unicode.IsDigit(char)
 	}) {
 		out[tok] = true
 	}
@@ -85,14 +85,14 @@ const threadNameMax = 100
 func outsideAngles(text string) string {
 	var kept []rune
 	depth := 0
-	for _, r := range text {
+	for _, char := range text {
 		switch {
-		case r == '<':
+		case char == '<':
 			depth++
-		case r == '>' && depth > 0:
+		case char == '>' && depth > 0:
 			depth--
 		case depth == 0:
-			kept = append(kept, r)
+			kept = append(kept, char)
 		}
 	}
 	return string(kept)

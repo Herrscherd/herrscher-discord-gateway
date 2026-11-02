@@ -19,22 +19,22 @@ type allowStore struct {
 }
 
 func newAllowStore(path string, log *slog.Logger) *allowStore {
-	s := &allowStore{path: path, Session: make(map[string][]string)}
+	store := &allowStore{path: path, Session: make(map[string][]string)}
 	data, err := os.ReadFile(filepath.Clean(path))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Warn("allow store unreadable, starting with an empty allowlist", "path", path, "err", err)
 	}
 	if err == nil {
-		if err := json.Unmarshal(data, s); err != nil {
+		if err := json.Unmarshal(data, store); err != nil {
 			log.Warn("allow store corrupt, ignoring it", "path", path, "err", err)
-			s.Global = nil
-			s.Session = make(map[string][]string)
+			store.Global = nil
+			store.Session = make(map[string][]string)
 		}
-		if s.Session == nil {
-			s.Session = make(map[string][]string)
+		if store.Session == nil {
+			store.Session = make(map[string][]string)
 		}
 	}
-	return s
+	return store
 }
 
 func (s *allowStore) persist(mutate func()) error {
@@ -133,20 +133,20 @@ func (s *allowStore) ListSession(name string) []string {
 	return append([]string(nil), s.Session[name]...)
 }
 
-func contains(xs []string, x string) bool {
+func contains(xs []string, item string) bool {
 	for _, v := range xs {
-		if v == x {
+		if v == item {
 			return true
 		}
 	}
 	return false
 }
 
-func remove(xs []string, x string) []string {
-	out := xs[:0:0]
-	for _, v := range xs {
-		if v != x {
-			out = append(out, v)
+func remove(items []string, item string) []string {
+	out := items[:0:0]
+	for _, value := range items {
+		if value != item {
+			out = append(out, value)
 		}
 	}
 	return out

@@ -25,11 +25,11 @@ func isAttachmentHost(host string) bool {
 	return slices.Contains(attachmentHostList(), host)
 }
 
-func (r *router) reference(ctx context.Context, m messageCreate) *dctl.Message {
-	if m.Referenced == nil {
+func (r *router) reference(ctx context.Context, msg messageCreate) *dctl.Message {
+	if msg.Referenced == nil {
 		return nil
 	}
-	ref := m.Referenced
+	ref := msg.Referenced
 	if carries(*ref) {
 		return ref
 	}
@@ -38,7 +38,7 @@ func (r *router) reference(ctx context.Context, m messageCreate) *dctl.Message {
 	}
 	channel := ref.ChannelID
 	if channel == "" {
-		channel = m.ChannelID
+		channel = msg.ChannelID
 	}
 	got, err := r.c.GetMessage(ctx, channel, ref.ID)
 	if err != nil {
@@ -59,91 +59,91 @@ func quote(ref *dctl.Message) string {
 	if ref == nil {
 		return ""
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "Message auquel il répond, %s :\n", ref.Author.Username)
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Message auquel il répond, %s :\n", ref.Author.Username)
 	if body := strings.TrimSpace(ref.Content); body != "" {
 		for _, line := range strings.Split(body, "\n") {
-			fmt.Fprintf(&b, "> %s\n", line)
+			fmt.Fprintf(&builder, "> %s\n", line)
 		}
 	}
 	for _, line := range describe(*ref) {
-		fmt.Fprintf(&b, "> %s\n", line)
+		fmt.Fprintf(&builder, "> %s\n", line)
 	}
-	return b.String()
+	return builder.String()
 }
 
 const describeMax = 600
 
-func describe(m dctl.Message) []string {
+func describe(msg dctl.Message) []string {
 	var out []string
-	add := func(s string) {
-		if s = clip(flatten(s), describeMax); s != "" {
-			out = append(out, s)
+	add := func(text string) {
+		if text = clip(flatten(text), describeMax); text != "" {
+			out = append(out, text)
 		}
 	}
-	for _, a := range m.Attachments {
+	for _, a := range msg.Attachments {
 		add("[fichier] " + a.Filename)
 	}
-	for _, e := range m.Embeds {
-		if head := embedHead(e); head != "" {
+	for _, embed := range msg.Embeds {
+		if head := embedHead(embed); head != "" {
 			add("[embed] " + head)
 		}
-		for _, f := range e.Fields {
-			if f.Name == "" && f.Value == "" {
+		for _, field := range embed.Fields {
+			if field.Name == "" && field.Value == "" {
 				continue
 			}
-			add(fmt.Sprintf("[embed] %s : %s", f.Name, f.Value))
+			add(fmt.Sprintf("[embed] %s : %s", field.Name, field.Value))
 		}
-		if u := mediaURL(e.Image); u != "" {
+		if u := mediaURL(embed.Image); u != "" {
 			add("[image] " + label(u))
-		} else if u := mediaURL(e.Thumbnail); u != "" {
+		} else if u := mediaURL(embed.Thumbnail); u != "" {
 			add("[image] " + label(u))
 		}
 	}
 	return out
 }
 
-func embedHead(e dctl.Embed) string {
+func embedHead(embed dctl.Embed) string {
 	var parts []string
-	if e.Title != "" {
-		parts = append(parts, e.Title)
+	if embed.Title != "" {
+		parts = append(parts, embed.Title)
 	}
-	if e.Description != "" {
-		parts = append(parts, e.Description)
+	if embed.Description != "" {
+		parts = append(parts, embed.Description)
 	}
 	head := strings.Join(parts, ", ")
-	if e.URL != "" {
+	if embed.URL != "" {
 		if head == "" {
-			return e.URL
+			return embed.URL
 		}
-		return head + " (" + e.URL + ")"
+		return head + " (" + embed.URL + ")"
 	}
 	return head
 }
 
-func mediaURL(m *dctl.EmbedMedia) string {
-	if m == nil {
+func mediaURL(media *dctl.EmbedMedia) string {
+	if media == nil {
 		return ""
 	}
-	if m.ProxyURL != "" {
-		return m.ProxyURL
+	if media.ProxyURL != "" {
+		return media.ProxyURL
 	}
-	return m.URL
+	return media.URL
 }
 
-func label(u string) string {
-	if name, ok := cdnName(u); ok {
+func label(rawURL string) string {
+	if name, ok := cdnName(rawURL); ok {
 		return name
 	}
-	return u
+	return rawURL
 }
 
 func cdnName(raw string) (string, bool) {
-	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || !isAttachmentHost(strings.ToLower(u.Hostname())) {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || !isAttachmentHost(strings.ToLower(parsed.Hostname())) {
 		return "", false
 	}
-	name := path.Base(u.Path)
+	name := path.Base(parsed.Path)
 	if name == "." || name == "/" || name == "" {
 		return "", false
 	}
@@ -159,36 +159,36 @@ func attachmentsOf(m messageCreate, ref *dctl.Message) []contracts.Attachment {
 	return append(out, embedImages(*ref)...)
 }
 
-func uploads(as []dctl.Attachment) []contracts.Attachment {
-	if len(as) == 0 {
+func uploads(attachments []dctl.Attachment) []contracts.Attachment {
+	if len(attachments) == 0 {
 		return nil
 	}
-	out := make([]contracts.Attachment, 0, len(as))
-	for _, a := range as {
+	out := make([]contracts.Attachment, 0, len(attachments))
+	for _, attachment := range attachments {
 		out = append(out, contracts.Attachment{
-			Filename:    a.Filename,
-			URL:         a.URL,
-			ContentType: a.ContentType,
-			Size:        a.Size,
+			Filename:    attachment.Filename,
+			URL:         attachment.URL,
+			ContentType: attachment.ContentType,
+			Size:        attachment.Size,
 		})
 	}
 	return out
 }
 
-func embedImages(m dctl.Message) []contracts.Attachment {
+func embedImages(msg dctl.Message) []contracts.Attachment {
 	var out []contracts.Attachment
 	seen := make(map[string]bool)
-	for _, e := range m.Embeds {
-		u := mediaURL(e.Image)
-		if u == "" {
-			u = mediaURL(e.Thumbnail)
+	for _, embed := range msg.Embeds {
+		imageURL := mediaURL(embed.Image)
+		if imageURL == "" {
+			imageURL = mediaURL(embed.Thumbnail)
 		}
-		name, ok := cdnName(u)
-		if !ok || seen[u] {
+		name, ok := cdnName(imageURL)
+		if !ok || seen[imageURL] {
 			continue
 		}
-		seen[u] = true
-		out = append(out, contracts.Attachment{Filename: name, URL: u})
+		seen[imageURL] = true
+		out = append(out, contracts.Attachment{Filename: name, URL: imageURL})
 	}
 	return out
 }

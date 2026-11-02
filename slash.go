@@ -29,17 +29,17 @@ type acker interface {
 }
 
 func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
-	s := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
-	s.reg.
-		Add(commandSet(), s.handleSet).
-		Add(commandSession(), s.handleSession).
-		Add(commandService(), s.handleService).
-		Add(commandAllow(), s.handleAllow).
-		Add(commandStop(), s.handleStop).
-		Add(commandVerbosity(), s.handleVerbosity).
-		Add(commandMode(), s.handleMode).
-		Autocomplete("session", s.autoSession)
-	return s
+	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+	handler.reg.
+		Add(commandSet(), handler.handleSet).
+		Add(commandSession(), handler.handleSession).
+		Add(commandService(), handler.handleService).
+		Add(commandAllow(), handler.handleAllow).
+		Add(commandStop(), handler.handleStop).
+		Add(commandVerbosity(), handler.handleVerbosity).
+		Add(commandMode(), handler.handleMode).
+		Autocomplete("session", handler.autoSession)
+	return handler
 }
 
 func (s *slash) start(ctx context.Context) {
@@ -72,52 +72,52 @@ func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *s
 	}
 }
 
-func (s *slash) onMessage(ctx context.Context, m messageCreate) {
+func (s *slash) onMessage(ctx context.Context, msg messageCreate) {
 	if s.router != nil {
-		s.router.onMessage(ctx, m)
+		s.router.onMessage(ctx, msg)
 	}
 }
 
-func (s *slash) onGone(ctx context.Context, id string) {
+func (s *slash) onGone(ctx context.Context, channelID string) {
 	if s.router != nil {
-		s.router.onChannelGone(ctx, id)
+		s.router.onChannelGone(ctx, channelID)
 	}
 }
 
-func (s *slash) onComponent(ctx context.Context, ix dctl.Interaction) {
+func (s *slash) onComponent(ctx context.Context, interaction dctl.Interaction) {
 	if s.router == nil {
 		return
 	}
-	if !s.allow.Allowed(ix.UserID()) {
-		s.ackComponent(ctx, ix, "tu n'es pas autorisé à utiliser ce menu")
+	if !s.allow.Allowed(interaction.UserID()) {
+		s.ackComponent(ctx, interaction, "tu n'es pas autorisé à utiliser ce menu")
 		return
 	}
-	msg, ok := s.componentReply(ctx, ix, firstValue(ix.Data.Values))
+	msg, ok := s.componentReply(ctx, interaction, firstValue(interaction.Data.Values))
 	if !ok {
 		return
 	}
-	s.ackComponent(ctx, ix, msg)
+	s.ackComponent(ctx, interaction, msg)
 }
 
-func (s *slash) componentReply(ctx context.Context, ix dctl.Interaction, value string) (string, bool) {
-	if channel, ok := ParseBindCustomID(ix.Data.CustomID); ok {
-		return s.router.onBindPick(ctx, channel, ix.UserID(), value), true
+func (s *slash) componentReply(ctx context.Context, interaction dctl.Interaction, value string) (string, bool) {
+	if channel, ok := ParseBindCustomID(interaction.Data.CustomID); ok {
+		return s.router.onBindPick(ctx, channel, interaction.UserID(), value), true
 	}
-	session, ok := ParseChoiceCustomID(ix.Data.CustomID)
+	session, ok := ParseChoiceCustomID(interaction.Data.CustomID)
 	if !ok {
 		return "", false
 	}
-	if msg := s.router.onChoicePick(ctx, session, ix.UserID(), ix.GuildID == "", value); msg != "" {
+	if msg := s.router.onChoicePick(ctx, session, interaction.UserID(), interaction.GuildID == "", value); msg != "" {
 		return msg, true
 	}
 	return "choix enregistré : " + value, true
 }
 
-func (s *slash) ackComponent(ctx context.Context, ix dctl.Interaction, msg string) {
+func (s *slash) ackComponent(ctx context.Context, interaction dctl.Interaction, msg string) {
 	if s.comp == nil {
 		return
 	}
-	if err := s.comp.Ack(ctx, ix.ID, ix.Token.Reveal(), msg); err != nil {
+	if err := s.comp.Ack(ctx, interaction.ID, interaction.Token.Reveal(), msg); err != nil {
 		s.log.Warn("acknowledge component failed", "err", err)
 	}
 }
@@ -129,98 +129,98 @@ func firstValue(values []string) string {
 	return values[0]
 }
 
-func (s *slash) onInteraction(ctx context.Context, ix dctl.Interaction) {
-	ctx = contracts.WithPrincipal(ctx, principalOf(ix))
-	if ix.Type == dctl.InteractionComponent {
-		s.onComponent(ctx, ix)
+func (s *slash) onInteraction(ctx context.Context, interaction dctl.Interaction) {
+	ctx = contracts.WithPrincipal(ctx, principalOf(interaction))
+	if interaction.Type == dctl.InteractionComponent {
+		s.onComponent(ctx, interaction)
 		return
 	}
-	if ix.Type == dctl.InteractionAutocomplete {
-		if !s.allow.Allowed(ix.UserID()) {
-			if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), nil); err != nil {
+	if interaction.Type == dctl.InteractionAutocomplete {
+		if !s.allow.Allowed(interaction.UserID()) {
+			if err := s.ix.RespondAutocomplete(ctx, interaction.ID, interaction.Token.Reveal(), nil); err != nil {
 				s.log.Warn("answer autocomplete failed", "err", err)
 			}
 			return
 		}
-		choices, err := s.reg.DispatchAutocomplete(ctx, ix)
+		choices, err := s.reg.DispatchAutocomplete(ctx, interaction)
 		if err != nil {
 			return
 		}
-		if err := s.ix.RespondAutocomplete(ctx, ix.ID, ix.Token.Reveal(), choices); err != nil {
+		if err := s.ix.RespondAutocomplete(ctx, interaction.ID, interaction.Token.Reveal(), choices); err != nil {
 			s.log.Warn("answer autocomplete failed", "err", err)
 		}
 		return
 	}
-	if _, err := s.reg.Dispatch(ctx, ix); err != nil {
+	if _, err := s.reg.Dispatch(ctx, interaction); err != nil {
 		s.log.Warn("dispatch interaction failed", "err", err)
 	}
 }
 
-func (s *slash) routeAndDispatch(ctx context.Context, ix dctl.Interaction) {
-	path, leaves := route(ix.Data)
-	s.dispatch(ctx, ix, append(path, flagsFrom(leaves)...))
+func (s *slash) routeAndDispatch(ctx context.Context, interaction dctl.Interaction) {
+	path, leaves := route(interaction.Data)
+	s.dispatch(ctx, interaction, append(path, flagsFrom(leaves)...))
 }
 
-func (s *slash) handleSet(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleSet(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	s.routeAndDispatch(ctx, ix)
+	s.routeAndDispatch(ctx, interaction)
 	return dctl.Response{}, nil
 }
 
-func (s *slash) handleService(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleService(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	s.routeAndDispatch(ctx, ix)
+	s.routeAndDispatch(ctx, interaction)
 	return dctl.Response{}, nil
 }
 
-func (s *slash) handleSession(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleSession(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	path, _ := route(ix.Data)
+	path, _ := route(interaction.Data)
 	if len(path) >= 3 && path[1] == "allow" {
-		name, _ := ix.Data.Opt("name")
-		user, _ := ix.Data.Opt("user")
+		name, _ := interaction.Data.Opt("name")
+		user, _ := interaction.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, ix, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("added <@%s> to session %q", user, name)))
 		case "remove":
-			s.respond(ctx, ix, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("removed <@%s> from session %q", user, name)))
 		case "list":
-			s.respond(ctx, ix, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
+			s.respond(ctx, interaction, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
 		}
 		return dctl.Response{}, nil
 	}
-	s.routeAndDispatch(ctx, ix)
+	s.routeAndDispatch(ctx, interaction)
 	return dctl.Response{}, nil
 }
 
-func (s *slash) handleAllow(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleAllow(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	path, _ := route(ix.Data)
-	user, _ := ix.Data.Opt("user")
+	path, _ := route(interaction.Data)
+	user, _ := interaction.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, ix, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("allowed <@%s> to run commands", user)))
 	case "remove":
-		s.respond(ctx, ix, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("removed <@%s>", user)))
 	case "list":
-		s.respond(ctx, ix, listUsers("command allowlist", s.allow.ListGlobal()))
+		s.respond(ctx, interaction, listUsers("command allowlist", s.allow.ListGlobal()))
 	}
 	return dctl.Response{}, nil
 }
 
-func (s *slash) handleStop(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleStop(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	s.respond(ctx, ix, s.stop(ix.ChannelID, ix.UserID(), ix.GuildID == ""))
+	s.respond(ctx, interaction, s.stop(interaction.ChannelID, interaction.UserID(), interaction.GuildID == ""))
 	return dctl.Response{}, nil
 }
 
@@ -234,12 +234,12 @@ func (s *slash) stop(channel, user string, direct bool) string {
 	return "⏹️ tour interrompu, la conversation est gardée, dis-moi la suite"
 }
 
-func (s *slash) handleVerbosity(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	level, _ := ix.Data.Opt("level")
-	s.respond(ctx, ix, s.setVerbosity(ix.ChannelID, level))
+	level, _ := interaction.Data.Opt("level")
+	s.respond(ctx, interaction, s.setVerbosity(interaction.ChannelID, level))
 	return dctl.Response{}, nil
 }
 
@@ -253,12 +253,12 @@ func (s *slash) setVerbosity(channel, level string) string {
 	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
 }
 
-func (s *slash) handleMode(ctx context.Context, ix dctl.Interaction) (dctl.Response, error) {
-	if !s.gate(ctx, ix) {
+func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
+	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	mode, _ := ix.Data.Opt("mode")
-	s.respond(ctx, ix, s.setMode(ix.ChannelID, mode))
+	mode, _ := interaction.Data.Opt("mode")
+	s.respond(ctx, interaction, s.setMode(interaction.ChannelID, mode))
 	return dctl.Response{}, nil
 }
 
@@ -304,19 +304,19 @@ func (s *slash) autoSession(_ context.Context, ix dctl.Interaction) ([]dctl.Auto
 	var out []dctl.AutocompleteChoice
 	items := s.sessions()
 	for i := range items {
-		si := items[i]
-		if val == "" || strings.Contains(strings.ToLower(si.Name), val) {
-			out = append(out, dctl.AutocompleteChoice{Name: si.Name, Value: si.Name})
+		item := items[i]
+		if val == "" || strings.Contains(strings.ToLower(item.Name), val) {
+			out = append(out, dctl.AutocompleteChoice{Name: item.Name, Value: item.Name})
 		}
 	}
 	return out, nil
 }
 
-func (s *slash) gate(ctx context.Context, ix dctl.Interaction) bool {
-	if s.allow.Allowed(ix.UserID()) {
+func (s *slash) gate(ctx context.Context, interaction dctl.Interaction) bool {
+	if s.allow.Allowed(interaction.UserID()) {
 		return true
 	}
-	s.respond(ctx, ix, "you are not allowed to run commands here")
+	s.respond(ctx, interaction, "you are not allowed to run commands here")
 	return false
 }
 
@@ -327,9 +327,9 @@ func (s *slash) sessions() []contracts.SessionInfo {
 	return s.ctrl.Sessions()
 }
 
-func (s *slash) dispatch(ctx context.Context, ix dctl.Interaction, args []string) {
-	token := ix.Token.Reveal()
-	if err := s.ix.Defer(ctx, ix.ID, token, true); err != nil {
+func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args []string) {
+	token := interaction.Token.Reveal()
+	if err := s.ix.Defer(ctx, interaction.ID, token, true); err != nil {
 		return
 	}
 	out := s.run(ctx, args)
@@ -376,14 +376,14 @@ func (s *slash) saveNote(err error, store, ok string) string {
 	return ok
 }
 
-func route(d dctl.InteractionData) ([]string, []dctl.InteractionOption) {
-	path := []string{d.Name}
-	opts := d.Options
+func route(data dctl.InteractionData) ([]string, []dctl.InteractionOption) {
+	path := []string{data.Name}
+	opts := data.Options
 	for {
 		var next *dctl.InteractionOption
-		for i := range opts {
-			if opts[i].Type == optSubCommand || opts[i].Type == optSubCommandGroup {
-				next = &opts[i]
+		for index := range opts {
+			if opts[index].Type == optSubCommand || opts[index].Type == optSubCommandGroup {
+				next = &opts[index]
 				break
 			}
 		}
@@ -398,28 +398,28 @@ func route(d dctl.InteractionData) ([]string, []dctl.InteractionOption) {
 
 func flagsFrom(leaves []dctl.InteractionOption) []string {
 	var out []string
-	for _, o := range leaves {
-		if o.Type == optBoolean {
-			if b, ok := o.Value.(bool); ok && b {
-				out = append(out, "--"+o.Name)
+	for _, leaf := range leaves {
+		if leaf.Type == optBoolean {
+			if b, ok := leaf.Value.(bool); ok && b {
+				out = append(out, "--"+leaf.Name)
 			}
 			continue
 		}
-		out = append(out, "--"+o.Name, valStr(o.Value))
+		out = append(out, "--"+leaf.Name, valStr(leaf.Value))
 	}
 	return out
 }
 
 func valStr(v any) string {
-	switch x := v.(type) {
+	switch typed := v.(type) {
 	case string:
-		return x
+		return typed
 	case bool:
-		return strconv.FormatBool(x)
+		return strconv.FormatBool(typed)
 	case float64:
-		return strconv.FormatFloat(x, 'f', -1, 64)
+		return strconv.FormatFloat(typed, 'f', -1, 64)
 	default:
-		return fmt.Sprint(x)
+		return fmt.Sprint(typed)
 	}
 }
 

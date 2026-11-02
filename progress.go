@@ -50,24 +50,24 @@ func newProgressView(post func(string, string) (string, error), level string, st
 	return &progressView{post: post, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int)}
 }
 
-func (p *progressView) add(ev contracts.BackendEvent) {
-	switch ev.Kind {
+func (p *progressView) add(event contracts.BackendEvent) {
+	switch event.Kind {
 	case "result":
-		p.cost = ev.Cost
+		p.cost = event.Cost
 		return
 	case "text":
 		if p.level != levelFull {
 			return
 		}
-		p.push("💭 " + clip(flatten(ev.Detail), previewWidth))
+		p.push("💭 " + clip(flatten(event.Detail), previewWidth))
 	case "tool":
-		if _, seen := p.counts[ev.Tool]; !seen {
-			p.order = append(p.order, ev.Tool)
+		if _, seen := p.counts[event.Tool]; !seen {
+			p.order = append(p.order, event.Tool)
 		}
-		p.counts[ev.Tool]++
+		p.counts[event.Tool]++
 		p.actions++
-		line := emojiFor(ev.Tool) + " " + ev.Tool
-		if d := clip(flatten(ev.Detail), previewWidth); d != "" && p.level != levelQuiet {
+		line := emojiFor(event.Tool) + " " + event.Tool
+		if d := clip(flatten(event.Detail), previewWidth); d != "" && p.level != levelQuiet {
 			line += " · " + d
 		}
 		p.push(line)
@@ -99,11 +99,11 @@ func (p *progressView) flush(force bool) {
 	if !force && !p.lastEdit.IsZero() && p.now().Sub(p.lastEdit) < progressInterval {
 		return
 	}
-	id, err := p.post(p.msgID, p.render())
+	postedID, err := p.post(p.msgID, p.render())
 	if err != nil {
 		return
 	}
-	p.msgID = id
+	p.msgID = postedID
 	p.lastEdit = p.now()
 	p.dirty = false
 }
@@ -161,20 +161,20 @@ func (p *progressView) summary() string {
 			parts = append(parts, name)
 		}
 	}
-	var s string
+	var summary string
 	if p.actions == 0 {
-		s = icon + " terminé"
+		summary = icon + " terminé"
 	} else {
-		s = fmt.Sprintf("%s %d action%s", icon, p.actions, plural(p.actions))
+		summary = fmt.Sprintf("%s %d action%s", icon, p.actions, plural(p.actions))
 		if len(parts) > 0 {
-			s += " (" + strings.Join(parts, ", ") + ")"
+			summary += " (" + strings.Join(parts, ", ") + ")"
 		}
 	}
-	s += fmt.Sprintf(" · %ds", int(p.now().Sub(p.start).Round(time.Second).Seconds()))
+	summary += fmt.Sprintf(" · %ds", int(p.now().Sub(p.start).Round(time.Second).Seconds()))
 	if p.cost > 0 {
-		s += " · " + formatCost(p.cost)
+		summary += " · " + formatCost(p.cost)
 	}
-	return s
+	return summary
 }
 
 func plural(n int) string {
@@ -186,11 +186,11 @@ func plural(n int) string {
 
 const costPrecisionThreshold = 0.01
 
-func formatCost(c float64) string {
-	if c < costPrecisionThreshold {
-		return fmt.Sprintf("$%.4f", c)
+func formatCost(cost float64) string {
+	if cost < costPrecisionThreshold {
+		return fmt.Sprintf("$%.4f", cost)
 	}
-	return fmt.Sprintf("$%.2f", c)
+	return fmt.Sprintf("$%.2f", cost)
 }
 
 func emojiFor(tool string) string {
@@ -214,10 +214,10 @@ func emojiFor(tool string) string {
 
 func flatten(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-func clip(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
+func clip(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
 	}
-	return string(r[:n]) + "…"
+	return string(runes[:limit]) + "…"
 }

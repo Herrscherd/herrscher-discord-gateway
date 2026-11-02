@@ -10,24 +10,24 @@ type channelDelete struct {
 	ID string `json:"id"`
 }
 
-func (r *router) onChannelGone(ctx context.Context, id string) {
-	for _, child := range r.binds.Children(id) {
+func (r *router) onChannelGone(ctx context.Context, channelID string) {
+	for _, child := range r.binds.Children(channelID) {
 		r.endConversation(ctx, child)
 		if err := r.binds.Forget(child); err != nil {
 			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
-	r.endConversation(ctx, id)
+	r.endConversation(ctx, channelID)
 }
 
-func (r *router) endConversation(ctx context.Context, id string) {
-	sessions := r.binds.SessionsIn(id)
-	r.forget(id)
-	r.sinks.drop(id)
+func (r *router) endConversation(ctx context.Context, conversationID string) {
+	sessions := r.binds.SessionsIn(conversationID)
+	r.forget(conversationID)
+	r.sinks.drop(conversationID)
 	if len(sessions) == 0 {
 		return
 	}
-	if err := r.binds.Forget(id); err != nil {
+	if err := r.binds.Forget(conversationID); err != nil {
 		r.log.Warn("bind store save failed", "err", err)
 	}
 	ctrl := r.ctrl()
@@ -36,7 +36,7 @@ func (r *router) endConversation(ctx context.Context, id string) {
 	}
 	for _, session := range sessions {
 		ctrl.Interrupt(session)
-		r.closeGone(ctx, ctrl, session, id)
+		r.closeGone(ctx, ctrl, session, conversationID)
 	}
 }
 

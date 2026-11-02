@@ -83,11 +83,11 @@ func (g *Gateway) Manifest() contracts.Manifest {
 // to. It satisfies contracts.RoutedEventSink, which the host prefers over the
 // flat EventSink, so each session renders into its own channel instead of one
 // global default.
-func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
+func (g *Gateway) EmitTo(conv contracts.Conversation, event contracts.Event) {
 	if g.sinks == nil || conv.ID == "" {
 		return
 	}
-	g.sinks.at(conv.ID).handle(e)
+	g.sinks.at(conv.ID).handle(event)
 }
 
 // Emit is the unrouted fallback for a host that does not route events. Without a
@@ -98,21 +98,21 @@ func (g *Gateway) Emit(contracts.Event) {}
 // Post sends text as a new message in conv. It returns the id Discord gave the
 // message, and an error that wraps the Discord failure.
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
-	m, err := g.c.Send(ctx, conv.ID, text)
+	sent, err := g.c.Send(ctx, conv.ID, text)
 	if err != nil {
-		return msgID(m), fmt.Errorf("discord post: %w", err)
+		return msgID(sent), fmt.Errorf("discord post: %w", err)
 	}
-	return msgID(m), nil
+	return msgID(sent), nil
 }
 
 // Reply sends text as an answer to replyTo in conv. It returns the id Discord gave
 // the answer, and an error that wraps the Discord failure.
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
-	m, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
+	sent, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
 	if err != nil {
-		return msgID(m), fmt.Errorf("discord reply: %w", err)
+		return msgID(sent), fmt.Errorf("discord reply: %w", err)
 	}
-	return msgID(m), nil
+	return msgID(sent), nil
 }
 
 // React adds emoji to msg in conv. It returns an error that wraps the Discord
@@ -191,25 +191,25 @@ func (d discordClient) GetMessage(ctx context.Context, channelID, messageID stri
 }
 
 func (d discordClient) CreatePrivateThread(ctx context.Context, channelID, name string) (string, error) {
-	ch, err := d.c.Threads().StartPrivate(ctx, channelID, name)
+	thread, err := d.c.Threads().StartPrivate(ctx, channelID, name)
 	if err != nil {
 		return "", err
 	}
-	if ch == nil {
+	if thread == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return thread.ID, nil
 }
 
 func (d discordClient) StartThread(ctx context.Context, channelID, messageID, name string) (string, error) {
-	ch, err := d.c.Threads().Start(ctx, channelID, messageID, name)
+	thread, err := d.c.Threads().Start(ctx, channelID, messageID, name)
 	if err != nil {
 		return "", err
 	}
-	if ch == nil {
+	if thread == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return thread.ID, nil
 }
 
 func (d discordClient) AddThreadMember(ctx context.Context, threadID, userID string) error {
@@ -224,9 +224,9 @@ func (d discordClient) DeleteMessage(ctx context.Context, channelID, messageID s
 	return d.c.Messages().Delete(ctx, channelID, messageID)
 }
 
-func msgID(m *dctl.Message) contracts.MessageID {
-	if m == nil {
+func msgID(msg *dctl.Message) contracts.MessageID {
+	if msg == nil {
 		return ""
 	}
-	return contracts.MessageID(m.ID)
+	return contracts.MessageID(msg.ID)
 }

@@ -41,11 +41,11 @@ type sink struct {
 
 type msgRef struct{ ch, id, author string }
 
-func newSink(run lifetime, rc renderClient, ch string, level func() string, owner string, tidy bool, log *slog.Logger) *sink {
+func newSink(run lifetime, renderer renderClient, channel string, level func() string, owner string, tidy bool, log *slog.Logger) *sink {
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{run: run, rc: rc, ch: ch, level: level, owner: owner, tidy: tidy, log: log}
+	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, log: log}
 }
 
 func staticLevel(level string) func() string {
@@ -70,11 +70,11 @@ type sinks struct {
 	m  map[string]*sink
 }
 
-func newSinks(run lifetime, rc renderClient, level func(conv string) string, owner string, tidy bool, log *slog.Logger) *sinks {
+func newSinks(run lifetime, renderer renderClient, level func(conv string) string, owner string, tidy bool, log *slog.Logger) *sinks {
 	if level == nil {
 		level = staticLevels("")
 	}
-	return &sinks{run: run, rc: rc, level: level, owner: owner, tidy: tidy, log: log, m: make(map[string]*sink)}
+	return &sinks{run: run, rc: renderer, level: level, owner: owner, tidy: tidy, log: log, m: make(map[string]*sink)}
 }
 
 func (s *sinks) at(convID string) *sink {
@@ -83,9 +83,9 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	v := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.log)
-	s.m[convID] = v
-	return v
+	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.log)
+	s.m[convID] = created
+	return created
 }
 
 func (s *sinks) drop(convID string) {
@@ -94,18 +94,18 @@ func (s *sinks) drop(convID string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) noteUser(ch, id, author string) {
+func (s *sink) noteUser(channelID, messageID, author string) {
 	s.mu.Lock()
-	s.lastUser = msgRef{ch: ch, id: id, author: author}
+	s.lastUser = msgRef{ch: channelID, id: messageID, author: author}
 	s.mu.Unlock()
 }
 
-func (s *sink) ack(ctx context.Context, ch, id, author string) {
+func (s *sink) ack(ctx context.Context, channelID, messageID, author string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ref := msgRef{ch: ch, id: id, author: author}
+	ref := msgRef{ch: channelID, id: messageID, author: author}
 	s.lastUser = ref
-	if id == "" || s.acked == ref {
+	if messageID == "" || s.acked == ref {
 		return
 	}
 	s.addAck(ctx, ref)
@@ -126,10 +126,10 @@ func (s *sink) fail(ctx context.Context, reason string) {
 		s.pv.flush(true)
 		s.pv = nil
 	}
-	ch := s.acked.chOr(s.ch)
+	channel := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
-		s.clearAck(ctx, ch)
-		if err := s.rc.React(ctx, ch, s.acked.id, failEmoji); err != nil {
+		s.clearAck(ctx, channel)
+		if err := s.rc.React(ctx, channel, s.acked.id, failEmoji); err != nil {
 			s.log.Warn("add failure reaction failed", "err", err)
 		}
 		s.acked = msgRef{}
@@ -137,26 +137,26 @@ func (s *sink) fail(ctx context.Context, reason string) {
 	if reason == "" {
 		return
 	}
-	s.postParts(ctx, ch, s.answer(failEmoji+" "+reason))
+	s.postParts(ctx, channel, s.answer(failEmoji+" "+reason))
 }
 
-func (s *sink) handle(e contracts.Event) {
+func (s *sink) handle(event contracts.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ctx := s.run()
-	switch e.T {
+	switch event.T {
 	case "human":
 		s.onHuman(ctx)
 	case "status":
-		s.onStatus(e.Text)
+		s.onStatus(event.Text)
 	case "chunk":
-		s.onChunk(e.Text)
+		s.onChunk(event.Text)
 	case "reset":
 		s.onReset()
 	case "abandoned":
 		s.onAbandoned(ctx)
 	case "reply":
-		s.onReply(ctx, e)
+		s.onReply(ctx, event)
 	}
 }
 
@@ -200,41 +200,41 @@ func (s *sink) onAbandoned(ctx context.Context) {
 	s.clearAck(ctx, s.ch)
 }
 
-func (s *sink) onReply(ctx context.Context, e contracts.Event) {
-	if !e.Done {
+func (s *sink) onReply(ctx context.Context, event contracts.Event) {
+	if !event.Done {
 		return
 	}
-	ch := s.ch
-	s.postParts(ctx, ch, s.answer(e.Text))
+	channel := s.ch
+	s.postParts(ctx, channel, s.answer(event.Text))
 	if s.pv != nil {
-		if e.Cost > 0 {
-			s.pv.add(contracts.BackendEvent{Kind: "result", Cost: e.Cost})
+		if event.Cost > 0 {
+			s.pv.add(contracts.BackendEvent{Kind: "result", Cost: event.Cost})
 		}
 		s.pv.finish()
 		s.pv = nil
 	}
-	if s.tidyPing(ctx, ch) {
+	if s.tidyPing(ctx, channel) {
 		return
 	}
-	s.clearAck(ctx, ch)
+	s.clearAck(ctx, channel)
 }
 
-func (s *sink) postParts(ctx context.Context, ch, text string) {
+func (s *sink) postParts(ctx context.Context, channelID, text string) {
 	for _, part := range chunkText(text, gatewayMaxLen) {
-		if err := s.rc.Post(ctx, ch, part); err != nil {
+		if err := s.rc.Post(ctx, channelID, part); err != nil {
 			s.log.Warn("post message part failed", "err", err)
 		}
 	}
 }
 
-func (s *sink) tidyPing(ctx context.Context, ch string) bool {
-	if !s.tidy || s.acked.id == "" || s.acked.chOr(ch) != ch {
+func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
+	if !s.tidy || s.acked.id == "" || s.acked.chOr(channelID) != channelID {
 		return false
 	}
 	if s.owner == "" || s.acked.author != s.owner {
 		return false
 	}
-	if err := s.rc.Delete(ctx, ch, s.acked.id); err != nil {
+	if err := s.rc.Delete(ctx, channelID, s.acked.id); err != nil {
 		return false
 	}
 	gone := s.acked
@@ -255,11 +255,11 @@ func (s *sink) answer(text string) string {
 	return "<@" + s.owner + "> " + text
 }
 
-func (s *sink) clearAck(ctx context.Context, ch string) {
+func (s *sink) clearAck(ctx context.Context, channelID string) {
 	if s.acked.id == "" {
 		return
 	}
-	if err := s.rc.Unreact(ctx, s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
+	if err := s.rc.Unreact(ctx, s.acked.chOr(channelID), s.acked.id, ackEmoji); err != nil {
 		s.log.Warn("remove ack reaction failed", "err", err)
 	}
 	s.acked = msgRef{}
@@ -277,25 +277,25 @@ func toolEvent(text string) contracts.BackendEvent {
 	return contracts.BackendEvent{Kind: "tool", Tool: name, Detail: strings.TrimSpace(detail)}
 }
 
-func chunkText(s string, limit int) []string {
+func chunkText(text string, limit int) []string {
 	var out []string
-	r := []rune(s)
-	for len(r) > limit {
+	runes := []rune(text)
+	for len(runes) > limit {
 		cut := limit
-		for i := limit - 1; i > limit/2; i-- {
-			if r[i] == '\n' {
-				cut = i
+		for index := limit - 1; index > limit/2; index-- {
+			if runes[index] == '\n' {
+				cut = index
 				break
 			}
 		}
-		out = append(out, string(r[:cut]))
-		r = r[cut:]
-		if len(r) > 0 && r[0] == '\n' {
-			r = r[1:]
+		out = append(out, string(runes[:cut]))
+		runes = runes[cut:]
+		if len(runes) > 0 && runes[0] == '\n' {
+			runes = runes[1:]
 		}
 	}
-	if len(r) > 0 {
-		out = append(out, string(r))
+	if len(runes) > 0 {
+		out = append(out, string(runes))
 	}
 	return out
 }

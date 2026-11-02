@@ -61,13 +61,13 @@ type job struct {
 	shared bool
 }
 
-func newRouter(ctrl func() contracts.SessionControl, c client, binds *bindStore, sinks *sinks, log *slog.Logger, cfg routerConfig) *router {
+func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStore, sinks *sinks, log *slog.Logger, cfg routerConfig) *router {
 	if cfg.address.appID == "" {
 		cfg.address.appID = cfg.appID
 	}
 	return &router{
 		ctrl:  ctrl,
-		c:     c,
+		c:     api,
 		binds: binds,
 		sinks: sinks,
 		log:   log,
@@ -109,116 +109,116 @@ func (r *router) mode(conv, parent string) string {
 	return normalMode
 }
 
-func (r *router) onMessage(ctx context.Context, m messageCreate) {
+func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	ctrl := r.ctrl()
 	if ctrl == nil {
 		return
 	}
-	parent := r.binds.Parent(m.ChannelID)
-	mode := r.mode(m.ChannelID, parent)
+	parent := r.binds.Parent(msg.ChannelID)
+	mode := r.mode(msg.ChannelID, parent)
 	if mode == offMode {
 		return
 	}
-	chatType := r.chatType(m.ChannelID, m.direct())
-	if mode != ambientMode && !r.cfg.address.addressed(m, chatType, parent) {
+	chatType := r.chatType(msg.ChannelID, msg.direct())
+	if mode != ambientMode && !r.cfg.address.addressed(msg, chatType, parent) {
 		return
 	}
-	if !r.acl.permits(m, parent, r.cfg.address.mentioned(m)) {
+	if !r.acl.permits(msg, parent, r.cfg.address.mentioned(msg)) {
 		return
 	}
-	m = r.hydrate(ctx, m)
-	slot := r.cfg.scope.slot(chatType, m.ChannelID, m.Author.ID)
+	msg = r.hydrate(ctx, msg)
+	slot := r.cfg.scope.slot(chatType, msg.ChannelID, msg.Author.ID)
 	if session := r.binds.Session(slot); session != "" {
-		if r.fork(ctx, ctrl, session, m) {
+		if r.fork(ctx, ctrl, session, msg) {
 			return
 		}
-		if r.submit(ctx, ctrl, session, m.ChannelID, m, false, r.cfg.scope.multiUser(chatType)) {
+		if r.submit(ctx, ctrl, session, msg.ChannelID, msg, false, r.cfg.scope.multiUser(chatType)) {
 			return
 		}
 		if err := r.binds.Unbind(slot); err != nil {
 			r.log.Warn("unbind slot failed", "slot", slot, "err", err)
 		}
 	}
-	r.ask(ctx, ctrl, m)
+	r.ask(ctx, ctrl, msg)
 }
 
 const hydrateWindow = 5
 
-func (r *router) hydrate(ctx context.Context, m messageCreate) messageCreate {
-	if m.Content != "" || len(m.Attachments) > 0 {
-		return m
+func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
+	if msg.Content != "" || len(msg.Attachments) > 0 {
+		return msg
 	}
-	msgs, err := r.c.ReadMessages(ctx, m.ChannelID, hydrateWindow, "")
+	msgs, err := r.c.ReadMessages(ctx, msg.ChannelID, hydrateWindow, "")
 	if err != nil {
 		r.log.Warn("read blanked message failed", "err", err)
-		return m
+		return msg
 	}
 	for i := range msgs {
 		prev := msgs[i]
-		if prev.ID == m.ID {
-			m.Content, m.Attachments = prev.Content, prev.Attachments
+		if prev.ID == msg.ID {
+			msg.Content, msg.Attachments = prev.Content, prev.Attachments
 			break
 		}
 	}
-	return m
+	return msg
 }
 
-func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, m messageCreate) {
+func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate) {
 	repos, err := ctrl.Repos(ctx)
 	if err != nil || len(repos) == 0 {
-		r.post(ctx, m.ChannelID, "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge")
+		r.post(ctx, msg.ChannelID, "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge")
 		return
 	}
-	j := r.place(ctx, m)
-	r.sinks.at(j.conv).ack(ctx, m.ChannelID, m.ID, m.Author.ID)
-	if r.bindKnownRepo(ctx, ctrl, j, m, repos) {
+	task := r.place(ctx, msg)
+	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
+	if r.bindKnownRepo(ctx, ctrl, task, msg, repos) {
 		return
 	}
-	r.askRepo(ctx, j, m, repos)
+	r.askRepo(ctx, task, msg, repos)
 }
 
-func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionControl, j job, m messageCreate, repos []contracts.RepoRef) bool {
-	if value := r.binds.Repo(j.parent); value != "" {
-		r.bindOrFail(ctx, ctrl, j, value, m)
+func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionControl, task job, msg messageCreate, repos []contracts.RepoRef) bool {
+	if value := r.binds.Repo(task.parent); value != "" {
+		r.bindOrFail(ctx, ctrl, task, value, msg)
 		return true
 	}
-	if repo, ok := matchRepo(m.Content, repos); ok {
-		r.bindOrFail(ctx, ctrl, j, repoValue(repo), m)
+	if repo, ok := matchRepo(msg.Content, repos); ok {
+		r.bindOrFail(ctx, ctrl, task, repoValue(repo), msg)
 		return true
 	}
 	last := r.binds.LastRepo()
 	if last == "" || !knownRepo(last, repos) {
 		return false
 	}
-	if msg := r.bind(ctx, ctrl, j, last, m, true); msg != "" {
-		r.sinks.at(j.conv).fail(ctx, msg)
+	if msg := r.bind(ctx, ctrl, task, last, msg, true); msg != "" {
+		r.sinks.at(task.conv).fail(ctx, msg)
 		return true
 	}
-	r.post(ctx, j.conv, fmt.Sprintf(
+	r.post(ctx, task.conv, fmt.Sprintf(
 		"je repars sur **%s**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs",
 		repoLabel(last)))
 	return true
 }
 
-func (r *router) bindOrFail(ctx context.Context, ctrl contracts.SessionControl, j job, value string, m messageCreate) {
-	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-		r.sinks.at(j.conv).fail(ctx, msg)
+func (r *router) bindOrFail(ctx context.Context, ctrl contracts.SessionControl, task job, value string, m messageCreate) {
+	if msg := r.bind(ctx, ctrl, task, value, m, true); msg != "" {
+		r.sinks.at(task.conv).fail(ctx, msg)
 	}
 }
 
-func (r *router) askRepo(ctx context.Context, j job, m messageCreate, repos []contracts.RepoRef) {
-	conv := j.conv
+func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos []contracts.RepoRef) {
+	conv := task.conv
 	r.mu.Lock()
-	r.pending[conv] = m
-	r.jobs[conv] = j
+	r.pending[conv] = msg
+	r.jobs[conv] = task
 	r.mu.Unlock()
 
 	prompt := "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
 	if len(repos) > selectMenuMax {
 		prompt = fmt.Sprintf("%s, %d repos, les %d premiers sont listés", prompt, len(repos), selectMenuMax)
 	}
-	replyTo := m.ID
-	if conv != m.ChannelID {
+	replyTo := msg.ID
+	if conv != msg.ChannelID {
 		replyTo = ""
 	}
 	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), repoOptions(repos)); err != nil {
@@ -242,49 +242,49 @@ func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
 	return opts
 }
 
-func (r *router) place(ctx context.Context, m messageCreate) job {
-	j := r.conversation(ctx, m)
+func (r *router) place(ctx context.Context, msg messageCreate) job {
+	task := r.conversation(ctx, msg)
 	chatType := chatChannel
 	switch {
-	case m.direct():
+	case msg.direct():
 		chatType = chatDM
-	case j.thread:
+	case task.thread:
 		chatType = chatThread
 	}
-	j.slot = r.cfg.scope.slot(chatType, j.conv, m.Author.ID)
-	j.shared = r.cfg.scope.multiUser(chatType)
-	return j
+	task.slot = r.cfg.scope.slot(chatType, task.conv, msg.Author.ID)
+	task.shared = r.cfg.scope.multiUser(chatType)
+	return task
 }
 
-func (r *router) conversation(ctx context.Context, m messageCreate) job {
-	here := job{conv: m.ChannelID, parent: m.ChannelID}
-	if r.binds.IsThread(m.ChannelID) {
+func (r *router) conversation(ctx context.Context, msg messageCreate) job {
+	here := job{conv: msg.ChannelID, parent: msg.ChannelID}
+	if r.binds.IsThread(msg.ChannelID) {
 		here.thread = true
 		return here
 	}
-	if r.binds.Mode(m.ChannelID) == supportMode {
-		id, err := r.c.StartThread(ctx, m.ChannelID, m.ID, threadName(m.Content))
-		if err == nil && id != "" {
-			r.adoptThread(m.ChannelID, id)
-			return job{conv: id, thread: true, parent: m.ChannelID}
+	if r.binds.Mode(msg.ChannelID) == supportMode {
+		threadID, err := r.c.StartThread(ctx, msg.ChannelID, msg.ID, threadName(msg.Content))
+		if err == nil && threadID != "" {
+			r.adoptThread(msg.ChannelID, threadID)
+			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
-		r.log.Warn("support thread failed", "channel", m.ChannelID, "err", err)
-		r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois.")
+		r.log.Warn("support thread failed", "channel", msg.ChannelID, "err", err)
+		r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois.")
 		return here
 	}
-	if !wantsThread(m.Content) {
+	if !wantsThread(msg.Content) {
 		return here
 	}
-	id, err := r.c.CreatePrivateThread(ctx, m.ChannelID, threadName(m.Content))
-	if err == nil && id != "" {
-		if err = r.c.AddThreadMember(ctx, id, m.Author.ID); err == nil {
-			r.adoptThread(m.ChannelID, id)
-			r.post(ctx, m.ChannelID, "je continue en privé dans <#"+id+">")
-			return job{conv: id, thread: true, parent: m.ChannelID}
+	threadID, err := r.c.CreatePrivateThread(ctx, msg.ChannelID, threadName(msg.Content))
+	if err == nil && threadID != "" {
+		if err = r.c.AddThreadMember(ctx, threadID, msg.Author.ID); err == nil {
+			r.adoptThread(msg.ChannelID, threadID)
+			r.post(ctx, msg.ChannelID, "je continue en privé dans <#"+threadID+">")
+			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
 	}
-	r.log.Warn("private thread failed", "channel", m.ChannelID, "err", err)
-	r.post(ctx, m.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
+	r.log.Warn("private thread failed", "channel", msg.ChannelID, "err", err)
+	r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
 	return here
 }
 
@@ -292,30 +292,30 @@ func (r *router) adoptThread(channel, thread string) {
 	if err := r.binds.MarkThread(thread, channel); err != nil {
 		r.log.Warn("bind store save failed", "err", err)
 	}
-	lv := r.binds.Level(channel)
-	if lv == "" {
+	level := r.binds.Level(channel)
+	if level == "" {
 		return
 	}
-	if err := r.binds.SetLevel(thread, lv); err != nil {
+	if err := r.binds.SetLevel(thread, level); err != nil {
 		r.log.Warn("bind store save failed", "err", err)
 	}
 }
 
-func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, session string, m messageCreate) bool {
-	if !wantsThread(m.Content) || r.binds.IsThread(m.ChannelID) {
+func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, session string, msg messageCreate) bool {
+	if !wantsThread(msg.Content) || r.binds.IsThread(msg.ChannelID) {
 		return false
 	}
 	value, ok := repoOf(ctrl, session)
 	if !ok {
 		return false
 	}
-	j := r.place(ctx, m)
-	if !j.thread {
+	task := r.place(ctx, msg)
+	if !task.thread {
 		return false
 	}
-	r.sinks.at(j.conv).ack(ctx, m.ChannelID, m.ID, m.Author.ID)
-	if msg := r.bind(ctx, ctrl, j, value, m, true); msg != "" {
-		r.sinks.at(j.conv).fail(ctx, msg)
+	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
+	if msg := r.bind(ctx, ctrl, task, value, msg, true); msg != "" {
+		r.sinks.at(task.conv).fail(ctx, msg)
 	}
 	return true
 }
@@ -323,25 +323,25 @@ func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, sessio
 func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
 	items := ctrl.Sessions()
 	for i := range items {
-		si := items[i]
-		if si.Name != session {
+		item := items[i]
+		if item.Name != session {
 			continue
 		}
-		if si.Project == "" {
+		if item.Project == "" {
 			return "", false
 		}
-		return "local:" + si.Project, true
+		return "local:" + item.Project, true
 	}
 	return "", false
 }
 
-func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job, value string, m messageCreate, buffered bool) string {
-	if j.slot == "" {
-		j.slot = j.conv
+func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task job, value string, msg messageCreate, buffered bool) string {
+	if task.slot == "" {
+		task.slot = task.conv
 	}
 	spec := contracts.CreateSession{
-		Name:      sessionNameFor(j.slot),
-		ChannelID: j.conv,
+		Name:      sessionNameFor(task.slot),
+		ChannelID: task.conv,
 		Gateways:  []string{gatewayKind},
 		Agent:     r.cfg.agent,
 	}
@@ -356,14 +356,14 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 		return "création de session impossible : " + err.Error()
 	}
 	save := func(slot, session string) error { return r.binds.Bind(slot, session) }
-	if j.thread {
-		save = func(slot, session string) error { return r.binds.BindThread(slot, j.conv, j.parent, session) }
+	if task.thread {
+		save = func(slot, session string) error { return r.binds.BindThread(slot, task.conv, task.parent, session) }
 	}
-	if err := save(j.slot, spec.Name); err != nil {
+	if err := save(task.slot, spec.Name); err != nil {
 		r.log.Warn("bind store save failed", "err", err)
 	}
-	if r.binds.Mode(j.parent) == supportMode {
-		if err := r.binds.SetRepo(j.parent, value); err != nil {
+	if r.binds.Mode(task.parent) == supportMode {
+		if err := r.binds.SetRepo(task.parent, value); err != nil {
 			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
@@ -371,7 +371,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, j job,
 		r.log.Warn("bind store save failed", "err", err)
 	}
 	if buffered {
-		r.submit(ctx, ctrl, spec.Name, j.conv, m, true, j.shared)
+		r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared)
 	}
 	return ""
 }
@@ -392,11 +392,11 @@ func repoLabel(value string) string {
 	return value
 }
 
-func repoValue(r contracts.RepoRef) string {
-	if r.Local {
-		return "local:" + r.Name
+func repoValue(repo contracts.RepoRef) string {
+	if repo.Local {
+		return "local:" + repo.Name
 	}
-	return "remote:" + r.Name
+	return "remote:" + repo.Name
 }
 
 func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
@@ -405,10 +405,10 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		return "le contrôleur de sessions n'est pas encore prêt"
 	}
 	r.mu.Lock()
-	m, buffered := r.pending[channel]
+	pending, buffered := r.pending[channel]
 	owner := ""
 	if buffered {
-		owner = m.Author.ID
+		owner = pending.Author.ID
 	}
 	if owner != "" && user != "" && owner != user {
 		r.mu.Unlock()
@@ -418,16 +418,16 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		r.mu.Unlock()
 		return "tu n'es pas autorisé à répondre à ce menu"
 	}
-	j, known := r.jobs[channel]
+	task, known := r.jobs[channel]
 	delete(r.pending, channel)
 	delete(r.jobs, channel)
 	r.mu.Unlock()
 	if !known {
-		j = r.replaceLostJob(channel, user)
+		task = r.replaceLostJob(channel, user)
 	}
 
-	if msg := r.bind(ctx, ctrl, j, value, m, buffered); msg != "" {
-		r.sinks.at(j.conv).fail(ctx, "")
+	if msg := r.bind(ctx, ctrl, task, value, pending, buffered); msg != "" {
+		r.sinks.at(task.conv).fail(ctx, "")
 		return msg
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
@@ -452,54 +452,54 @@ func (r *router) replaceLostJob(channel, user string) job {
 	}
 }
 
-func (r *router) onChoicePick(_ context.Context, id, user string, direct bool, value string) string {
+func (r *router) onChoicePick(_ context.Context, conv, user string, direct bool, value string) string {
 	ctrl := r.ctrl()
-	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, id, user, direct), value) {
+	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, conv, user, direct), value) {
 		return "cette session n'est plus active"
 	}
 	return ""
 }
 
-func (r *router) sessionOf(ctrl contracts.SessionControl, id, user string, direct bool) string {
-	if s := r.binds.Session(r.cfg.scope.slot(r.chatType(id, direct), id, user)); s != "" {
+func (r *router) sessionOf(ctrl contracts.SessionControl, conv, user string, direct bool) string {
+	if s := r.binds.Session(r.cfg.scope.slot(r.chatType(conv, direct), conv, user)); s != "" {
 		return s
 	}
-	if s := r.binds.Session(id); s != "" {
+	if s := r.binds.Session(conv); s != "" {
 		return s
 	}
 	items := ctrl.Sessions()
 	for i := range items {
-		si := items[i]
-		if si.ChannelID == id {
-			return si.Name
+		item := items[i]
+		if item.ChannelID == conv {
+			return item.Name
 		}
 	}
-	return id
+	return conv
 }
 
-func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, m messageCreate, opening, shared bool) bool {
-	ref := r.reference(ctx, m)
-	in := contracts.Inbound{
+func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, msg messageCreate, opening, shared bool) bool {
+	ref := r.reference(ctx, msg)
+	inbound := contracts.Inbound{
 		Conversation: contracts.Conversation{Gateway: gatewayKind, ID: conv},
-		Author:       m.Author.Username,
-		AuthorID:     m.Author.ID,
-		Text:         r.compose(ctx, m, ref, opening, shared),
-		Attachments:  attachmentsOf(m, ref),
-		MessageID:    contracts.MessageID(m.ID),
+		Author:       msg.Author.Username,
+		AuthorID:     msg.Author.ID,
+		Text:         r.compose(ctx, msg, ref, opening, shared),
+		Attachments:  attachmentsOf(msg, ref),
+		MessageID:    contracts.MessageID(msg.ID),
 	}
-	if !ctrl.Submit(session, in) {
+	if !ctrl.Submit(session, inbound) {
 		return false
 	}
-	r.sinks.at(conv).noteUser(m.ChannelID, m.ID, m.Author.ID)
+	r.sinks.at(conv).noteUser(msg.ChannelID, msg.ID, msg.Author.ID)
 	return true
 }
 
-func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message, opening, shared bool) string {
+func (r *router) compose(ctx context.Context, msg messageCreate, ref *dctl.Message, opening, shared bool) string {
 	var parts []string
 	if shared && opening {
 		parts = append(parts, sharedRule)
 	}
-	if lines := r.context(ctx, m); lines != "" {
+	if lines := r.context(ctx, msg); lines != "" {
 		parts = append(parts, "Contexte du salon (messages précédents, tous auteurs) :\n", lines, "\n---\n\n")
 	}
 	if q := quote(ref); q != "" {
@@ -510,35 +510,35 @@ func (r *router) compose(ctx context.Context, m messageCreate, ref *dctl.Message
 	}
 	parts = append(parts, turnRule)
 	if shared {
-		parts = append(parts, "["+m.Author.Username+"] ")
+		parts = append(parts, "["+msg.Author.Username+"] ")
 	}
-	parts = append(parts, m.Content)
+	parts = append(parts, msg.Content)
 	return strings.Join(parts, "")
 }
 
-func (r *router) context(ctx context.Context, m messageCreate) string {
+func (r *router) context(ctx context.Context, msg messageCreate) string {
 	if r.cfg.contextMessages <= 0 {
 		return ""
 	}
-	msgs, err := r.c.ReadMessages(ctx, m.ChannelID, r.cfg.contextMessages, "")
+	msgs, err := r.c.ReadMessages(ctx, msg.ChannelID, r.cfg.contextMessages, "")
 	if err != nil {
 		r.log.Warn("context read failed", "err", err)
 		return ""
 	}
-	var b strings.Builder
+	var builder strings.Builder
 	for i := range msgs {
 		prev := msgs[i]
-		if prev.ID == m.ID {
+		if prev.ID == msg.ID {
 			continue
 		}
 		if body := flattenLines(strings.TrimSpace(prev.Content)); body != "" {
-			fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, body)
+			fmt.Fprintf(&builder, "%s: %s\n", prev.Author.Username, body)
 		}
 		for _, line := range describe(prev) {
-			fmt.Fprintf(&b, "%s: %s\n", prev.Author.Username, line)
+			fmt.Fprintf(&builder, "%s: %s\n", prev.Author.Username, line)
 		}
 	}
-	return b.String()
+	return builder.String()
 }
 
 func (r *router) post(ctx context.Context, channel, text string) {
