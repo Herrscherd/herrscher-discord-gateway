@@ -8,10 +8,10 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-func pingIn(channel, text string) messageCreate {
+func pingIn(text string) messageCreate {
 	m := ownerPing(text)
-	m.ChannelID = channel
-	m.ID = "m-" + channel
+	m.ChannelID = "c2"
+	m.ID = "m-c2"
 	return m
 }
 
@@ -23,7 +23,7 @@ func TestASecondRoomReusesTheLastRepoInsteadOfAsking(t *testing.T) {
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
 	menusBefore := len(c.menus)
-	r.onMessage(context.Background(), pingIn("c2", "tu as accès au skill ?"))
+	r.onMessage(context.Background(), pingIn("tu as accès au skill ?"))
 
 	if len(c.menus) != menusBefore {
 		t.Fatalf("menus = %+v, want no new question, the operator already answered it", c.menus)
@@ -42,7 +42,7 @@ func TestReusingTheLastRepoSaysWhichOne(t *testing.T) {
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	r.onMessage(context.Background(), pingIn("c2", "une question"))
+	r.onMessage(context.Background(), pingIn("une question"))
 
 	var said string
 	for _, m := range c.sent {
@@ -64,7 +64,7 @@ func TestTheReusedRepoStillReplaysThePing(t *testing.T) {
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	r.onMessage(context.Background(), pingIn("c2", "la vraie question"))
+	r.onMessage(context.Background(), pingIn("la vraie question"))
 
 	name := ctrl.created[1].Name
 	got := ctrl.submitted[name]
@@ -95,7 +95,7 @@ func TestAVanishedRepoFallsBackToTheQuestion(t *testing.T) {
 
 	ctrl.repos = []contracts.RepoRef{{Name: "autre-chose", Local: true}}
 	menusBefore := len(c.menus)
-	r.onMessage(context.Background(), pingIn("c2", "une question"))
+	r.onMessage(context.Background(), pingIn("une question"))
 
 	if len(c.menus) != menusBefore+1 {
 		t.Fatalf("menus = %+v, want the question asked again when the remembered repo is gone", c.menus)
@@ -111,7 +111,7 @@ func TestANamedRepoStillBeatsTheRemembered(t *testing.T) {
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	r.onMessage(context.Background(), pingIn("c2", "regarde dctl stp"))
+	r.onMessage(context.Background(), pingIn("regarde dctl stp"))
 
 	if got := ctrl.created[1].Project; got != "dctl" {
 		t.Fatalf("project = %q, want the repo the ping named", got)

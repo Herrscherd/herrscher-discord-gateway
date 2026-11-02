@@ -19,8 +19,8 @@ func boundRouter(t *testing.T) (*router, *fakeCtrl, *fakeClient) {
 	return r, ctrl, c
 }
 
-func replyTo(text, messageID string) messageCreate {
-	m := ownerPing(text)
+func replyTo(messageID string) messageCreate {
+	m := ownerPing("regarde ça")
 	m.Referenced = &dctl.Message{ID: messageID, ChannelID: "c1", Author: dctl.Author{ID: "app1", Username: "apyr"}}
 	return m
 }
@@ -31,7 +31,7 @@ func TestRepliedToMessageIsReadAndQuoted(t *testing.T) {
 		ID: "old1", Content: "la quête ne se termine jamais",
 		Author: dctl.Author{Username: "apyr"},
 	}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	if len(c.got) != 1 || c.got[0] != (outMsg{"c1", "old1"}) {
 		t.Fatalf("GetMessage calls = %+v, want one read of old1 in c1", c.got)
@@ -51,7 +51,7 @@ func TestQuoteSitsBetweenTheChannelContextAndTheInstruction(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.read = []dctl.Message{{ID: "a", Content: "salut", Author: dctl.Author{Username: "kim"}}}
 	c.getMsg = &dctl.Message{ID: "old1", Content: "le rapport", Author: dctl.Author{Username: "apyr"}}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	text := ctrl.submitted["ch-c1"][0].Text
 	ctx, quoted, instr := strings.Index(text, "salut"), strings.Index(text, "le rapport"), strings.Index(text, "regarde ça")
@@ -62,7 +62,7 @@ func TestQuoteSitsBetweenTheChannelContextAndTheInstruction(t *testing.T) {
 
 func TestRepliedToMessageAlreadyCarriedIsNotReRead(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
-	m := replyTo("regarde ça", "old1")
+	m := replyTo("old1")
 	m.Referenced.Content = "déjà là"
 	r.onMessage(context.Background(), m)
 
@@ -84,7 +84,7 @@ func TestRepliedToFilesAndEmbedImagesReachTheAgent(t *testing.T) {
 			Image: &dctl.EmbedMedia{URL: "https://cdn.discordapp.com/attachments/1/2/shot.png?ex=abc&is=def"},
 		}},
 	}
-	m := replyTo("regarde ça", "old1")
+	m := replyTo("old1")
 	m.Attachments = []dctl.Attachment{{Filename: "mine.png", URL: "https://cdn.discordapp.com/mine.png", ContentType: "image/png"}}
 	r.onMessage(context.Background(), m)
 
@@ -116,7 +116,7 @@ func TestEmbedImageOffTheCDNIsNamedButNotHandedOver(t *testing.T) {
 		ID: "old1", Author: dctl.Author{Username: "clownbot"},
 		Embeds: []dctl.Embed{{Image: &dctl.EmbedMedia{URL: "https://evil.example/shot.png"}}},
 	}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	in := ctrl.submitted["ch-c1"][0]
 	if len(in.Attachments) != 0 {
@@ -136,7 +136,7 @@ func TestEmbedImagePrefersDiscordsOwnCopy(t *testing.T) {
 			ProxyURL: "https://media.discordapp.net/external/x/shot.png",
 		}}},
 	}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	in := ctrl.submitted["ch-c1"][0]
 	if len(in.Attachments) != 1 || in.Attachments[0].URL != "https://media.discordapp.net/external/x/shot.png" {
@@ -156,7 +156,7 @@ func TestEmbedThumbnailIsUsedOnlyWhenThereIsNoImage(t *testing.T) {
 			{Thumbnail: &dctl.EmbedMedia{URL: "https://cdn.discordapp.com/b/only.png"}},
 		},
 	}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	in := ctrl.submitted["ch-c1"][0]
 	if len(in.Attachments) != 2 ||
@@ -168,7 +168,7 @@ func TestEmbedThumbnailIsUsedOnlyWhenThereIsNoImage(t *testing.T) {
 func TestUnreadableReplyTargetStillLetsTheTurnThrough(t *testing.T) {
 	r, ctrl, c := boundRouter(t)
 	c.getErr = errors.New("410 gone")
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	got := ctrl.submitted["ch-c1"]
 	if len(got) != 1 || !strings.Contains(got[0].Text, "regarde ça") {
@@ -220,7 +220,7 @@ func TestADescribedLineNeverBreaksItsFrame(t *testing.T) {
 			Fields:      []dctl.EmbedField{{Name: "env", Value: "prod\nstaging"}},
 		}},
 	}
-	r.onMessage(context.Background(), replyTo("regarde ça", "old1"))
+	r.onMessage(context.Background(), replyTo("old1"))
 
 	text := ctrl.submitted["ch-c1"][0].Text
 	for _, line := range strings.Split(quote(c.getMsg), "\n") {
