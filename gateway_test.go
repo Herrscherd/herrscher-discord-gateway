@@ -163,10 +163,12 @@ func TestGatewayTranslatesActions(t *testing.T) {
 	ctx := context.Background()
 	conv := contracts.Conversation{Gateway: "discord", ID: "chan"}
 
-	_, _ = g.Post(ctx, conv, "hello")
-	_, _ = g.Reply(ctx, conv, "mid", "answer")
-	_ = g.React(ctx, conv, "mid", "👀")
-	_ = g.Menu(ctx, conv, "mid", "pick", []contracts.Choice{{Label: "A", Value: "a"}})
+	_, err := g.Post(ctx, conv, "hello")
+	requireNoError(t, err)
+	_, err = g.Reply(ctx, conv, "mid", "answer")
+	requireNoError(t, err)
+	requireNoError(t, g.React(ctx, conv, "mid", "👀"))
+	requireNoError(t, g.Menu(ctx, conv, "mid", "pick", []contracts.Choice{{Label: "A", Value: "a"}}))
 
 	if len(fc.sent) != 1 || len(fc.replied) != 1 || len(fc.reacted) != 1 || len(fc.menus) != 1 {
 		t.Fatalf("translation incomplete: %+v", fc)

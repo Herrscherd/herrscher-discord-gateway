@@ -53,20 +53,30 @@ func writeAtomic(path string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
+	if err := writeTemp(tmp, data); err != nil {
+		return errors.Join(err, removeTemp(tmp.Name()))
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return errors.Join(err, removeTemp(tmp.Name()))
+	}
+	return nil
+}
+
+func writeTemp(tmp *os.File, data []byte) error {
 	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
+		return errors.Join(err, tmp.Close())
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
+		return errors.Join(err, tmp.Close())
+	}
+	return tmp.Close()
+}
+
+func removeTemp(name string) error {
+	if err := os.Remove(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return nil
 }
 
 func (s *allowStore) Allowed(user string) bool {

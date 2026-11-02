@@ -108,7 +108,9 @@ func (p *progressView) finish() {
 	if p.post == nil || (p.msgID == "" && len(p.lines) == 0) {
 		return
 	}
-	_, _ = p.post(p.msgID, p.summary())
+	if _, err := p.post(p.msgID, p.summary()); err != nil {
+		warnf("progress message: %v", err)
+	}
 }
 
 func (p *progressView) reset() {

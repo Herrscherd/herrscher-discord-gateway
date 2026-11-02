@@ -132,7 +132,9 @@ func (r *router) onMessage(ctx context.Context, m messageCreate) {
 		if r.submit(ctx, ctrl, session, m.ChannelID, m, false, r.cfg.scope.multiUser(chatType)) {
 			return
 		}
-		_ = r.binds.Unbind(slot)
+		if err := r.binds.Unbind(slot); err != nil {
+			warnf("unbind %s: %v", slot, err)
+		}
 	}
 	r.ask(ctx, ctrl, m)
 }

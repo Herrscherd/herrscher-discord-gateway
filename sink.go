@@ -119,15 +119,21 @@ func (s *sink) fail(reason string) {
 	}
 	ch := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
-		_ = s.rc.Unreact(s.ctx, ch, s.acked.id, ackEmoji)
-		_ = s.rc.React(s.ctx, ch, s.acked.id, failEmoji)
+		if err := s.rc.Unreact(s.ctx, ch, s.acked.id, ackEmoji); err != nil {
+			warnf("remove ack reaction: %v", err)
+		}
+		if err := s.rc.React(s.ctx, ch, s.acked.id, failEmoji); err != nil {
+			warnf("add failure reaction: %v", err)
+		}
 		s.acked = msgRef{}
 	}
 	if reason == "" {
 		return
 	}
 	for _, part := range chunkText(s.answer(failEmoji+" "+reason), gatewayMaxLen) {
-		_ = s.rc.Post(s.ctx, ch, part)
+		if err := s.rc.Post(s.ctx, ch, part); err != nil {
+			warnf("post message part: %v", err)
+		}
 	}
 }
 
@@ -173,7 +179,9 @@ func (s *sink) handle(e contracts.Event) {
 			return
 		}
 		for _, part := range chunkText(s.answer(e.Text), gatewayMaxLen) {
-			_ = s.rc.Post(s.ctx, ch, part)
+			if err := s.rc.Post(s.ctx, ch, part); err != nil {
+				warnf("post message part: %v", err)
+			}
 		}
 		if s.pv != nil {
 			if e.Cost > 0 {
@@ -221,7 +229,9 @@ func (s *sink) clearAck(ch string) {
 	if s.acked.id == "" {
 		return
 	}
-	_ = s.rc.Unreact(s.ctx, s.acked.chOr(ch), s.acked.id, ackEmoji)
+	if err := s.rc.Unreact(s.ctx, s.acked.chOr(ch), s.acked.id, ackEmoji); err != nil {
+		warnf("remove ack reaction: %v", err)
+	}
 	s.acked = msgRef{}
 }
 
