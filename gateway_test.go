@@ -45,8 +45,9 @@ type fakeClient struct {
 	getMsg *dctl.Message
 	getErr error
 
-	edited  []outEdit
-	deleted []string
+	edited          []outEdit
+	deleted         []string
+	deletedChannels []string
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -134,6 +135,11 @@ func (f *fakeClient) EditMessage(_ context.Context, ch, id, content string) (*dc
 
 func (f *fakeClient) DeleteMessage(_ context.Context, ch, id string) error {
 	f.deleted = append(f.deleted, ch+"/"+id)
+	return nil
+}
+
+func (f *fakeClient) DeleteChannel(_ context.Context, id string) error {
+	f.deletedChannels = append(f.deletedChannels, id)
 	return nil
 }
 

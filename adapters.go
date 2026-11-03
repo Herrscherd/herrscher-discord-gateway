@@ -88,10 +88,9 @@ func (a *ChannelAdmin) ChannelRef(id string) string { return "<#" + id + ">" }
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct {
-	c        *dctl.Client
-	sinks    *sinks
-	binds    *bindStore
-	readImpl func(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error)
+	c     *dctl.Client
+	sinks *sinks
+	binds *bindStore
 }
 
 type rawMsg struct {
@@ -102,9 +101,7 @@ type rawMsg struct {
 
 // NewPlatform returns a Platform that works through the dctl client c.
 func NewPlatform(c *dctl.Client) *Platform {
-	platform := &Platform{c: c}
-	platform.readImpl = platform.readDctl
-	return platform
+	return &Platform{c: c}
 }
 
 // Enabled reports whether the underlying dctl client is enabled.
@@ -133,11 +130,7 @@ func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (co
 	return contracts.Channel{ID: channel.ID, Name: channel.Name}, nil
 }
 
-func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, after string) ([]rawMsg, error) {
-	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
-	if err != nil {
-		return nil, fmt.Errorf("discord read: %w", err)
-	}
+func rawMessages(msgs []dctl.Message) []rawMsg {
 	out := make([]rawMsg, 0, len(msgs))
 	for i := range msgs {
 		msg := msgs[i]
@@ -164,7 +157,7 @@ func (p *Platform) readDctl(ctx context.Context, channelID string, limit int, af
 			},
 		})
 	}
-	return out, nil
+	return out
 }
 
 // Read returns recent channel messages and records the id of the last non-bot
@@ -175,10 +168,11 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	if p.binds != nil && p.binds.Session(channelID) != "" {
 		return nil, nil
 	}
-	raws, err := p.readImpl(ctx, channelID, limit, after)
+	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("discord read: %w", err)
 	}
+	raws := rawMessages(msgs)
 	out := make([]contracts.Message, 0, len(raws))
 	for i := range raws {
 		out = append(out, raws[i].msg)

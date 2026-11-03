@@ -3,10 +3,12 @@ package discord
 import (
 	"context"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/Herrscherd/dctl"
@@ -214,11 +216,10 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 	if err := binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
-	p := &Platform{binds: binds}
-	p.readImpl = func(context.Context, string, int, string) ([]rawMsg, error) {
-		t.Fatal("Read hit the network for a push-driven channel")
-		return nil, nil
-	}
+	p := &Platform{binds: binds, c: clientOn(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		t.Error("Read hit the network for a push-driven channel")
+		return nil, errors.New("offline")
+	}))}
 	got, err := p.Read(context.Background(), "c1", 100, "")
 	if err != nil || len(got) != 0 {
 		t.Fatalf("Read = %v, %v; want empty and no error", got, err)
@@ -274,54 +275,60 @@ func TestAnUnknownModeIsRefused(t *testing.T) {
 }
 
 func TestASyncThatIsRateLimitedIsRetried(t *testing.T) {
-	backoff := []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
+	synctest.Test(t, func(t *testing.T) {
+		backoff := []time.Duration{time.Minute, time.Minute, time.Minute}
+		calls := 0
+		start := time.Now()
+		syncWithRetry(context.Background(), func(context.Context) error {
+			calls++
+			if calls < 3 {
+				return errors.New("429: You are being rate limited")
+			}
+			return nil
+		}, testLog(), backoff)
 
-	calls := 0
-	syncWithRetry(context.Background(), func(context.Context) error {
-		calls++
-		if calls < 3 {
-			return errors.New("429: You are being rate limited")
+		if calls != 3 {
+			t.Fatalf("calls = %d, want the sync retried until it landed", calls)
 		}
-		return nil
-	}, testLog(), backoff)
-
-	if calls != 3 {
-		t.Fatalf("calls = %d, want the sync retried until it landed", calls)
-	}
+		if waited := time.Since(start); waited != 2*time.Minute {
+			t.Fatalf("waited %v between attempts, want the two backoffs of a minute", waited)
+		}
+	})
 }
 
 func TestASyncThatKeepsFailingGivesUp(t *testing.T) {
-	backoff := []time.Duration{time.Millisecond}
+	synctest.Test(t, func(t *testing.T) {
+		backoff := []time.Duration{time.Minute}
+		calls := 0
+		start := time.Now()
+		syncWithRetry(context.Background(), func(context.Context) error {
+			calls++
+			return errors.New("nope")
+		}, testLog(), backoff)
 
-	calls := 0
-	syncWithRetry(context.Background(), func(context.Context) error {
-		calls++
-		return errors.New("nope")
-	}, testLog(), backoff)
-
-	if calls != len(backoff)+1 {
-		t.Fatalf("calls = %d, want %d attempts then a report", calls, len(backoff)+1)
-	}
+		if calls != 2 {
+			t.Fatalf("calls = %d, want one retry then a report", calls)
+		}
+		if waited := time.Since(start); waited != time.Minute {
+			t.Fatalf("waited %v, want the single backoff of a minute", waited)
+		}
+	})
 }
 
 func TestASyncStopsWhenTheDaemonDoes(t *testing.T) {
-	backoff := []time.Duration{time.Hour}
-	ctx, cancel := context.WithCancel(context.Background())
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		calls := 0
 		syncWithRetry(ctx, func(context.Context) error {
+			calls++
 			cancel()
 			return errors.New("429")
-		}, testLog(), backoff)
-	}()
+		}, testLog(), []time.Duration{time.Hour})
 
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the sync outlived the daemon it belongs to")
-	}
+		if calls != 1 {
+			t.Fatalf("calls = %d, want no retry once the daemon is gone", calls)
+		}
+	})
 }
 
 func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {

@@ -86,6 +86,8 @@ linters:
     errcheck:
       check-type-assertions: true
       check-blank: true
+      exclude-functions:
+        - (*github.com/coder/websocket.Conn).CloseNow
     exhaustive:
       default-signifies-exhaustive: false
       check:
@@ -190,6 +192,7 @@ linters:
         text: "^G(304|703):"
       - path: ^ws\.go$
         linters: [bodyclose]
+        text: "response body must be closed"
 
 formatters:
   enable:

@@ -3,7 +3,9 @@ package discord
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -558,6 +560,18 @@ func TestThreadWithoutItsMemberIsNotUsed(t *testing.T) {
 	}
 }
 
+func TestThreadWithoutItsMemberIsDeleted(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.memberErr = errors.New("forbidden")
+
+	r.onMessage(context.Background(), ownerPing("dans un fil, herrscher"))
+
+	if !slices.Equal(c.deletedChannels, []string{"thread1"}) {
+		t.Fatalf("deleted channels = %v, want the orphan thread removed", c.deletedChannels)
+	}
+}
+
 func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
@@ -823,7 +837,20 @@ func TestUndeliverableBufferedMessageIsReported(t *testing.T) {
 
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "renvoie-le") {
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], undeliveredMessage) {
 		t.Fatalf("the operator was not told the message was lost: posts=%q", f.posts)
+	}
+}
+
+func TestLockedBindStoreReportsInTheChannel(t *testing.T) {
+	r, ctrl, _, f := newTestRouterRendering(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	r.onMessage(context.Background(), ownerPing("fix the login bug"))
+	r.binds.locked = fmt.Errorf("%w: corrupt", errStoreLocked)
+
+	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
+
+	if len(f.posts) == 0 || !strings.Contains(f.posts[0], "illisible") {
+		t.Fatalf("the channel was not told the binding store is unreadable: posts=%q", f.posts)
 	}
 }
