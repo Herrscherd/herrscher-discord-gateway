@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -48,6 +49,10 @@ type Gateway struct {
 
 	deletes bool
 	selfID  string
+
+	slashMu      sync.Mutex
+	slashClosed  bool
+	slashRunning *slashRuntime
 }
 
 // NewGateway returns a Gateway that sends through c, runs its slash surface on the
@@ -60,13 +65,33 @@ func NewGateway(c client, run lifetime, log *slog.Logger) *Gateway {
 // BindSessionControl receives the daemon's runtime session controller and starts
 // the slash command surface (sync + websocket loop). It satisfies
 // contracts.SessionControlReceiver. Gateways built without a slash runtime (e.g.
-// in tests) ignore the binding.
+// in tests) ignore the binding. Only the first binding starts the runtime and
+// keeps its controller: a later binding, or one after Close, is ignored.
 func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slash == nil {
 		return
 	}
+	g.slashMu.Lock()
+	defer g.slashMu.Unlock()
+	if g.slashClosed || g.slashRunning != nil {
+		return
+	}
 	g.slash.ctrl = ctrl
-	go g.slash.start(g.run())
+	g.slashRunning = startSlashRuntime(g.run(), g.slash)
+}
+
+// Close stops the slash runtime started by BindSessionControl and waits for its
+// goroutines to return, bounded by ctx. It returns nil when no runtime was started.
+// Once closed, the gateway never starts a runtime again.
+func (g *Gateway) Close(ctx context.Context) error {
+	g.slashMu.Lock()
+	g.slashClosed = true
+	running := g.slashRunning
+	g.slashMu.Unlock()
+	if running == nil {
+		return nil
+	}
+	return running.stop(ctx)
 }
 
 // Manifest describes the gateway to the host: its kind, its category, the
