@@ -177,18 +177,18 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	for i := range raws {
 		out = append(out, raws[i].msg)
 	}
-	p.noteHumanReads(raws)
+	p.noteHumanReads(ctx, raws)
 	return out, nil
 }
 
-func (p *Platform) noteHumanReads(raws []rawMsg) {
+func (p *Platform) noteHumanReads(ctx context.Context, raws []rawMsg) {
 	if p.sinks == nil {
 		return
 	}
 	for i := range raws {
 		raw := raws[i]
 		if !raw.bot {
-			p.sinks.at(raw.msg.ChannelID).noteUser(raw.msg.ChannelID, raw.id, raw.msg.AuthorID)
+			p.sinks.at(raw.msg.ChannelID).noteUser(ctx, raw.msg.ChannelID, raw.id, raw.msg.AuthorID)
 		}
 	}
 }

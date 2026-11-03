@@ -42,9 +42,17 @@ type sink struct {
 	acked    msgRef
 }
 
+const sinkDrainBudget = 16
+
 type sinkJob struct {
-	step func()
-	done chan struct{}
+	kind      string
+	step      func()
+	done      chan struct{}
+	lead      chan struct{}
+	finished  bool
+	taken     bool
+	promoted  bool
+	abandoned bool
 }
 
 type msgRef struct{ ch, id, author string }
@@ -102,54 +110,161 @@ func (s *sinks) drop(convID string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) submit(step func()) {
-	job := &sinkJob{step: step, done: make(chan struct{})}
+func (s *sink) submit(ctx context.Context, kind string, step func()) error {
+	job := &sinkJob{kind: kind, step: step, done: make(chan struct{}), lead: make(chan struct{}, 1)}
 	s.mu.Lock()
 	s.queue = append(s.queue, job)
 	leads := !s.draining
 	s.draining = true
 	s.mu.Unlock()
-	if !leads {
-		<-job.done
-		return
+	if leads {
+		s.drain()
 	}
-	s.drain()
+	return s.await(ctx, job)
+}
+
+func (s *sink) dispatch(ctx context.Context, kind string, step func()) {
+	if err := s.submit(ctx, kind, step); err != nil {
+		s.log.Debug("sink step abandoned by its waiter", "step", kind, "err", err)
+	}
+}
+
+func (s *sink) await(ctx context.Context, job *sinkJob) error {
+	cancelled := ctx.Done()
+	for {
+		select {
+		case <-job.done:
+			return nil
+		case <-job.lead:
+			if s.settled(job) {
+				return nil
+			}
+			s.drain()
+		case <-cancelled:
+			if s.abandon(job) {
+				return ctx.Err()
+			}
+			cancelled = nil
+		}
+	}
+}
+
+func (s *sink) settled(job *sinkJob) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return job.finished
+}
+
+func (s *sink) abandon(job *sinkJob) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if job.taken || job.promoted || job.finished {
+		return false
+	}
+	job.abandoned = true
+	return true
 }
 
 func (s *sink) drain() {
-	for {
-		s.mu.Lock()
-		if len(s.queue) == 0 {
-			s.draining = false
-			s.mu.Unlock()
+	clean := false
+	defer func() {
+		if !clean {
+			s.abort()
+		}
+	}()
+	for range sinkDrainBudget {
+		job := s.take()
+		if job == nil {
+			clean = true
 			return
 		}
-		job := s.queue[0]
-		s.queue[0] = nil
-		s.queue = s.queue[1:]
-		s.mu.Unlock()
 		s.execute(job)
 	}
+	s.handOff()
+	clean = true
+}
+
+func (s *sink) take() *sinkJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.queue) > 0 {
+		job := s.pop()
+		if job.abandoned {
+			s.settleLocked(job)
+			continue
+		}
+		job.taken = true
+		return job
+	}
+	s.draining = false
+	return nil
+}
+
+func (s *sink) handOff() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.queue) > 0 && s.queue[0].abandoned {
+		s.settleLocked(s.pop())
+	}
+	if len(s.queue) == 0 {
+		s.draining = false
+		return
+	}
+	head := s.queue[0]
+	head.promoted = true
+	head.lead <- struct{}{}
+}
+
+func (s *sink) abort() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.queue {
+		s.settleLocked(job)
+	}
+	s.queue = nil
+	s.draining = false
+}
+
+func (s *sink) pop() *sinkJob {
+	job := s.queue[0]
+	s.queue[0] = nil
+	s.queue = s.queue[1:]
+	return job
 }
 
 func (s *sink) execute(job *sinkJob) {
-	defer close(job.done)
+	defer s.settle(job)
 	if s.run().Err() != nil {
+		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
 		return
 	}
 	job.step()
 }
 
-func (s *sink) noteUser(channelID, messageID, author string) {
+func (s *sink) settle(job *sinkJob) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settleLocked(job)
+}
+
+func (s *sink) settleLocked(job *sinkJob) {
+	if job.finished {
+		return
+	}
+	job.finished = true
+	close(job.done)
+}
+
+func (s *sink) noteUser(ctx context.Context, channelID, messageID, author string) {
 	ref := msgRef{ch: channelID, id: messageID, author: author}
-	s.submit(func() {
+	s.dispatch(ctx, "note", func() {
 		s.lastUser = ref
 	})
 }
 
 func (s *sink) ack(ctx context.Context, channelID, messageID, author string) {
 	ref := msgRef{ch: channelID, id: messageID, author: author}
-	s.submit(func() {
+	s.dispatch(ctx, "ack", func() {
 		s.lastUser = ref
 		if messageID == "" || s.acked == ref {
 			return
@@ -167,7 +282,7 @@ func (s *sink) addAck(ctx context.Context, ref msgRef) {
 }
 
 func (s *sink) fail(ctx context.Context, reason string) {
-	s.submit(func() {
+	s.dispatch(ctx, "fail", func() {
 		s.applyFail(ctx, reason)
 	})
 }
@@ -193,8 +308,9 @@ func (s *sink) applyFail(ctx context.Context, reason string) {
 }
 
 func (s *sink) handle(event contracts.Event) {
-	s.submit(func() {
-		s.apply(s.run(), event)
+	ctx := s.run()
+	s.dispatch(ctx, "event:"+event.T, func() {
+		s.apply(ctx, event)
 	})
 }
 
