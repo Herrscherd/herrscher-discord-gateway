@@ -76,10 +76,10 @@ silently.
 
 | Level | What the channel sees |
 |---|---|
-| `silent` (default) | the ⏳, then the answer, nothing else |
-| `quiet` | adds a live list of tool names, with no path, command or search pattern from your machine |
-| `actions` | adds each tool's detail |
-| `full` | adds the assistant's thinking |
+| `silent` (default) | the ⏳, then only the answer |
+| `quiet` | also shows a live list of tool names, never a path, command or search pattern from your machine |
+| `actions` | also shows each tool's detail |
+| `full` | also shows the assistant's thinking |
 
 `silent` is the default because this bot is meant to be pinged in rooms other
 people read, where a running commentary of tool calls is noise. Raise it when you

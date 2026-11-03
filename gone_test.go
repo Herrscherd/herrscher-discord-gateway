@@ -6,9 +6,6 @@ import (
 	"testing"
 )
 
-// A deleted conversation takes its session with it. Nothing else would: a
-// session's bridge is restarted forever and only an explicit close stops it, so
-// without this the agent keeps running against a room that no longer exists.
 func TestDeletedConversationClosesItsSession(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
@@ -25,14 +22,10 @@ func TestDeletedConversationClosesItsSession(t *testing.T) {
 		t.Fatalf("interrupted = %v, want the in-flight turn stopped first", ctrl.interrupted)
 	}
 	if s := r.binds.Session("c1"); s != "" {
-		t.Fatalf("c1 still bound to %q — a reused id would route into a dead session", s)
+		t.Fatalf("c1 still bound to %q, a reused id would route into a dead session", s)
 	}
 }
 
-// A worktree the agent left uncommitted makes the plain close fail. There is
-// nobody left to ask to commit — the conversation that would carry the question
-// is the one that was deleted — so the force is taken rather than leaving the
-// session running, which is the failure this path exists to remove.
 func TestDeletedConversationForcesWhenCloseRefuses(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	if err := r.binds.Bind("c1", "ch-c1"); err != nil {
@@ -49,12 +42,8 @@ func TestDeletedConversationForcesWhenCloseRefuses(t *testing.T) {
 	}
 }
 
-// A conversation with no session still gets its router state dropped, and does
-// not reach the core: there is nothing there to close.
 func TestDeletedUnboundConversationClosesNothing(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
-	// A ping was waiting on the repo menu when the room went away. Replaying it
-	// later is impossible, and keeping it leaks one messageCreate per deletion.
 	r.mu.Lock()
 	r.pending["c1"] = ownerPing("fix the login bug")
 	r.jobs["c1"] = job{conv: "c1", parent: "c1"}
@@ -75,9 +64,6 @@ func TestDeletedUnboundConversationClosesNothing(t *testing.T) {
 	}
 }
 
-// Deleting a channel deletes its threads, but Discord announces only the
-// channel. A job the gateway moved into a private thread is the common case, so
-// a sweep that missed it would leave the feature useless where it matters most.
 func TestDeletedChannelClosesTheSessionsOfItsThreads(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	if err := r.binds.BindThread("t1", "t1", "c1", "ch-t1"); err != nil {

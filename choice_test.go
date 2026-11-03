@@ -20,7 +20,7 @@ func TestBindCustomIDRoundTrips(t *testing.T) {
 		t.Fatalf("ParseBindCustomID(%q) = %q,%v", id, got, ok)
 	}
 	if _, ok := ParseBindCustomID(ChoiceCustomID("sess1")); ok {
-		t.Fatal("a choice id must not parse as a bind id — the two routes would cross")
+		t.Fatal("a choice id must not parse as a bind id, the two routes would cross")
 	}
 	if _, ok := ParseChoiceCustomID(BindCustomID("chan1")); ok {
 		t.Fatal("a bind id must not parse as a choice id")

@@ -12,10 +12,10 @@ import (
 
 func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "envfile.go"})
 	pv.flush(true)
@@ -25,19 +25,18 @@ func TestProgressViewRendersToolLineWithEmoji(t *testing.T) {
 	}
 }
 
-// Fifteen lines carrying 120 runes of detail each run past Discord's 2000-rune
-// message limit. Discord rejects an oversized edit and flush swallows the error,
-// so the live message would freeze for the rest of the turn.
 func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, levelFull, time.Unix(0, 0))
+	}, levelFull, time.Unix(0, 0), testLog())
 
-	for i := 0; i < maxLines*2; i++ {
-		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Bash",
-			Detail: strconv.Itoa(i) + strings.Repeat("x", 200)})
+	for i := range maxLines * 2 {
+		pv.add(contracts.BackendEvent{
+			Kind: "tool", Tool: "Bash",
+			Detail: strconv.Itoa(i) + strings.Repeat("x", 200),
+		})
 	}
 	pv.flush(true)
 
@@ -49,14 +48,12 @@ func TestProgressBodyFitsDiscordsLimit(t *testing.T) {
 	}
 }
 
-// quiet is the privacy level: the channel still sees that the agent is working,
-// never what it worked on. A leaked absolute path is the whole reason it exists.
 func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "quiet", time.Unix(0, 0))
+	}, "quiet", time.Unix(0, 0), testLog())
 
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "/home/op/secret-client/app.go"})
 	pv.add(contracts.BackendEvent{Kind: "text", Detail: "looking at /home/op/secret-client"})
@@ -73,16 +70,14 @@ func TestQuietDropsToolDetailAndAssistantText(t *testing.T) {
 	}
 }
 
-// Stripped of details, repeated tools all render the same line; left alone they
-// would flush the 15-line window with copies of one another.
 func TestRepeatedLinesCollapse(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "quiet", time.Unix(0, 0))
+	}, "quiet", time.Unix(0, 0), testLog())
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "a.go"})
 	}
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Bash", Detail: "go test"})
@@ -99,13 +94,12 @@ func TestRepeatedLinesCollapse(t *testing.T) {
 	}
 }
 
-// full is unchanged: details are what make it useful, and it stays the default.
 func TestFullKeepsDetail(t *testing.T) {
 	var last string
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		last = content
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read", Detail: "/home/op/app.go"})
 	pv.flush(true)
 	if !strings.Contains(last, "/home/op/app.go") {
@@ -115,10 +109,10 @@ func TestFullKeepsDetail(t *testing.T) {
 
 func TestProgressViewSummaryCountsActions(t *testing.T) {
 	posted := []string{}
-	pv := newProgressView(func(id, content string) (string, error) {
+	pv := newProgressView(func(_, content string) (string, error) {
 		posted = append(posted, content)
 		return "m1", nil
-	}, "full", time.Unix(0, 0))
+	}, "full", time.Unix(0, 0), testLog())
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "result", Cost: 0.02})

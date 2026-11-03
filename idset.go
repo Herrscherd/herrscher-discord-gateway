@@ -5,25 +5,25 @@ import "strings"
 type idSet map[string]bool
 
 func newIDSet(csv string) idSet {
-	s := idSet{}
+	set := make(idSet)
 	for _, raw := range strings.Split(csv, ",") {
-		v := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "#"))
-		if v != "" {
-			s[v] = true
+		entry := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "#"))
+		if entry != "" {
+			set[entry] = true
 		}
 	}
-	return s
+	return set
 }
 
 func (s idSet) empty() bool { return len(s) == 0 }
 
 func (s idSet) wildcard() bool { return s["*"] }
 
-func (s idSet) has(id string) bool {
-	if id == "" {
+func (s idSet) has(identifier string) bool {
+	if identifier == "" {
 		return false
 	}
-	return s[id]
+	return s[identifier]
 }
 
 func (s idSet) matches(ids ...string) bool {

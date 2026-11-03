@@ -6,65 +6,61 @@ import (
 	"testing"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// outMsg and outMenu record where an outbound call landed, not just what it
-// said: the router's whole job is choosing the right channel and custom_id.
 type outMsg struct{ channel, content string }
 
 type outMenu struct{ channel, content, customID string }
 
 type outEdit struct{ channel, id, content string }
 
-// outReply records which message a reply was aimed at, not just its content: a
-// reply landing on the wrong message id is not something a retry fixes either.
 type outReply struct{ channel, to, content string }
 
-// outReact records the channel and message id a reaction call was aimed at, so
-// a handler that read the wrong arg (e.g. "msg" swapped for "id") is caught.
 type outReact struct{ channel, msg, emoji string }
 
 type fakeClient struct {
-	sent    []outMsg
-	replied []outReply
-	reacted []outReact
-	menus   []outMenu
-	menuErr error // fails SendSelectMenu
-	read    []dctl.Message
-	// readLimit is the size the last read asked for, which is how the cap is
-	// checked: the caller's --limit never reaches Discord unbounded.
+	sent       []outMsg
+	replied    []outReply
+	reacted    []outReact
+	menus      []outMenu
+	menuErr    error
+	read       []dctl.Message
 	readLimit  int
-	readErr    error // fails ReadMessages
+	readErr    error
 	unreacted  []outReact
-	reactErr   error // fails React
-	unreactErr error // fails Unreact
+	reactErr   error
+	unreactErr error
 
-	threads      []outMsg // channel the thread was opened in, and its name
-	members      []outMsg // thread id, and the user added to it
-	public       []outMsg // message a public thread was started on, and its name
-	threadErr    error    // fails CreatePrivateThread
-	publicErr    error    // fails StartThread
-	memberErr    error    // fails AddThreadMember
+	threads      []outMsg
+	members      []outMsg
+	public       []outMsg
+	threadErr    error
+	publicErr    error
+	memberErr    error
 	nextThreadID string
-	started      int // public threads opened so far, so each gets its own id
+	started      int
 
-	got    []outMsg      // channel and id of every GetMessage call
-	getMsg *dctl.Message // what GetMessage answers
-	getErr error         // fails GetMessage
+	got    []outMsg
+	getMsg *dctl.Message
+	getErr error
 
-	edited  []outEdit
-	deleted []string
+	edited          []outEdit
+	deleted         []string
+	deletedChannels []string
+	deleteChanErr   error
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
 	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
+
 func (f *fakeClient) Reply(_ context.Context, ch, to, content string) (*dctl.Message, error) {
 	f.replied = append(f.replied, outReply{ch, to, content})
 	return &dctl.Message{ID: "m2"}, nil
 }
+
 func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
 	if f.reactErr != nil {
 		return f.reactErr
@@ -72,6 +68,7 @@ func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
 	f.reacted = append(f.reacted, outReact{ch, msg, emoji})
 	return nil
 }
+
 func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID string, _ []dctl.SelectOption) (*dctl.Message, error) {
 	if f.menuErr != nil {
 		return nil, f.menuErr
@@ -79,6 +76,7 @@ func (f *fakeClient) SendSelectMenu(_ context.Context, ch, _, content, customID 
 	f.menus = append(f.menus, outMenu{ch, content, customID})
 	return &dctl.Message{ID: "m3"}, nil
 }
+
 func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ string) ([]dctl.Message, error) {
 	f.readLimit = limit
 	if f.readErr != nil {
@@ -86,6 +84,7 @@ func (f *fakeClient) ReadMessages(_ context.Context, _ string, limit int, _ stri
 	}
 	return f.read, nil
 }
+
 func (f *fakeClient) Unreact(_ context.Context, ch, msg, emoji string) error {
 	if f.unreactErr != nil {
 		return f.unreactErr
@@ -93,6 +92,7 @@ func (f *fakeClient) Unreact(_ context.Context, ch, msg, emoji string) error {
 	f.unreacted = append(f.unreacted, outReact{ch, msg, emoji})
 	return nil
 }
+
 func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message, error) {
 	f.got = append(f.got, outMsg{ch, id})
 	if f.getErr != nil {
@@ -100,6 +100,7 @@ func (f *fakeClient) GetMessage(_ context.Context, ch, id string) (*dctl.Message
 	}
 	return f.getMsg, nil
 }
+
 func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (string, error) {
 	if f.threadErr != nil {
 		return "", f.threadErr
@@ -110,6 +111,7 @@ func (f *fakeClient) CreatePrivateThread(_ context.Context, ch, name string) (st
 	}
 	return f.nextThreadID, nil
 }
+
 func (f *fakeClient) StartThread(_ context.Context, ch, msg, name string) (string, error) {
 	if f.publicErr != nil {
 		return "", f.publicErr
@@ -118,6 +120,7 @@ func (f *fakeClient) StartThread(_ context.Context, ch, msg, name string) (strin
 	f.started++
 	return fmt.Sprintf("%s-t%d", ch, f.started), nil
 }
+
 func (f *fakeClient) AddThreadMember(_ context.Context, thread, user string) error {
 	if f.memberErr != nil {
 		return f.memberErr
@@ -136,10 +139,15 @@ func (f *fakeClient) DeleteMessage(_ context.Context, ch, id string) error {
 	return nil
 }
 
+func (f *fakeClient) DeleteChannel(_ context.Context, id string) error {
+	f.deletedChannels = append(f.deletedChannels, id)
+	return f.deleteChanErr
+}
+
 var _ contracts.Gateway = (*Gateway)(nil)
 
 func TestGatewayManifest(t *testing.T) {
-	g := NewGateway(&fakeClient{})
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
 	m := g.Manifest()
 	if m.Kind != "discord" || m.Category != contracts.CategoryGateway {
 		t.Fatalf("bad manifest %+v", m)
@@ -147,10 +155,7 @@ func TestGatewayManifest(t *testing.T) {
 	if !m.Capabilities.Reactions || !m.Capabilities.SelectMenus || !m.Capabilities.Replies {
 		t.Fatalf("discord should announce all capabilities: %+v", m.Capabilities)
 	}
-	// Undeclared, the host's attachment allowlist is empty and every screenshot
-	// is refused before it is fetched — silently, since a dropped attachment is
-	// never worth failing a turn over.
-	hosts := map[string]bool{}
+	hosts := make(map[string]bool)
 	for _, h := range m.AttachmentHosts {
 		hosts[h] = true
 	}
@@ -161,32 +166,27 @@ func TestGatewayManifest(t *testing.T) {
 
 func TestGatewayTranslatesActions(t *testing.T) {
 	fc := &fakeClient{}
-	g := NewGateway(fc)
+	g := NewGateway(fc, testRun(), testLog())
 	ctx := context.Background()
 	conv := contracts.Conversation{Gateway: "discord", ID: "chan"}
 
-	_, _ = g.Post(ctx, conv, "hello")
-	_, _ = g.Reply(ctx, conv, "mid", "answer")
-	_ = g.React(ctx, conv, "mid", "👀")
-	_ = g.Menu(ctx, conv, "mid", "pick", []contracts.Choice{{Label: "A", Value: "a"}})
+	_, err := g.Post(ctx, conv, "hello")
+	requireNoError(t, err)
+	_, err = g.Reply(ctx, conv, "mid", "answer")
+	requireNoError(t, err)
+	requireNoError(t, g.React(ctx, conv, "mid", "👀"))
+	requireNoError(t, g.Menu(ctx, conv, "mid", "pick", []contracts.Choice{{Label: "A", Value: "a"}}))
 
 	if len(fc.sent) != 1 || len(fc.replied) != 1 || len(fc.reacted) != 1 || len(fc.menus) != 1 {
 		t.Fatalf("translation incomplete: %+v", fc)
 	}
 }
 
-func TestGatewayImplementsEventSink(t *testing.T) {
-	var _ contracts.EventSink = (*Gateway)(nil)
-}
-
-// The gateway satisfies the optional editor port, and each call reaches the
-// client with the ids it was given — a delete aimed at the wrong message is not
-// something a retry fixes.
 func TestGatewayEditsAndDeletes(t *testing.T) {
 	var _ contracts.MessageEditor = (*Gateway)(nil)
 
 	f := &fakeClient{}
-	g := NewGateway(f)
+	g := NewGateway(f, testRun(), testLog())
 	if err := g.Edit(context.Background(), "c1", "m1", "fixed"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -203,8 +203,8 @@ func TestGatewayEditsAndDeletes(t *testing.T) {
 
 func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
 	f := &fakeRender{}
-	g := NewGateway(&fakeClient{})
-	g.sinks = newSinks(context.Background(), f, staticLevels("full"), "", false)
+	g := NewGateway(&fakeClient{}, testRun(), testLog())
+	g.sinks = newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
 	conv := contracts.Conversation{ID: "c1"}
 	g.EmitTo(conv, contracts.Event{T: "human"})
 	g.EmitTo(conv, contracts.Event{T: "reply", Text: "ok", Done: true})
