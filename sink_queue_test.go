@@ -15,6 +15,22 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
+const sinkBubbleBound = 2 * time.Second
+
+func runSinkBubble(t *testing.T, body func(*testing.T)) {
+	t.Helper()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		synctest.Test(t, body)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(sinkBubbleBound):
+		t.Fatal("the sink bubble is still parked after its bound: a step holds the sink lock during I/O, or a waiter is parked on the mutex")
+	}
+}
+
 type gatedRender struct {
 	entered chan string
 	release chan struct{}
@@ -60,7 +76,8 @@ func (g *gatedRender) Delete(_ context.Context, _, id string) error {
 }
 
 func TestSinkRunsEventsInSubmissionOrder(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
 		g := newGatedRender()
 		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
 		var wg sync.WaitGroup
@@ -139,33 +156,150 @@ func TestSinkWaiterLeavesWhenItsContextEndsDuringARenderCall(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	var lateRan bool
 	waiter := make(chan error, 1)
 	go func() {
-		waiter <- s.submit(ctx, "late", func() { lateRan = true })
+		waiter <- s.submit(ctx, "late", func() { g.gate("late") })
 	}()
 	select {
 	case err := <-waiter:
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("submit returned %v, want context.Canceled", err)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(sinkBubbleBound):
 		t.Fatal("waiter still blocked behind a render call after its context ended")
 	}
 
 	close(g.release)
 	<-leader
-	if lateRan {
-		t.Fatal("a step whose waiter gave up still ran")
-	}
-	want := []string{"post:" + failEmoji + " a"}
+	want := []string{"post:" + failEmoji + " a", "late"}
 	if !slices.Equal(g.calls, want) {
-		t.Fatalf("render calls = %q, want %q", g.calls, want)
+		t.Fatalf("render calls = %q, want %q: a step whose waiter gave up must still run, in order", g.calls, want)
 	}
 }
 
+func TestSinkCancelledNoteDoesNotHideTheNextHumanAck(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		g := newGatedRender()
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		var wg sync.WaitGroup
+
+		wg.Go(func() { s.fail(context.Background(), "a") })
+		synctest.Wait()
+		wg.Go(func() { s.noteUser(context.Background(), "c1", "m1", "42") })
+		synctest.Wait()
+
+		cancelled, cancel := context.WithCancel(context.Background())
+		cancel()
+		s.noteUser(cancelled, "c1", "m2", "42")
+
+		close(g.release)
+		wg.Wait()
+		s.handle(contracts.Event{T: "human"})
+
+		want := []string{"post:" + failEmoji + " a", "react:m2:" + ackEmoji}
+		if !slices.Equal(g.calls, want) {
+			t.Fatalf("render calls = %q, want %q: the human ack must target m2, the last message noted", g.calls, want)
+		}
+	})
+}
+
+func TestSinkCancelledAckStillReactsOnItsMessage(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		g := newGatedRender()
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		var wg sync.WaitGroup
+
+		wg.Go(func() { s.fail(context.Background(), "a") })
+		synctest.Wait()
+
+		cancelled, cancel := context.WithCancel(context.Background())
+		cancel()
+		s.ack(cancelled, "c1", "m2", "42")
+
+		close(g.release)
+		wg.Wait()
+
+		want := []string{"post:" + failEmoji + " a", "react:m2:" + ackEmoji}
+		if !slices.Equal(g.calls, want) {
+			t.Fatalf("render calls = %q, want %q: the abandoned ack must still mark m2", g.calls, want)
+		}
+	})
+}
+
+func TestSinkCancelledFailStillClosesTheOpenAck(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		g := newGatedRender()
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		var wg sync.WaitGroup
+
+		wg.Go(func() { s.ack(context.Background(), "c1", "m1", "42") })
+		synctest.Wait()
+
+		cancelled, cancel := context.WithCancel(context.Background())
+		cancel()
+		s.fail(cancelled, "boom")
+
+		close(g.release)
+		wg.Wait()
+
+		want := []string{
+			"react:m1:" + ackEmoji,
+			"unreact:m1:" + ackEmoji,
+			"react:m1:" + failEmoji,
+			"post:" + failEmoji + " boom",
+		}
+		if !slices.Equal(g.calls, want) {
+			t.Fatalf("render calls = %q, want %q", g.calls, want)
+		}
+		if s.acked != (msgRef{}) || s.pv != nil {
+			t.Fatalf("acked = %+v, pv open = %v: the failure must close both", s.acked, s.pv != nil)
+		}
+	})
+}
+
+func TestSinkHandsOverWhenItsContextEndsBetweenSteps(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		release := make(chan struct{})
+		var order []int
+		var leaderErr error
+		var wg sync.WaitGroup
+
+		leadCtx, cancelLead := context.WithCancel(context.Background())
+		wg.Go(func() {
+			leaderErr = s.submit(leadCtx, "lead", func() {
+				<-release
+				order = append(order, 0)
+			})
+		})
+		synctest.Wait()
+		wg.Go(func() {
+			if err := s.submit(context.Background(), "next", func() { order = append(order, 1) }); err != nil {
+				t.Errorf("waiter submit: %v", err)
+			}
+		})
+		synctest.Wait()
+
+		cancelLead()
+		close(release)
+		wg.Wait()
+
+		if !errors.Is(leaderErr, context.Canceled) {
+			t.Errorf("leader returned %v, want context.Canceled", leaderErr)
+		}
+		if want := []int{0, 1}; !slices.Equal(order, want) {
+			t.Fatalf("steps ran in order %v, want %v", order, want)
+		}
+	})
+}
+
 func TestSinkDropsQueuedWorkOnceTheLifetimeEnds(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
 		ctx, cancel := context.WithCancel(context.Background())
 		g := newGatedRender()
 		var logs bytes.Buffer
@@ -206,7 +340,8 @@ func budgetStep(i int, release, hold <-chan struct{}, order *[]int) func() {
 }
 
 func TestSinkHandsTheDrainOverAfterItsBudget(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
 		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
 		release := make(chan struct{})
 		hold := make(chan struct{})
@@ -241,8 +376,11 @@ func TestSinkHandsTheDrainOverAfterItsBudget(t *testing.T) {
 }
 
 func TestSinkRecoversFromAPanickingStep(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		var logs bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, log)
 		release := make(chan struct{})
 		var recovered any
 		var queuedRan, afterRan bool
@@ -270,12 +408,57 @@ func TestSinkRecoversFromAPanickingStep(t *testing.T) {
 		if queuedRan || queuedErr != nil {
 			t.Errorf("queued submit ran = %v, err = %v; want it released without running", queuedRan, queuedErr)
 		}
+		if !strings.Contains(logs.String(), "level=WARN") || !strings.Contains(logs.String(), "step=queued") {
+			t.Errorf("the discarded step was not logged at Warn with its kind: %s", logs.String())
+		}
 
 		if err := s.submit(context.Background(), "after", func() { afterRan = true }); err != nil {
 			t.Fatalf("submit after the panic returned %v", err)
 		}
 		if !afterRan {
 			t.Fatal("a submit after the panic did not run its step")
+		}
+	})
+}
+
+func TestSinkHandOverRunsTheStepOfAWaiterThatGaveUp(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		release := make(chan struct{})
+		var order []int
+		var leaderErr, gaveUpErr, lateErr error
+		var wg sync.WaitGroup
+
+		leadCtx, cancelLead := context.WithCancel(context.Background())
+		wg.Go(func() {
+			leaderErr = s.submit(leadCtx, "lead", func() {
+				<-release
+				order = append(order, 0)
+			})
+		})
+		synctest.Wait()
+
+		gaveUp, cancelGaveUp := context.WithCancel(context.Background())
+		cancelGaveUp()
+		gaveUpErr = s.submit(gaveUp, "gave-up", func() { order = append(order, 1) })
+
+		cancelLead()
+		close(release)
+		wg.Wait()
+
+		lateErr = s.submit(context.Background(), "late", func() { order = append(order, 2) })
+		if !errors.Is(gaveUpErr, context.Canceled) {
+			t.Errorf("waiter returned %v, want context.Canceled", gaveUpErr)
+		}
+		if !errors.Is(leaderErr, context.Canceled) {
+			t.Errorf("leader returned %v, want context.Canceled", leaderErr)
+		}
+		if lateErr != nil {
+			t.Errorf("submit after the hand-over returned %v", lateErr)
+		}
+		if want := []int{0, 1, 2}; !slices.Equal(order, want) {
+			t.Fatalf("steps ran in order %v, want %v: a waiter that gave up must not strand the drain", order, want)
 		}
 	})
 }
