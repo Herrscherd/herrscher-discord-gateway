@@ -10,11 +10,11 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl, *fakeClient) {
+func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl) {
 	t.Helper()
 	ctrl, c := newFakeCtrl(), &fakeClient{}
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
-	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"))
+	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	cfg := routerConfig{
 		appID:           "app1",
 		contextMessages: 0,
@@ -26,8 +26,8 @@ func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl,
 		tune(&cfg)
 	}
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(context.Background(), &fakeRender{}, staticLevels("silent"), "", false), cfg)
-	return r, ctrl, c
+		newSinks(testRun(), &fakeRender{}, staticLevels("silent"), "", false, testLog()), testLog(), cfg)
+	return r, ctrl
 }
 
 func guildPing(author, text string, mention bool) messageCreate {
@@ -42,8 +42,8 @@ func guildPing(author, text string, mention bool) messageCreate {
 }
 
 func TestTwoPeopleInAChannelGetTwoSessions(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
@@ -62,8 +62,8 @@ func TestTwoPeopleInAChannelGetTwoSessions(t *testing.T) {
 }
 
 func TestOnePersonKeepsOneSessionAcrossTurns(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u1", "now the tests", true))
@@ -77,8 +77,8 @@ func TestOnePersonKeepsOneSessionAcrossTurns(t *testing.T) {
 }
 
 func TestASharedChannelPutsEveryoneInOneSession(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.scope.groupPerUser = false })
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, func(c *routerConfig) { c.scope.groupPerUser = false })
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
@@ -101,9 +101,9 @@ func TestASharedChannelPutsEveryoneInOneSession(t *testing.T) {
 }
 
 func TestAmbientModeAnswersWithoutBeingMentioned(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
-	r.binds.SetMode("c1", ambientMode)
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
 
 	r.onMessage(context.Background(), guildPing("u1", "quelqu'un sait pourquoi le build casse ?", false))
 
@@ -113,8 +113,8 @@ func TestAmbientModeAnswersWithoutBeingMentioned(t *testing.T) {
 }
 
 func TestANormalChannelIgnoresWhatIsNotAddressedToIt(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "quelqu'un sait pourquoi le build casse ?", false))
 
@@ -124,9 +124,9 @@ func TestANormalChannelIgnoresWhatIsNotAddressedToIt(t *testing.T) {
 }
 
 func TestOffModeIgnoresEvenAMention(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
-	r.binds.SetMode("c1", offMode)
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
+	requireNoError(t, r.binds.SetMode("c1", offMode))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -136,8 +136,8 @@ func TestOffModeIgnoresEvenAMention(t *testing.T) {
 }
 
 func TestAnUnauthorizedMentionIsIgnored(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.access.users = newIDSet("u9") })
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, func(c *routerConfig) { c.access.users = newIDSet("u9") })
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -147,8 +147,8 @@ func TestAnUnauthorizedMentionIsIgnored(t *testing.T) {
 }
 
 func TestTheConfiguredPersonaRunsEverySessionItOpens(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, func(c *routerConfig) { c.agent = "greeter" })
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, func(c *routerConfig) { c.agent = "greeter" })
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
@@ -158,8 +158,8 @@ func TestTheConfiguredPersonaRunsEverySessionItOpens(t *testing.T) {
 }
 
 func TestDeletingAChannelClosesEveryonesSession(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 
@@ -174,8 +174,8 @@ func TestDeletingAChannelClosesEveryonesSession(t *testing.T) {
 }
 
 func TestChoicePickGoesToTheSessionOfWhoeverClicked(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 	for _, si := range ctrl.Sessions() {
@@ -195,7 +195,7 @@ func TestChoicePickGoesToTheSessionOfWhoeverClicked(t *testing.T) {
 }
 
 func TestRepoMenuOnlyAnswersTheOneWhoAsked(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
+	r, ctrl := newGuildRouter(t, nil)
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 
 	if msg := r.onBindPick(context.Background(), "c1", "u2", "local:herrscher"); !strings.Contains(msg, "u1") {
@@ -213,15 +213,15 @@ func TestRepoMenuOnlyAnswersTheOneWhoAsked(t *testing.T) {
 }
 
 func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, nil)
-	r.binds.SetLastRepo("local:herrscher")
+	r, ctrl := newGuildRouter(t, nil)
+	requireNoError(t, r.binds.SetLastRepo("local:herrscher"))
 	r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 	r.onMessage(context.Background(), guildPing("u2", "and the signup one", true))
 	if got := r.binds.SessionsIn("c1"); len(got) != 2 {
 		t.Fatalf("SessionsIn = %v, want one per participant", got)
 	}
 
-	s := &slash{ctx: context.Background(), binds: r.binds, router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), binds: r.binds, router: r, ctrl: ctrl}
 	s.setMode("c1", supportMode)
 
 	if got := r.binds.SessionsIn("c1"); len(got) != 0 {
@@ -240,12 +240,12 @@ func TestRepoMenuOutlivingItsPendingPingStaysOwned(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, ctrl, _ := newGuildRouter(t, func(cfg *routerConfig) {
+			r, ctrl := newGuildRouter(t, func(cfg *routerConfig) {
 				cfg.access = accessSettings{users: newIDSet("u1")}
 			})
 			r.onMessage(context.Background(), guildPing("u1", "fix the login bug", true))
 			r.mu.Lock()
-			r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+			r.pending, r.jobs = make(map[string]messageCreate), make(map[string]job)
 			r.mu.Unlock()
 
 			r.onBindPick(context.Background(), "c1", tc.clicker, "local:herrscher")
@@ -258,7 +258,7 @@ func TestRepoMenuOutlivingItsPendingPingStaysOwned(t *testing.T) {
 }
 
 func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
-	r, ctrl, _ := newGuildRouter(t, func(cfg *routerConfig) {
+	r, ctrl := newGuildRouter(t, func(cfg *routerConfig) {
 		cfg.access = accessSettings{users: newIDSet("u1")}
 	})
 	if err := r.binds.SetMode("c1", supportMode); err != nil {
@@ -276,7 +276,7 @@ func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
 		t.Fatal("the thread the menu was posted in is not registered as one")
 	}
 	r.mu.Lock()
-	r.pending, r.jobs = map[string]messageCreate{}, map[string]job{}
+	r.pending, r.jobs = make(map[string]messageCreate), make(map[string]job)
 	r.mu.Unlock()
 
 	r.onBindPick(context.Background(), thread, "u1", "local:herrscher")
@@ -289,5 +289,12 @@ func TestAnOrphanedMenuAnsweredInAThreadKeepsTheThread(t *testing.T) {
 	}
 	if !r.binds.IsThread(thread) {
 		t.Fatal("the binding lost the thread flag")
+	}
+}
+
+func requireNoError(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
 	}
 }

@@ -3,43 +3,28 @@ package discord
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/Herrscherd/dctl"
-	"github.com/Herrscherd/herrscher-contracts"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-// client is the subset of *dctl.Client the adapter needs (injected for tests).
+const gatewayKind = "discord"
+
 type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
-	// Unreact removes a reaction this bot added. It backs the contributed
-	// `message unreact` verb; the rendering path reaches it through Platform.
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
-	// ReadMessages backs the router's channel context. REST reads are not gated by
-	// the message-content intent, which is how the bot sees what everyone said
-	// without asking Discord for a privileged intent.
 	ReadMessages(ctx context.Context, channelID string, limit int, after string) ([]dctl.Message, error)
-	// GetMessage reads one message by id, for the one the ping replies to: it is
-	// blanked like every other dispatch, and it is far past the window a channel
-	// read covers — a reply target is whatever the operator scrolled back to.
 	GetMessage(ctx context.Context, channelID, messageID string) (*dctl.Message, error)
-	// CreatePrivateThread opens a thread nobody can see until they are added, and
-	// AddThreadMember is what adds them. A private thread is created off the
-	// channel rather than off a message, so the channel keeps no trace of it.
 	CreatePrivateThread(ctx context.Context, channelID, name string) (string, error)
 	AddThreadMember(ctx context.Context, threadID, userID string) error
-	// StartThread opens a public thread hanging off a message. Everyone who reads
-	// the channel sees it and its author is a member without being added, which
-	// is what a support room wants — and it is the one kind of thread that does
-	// not need the "create private threads" permission.
 	StartThread(ctx context.Context, channelID, messageID, name string) (string, error)
-	// EditMessage and DeleteMessage back the optional MessageEditor port. They
-	// are on the narrow client interface like everything else here, so the tests
-	// can drive them without a Discord.
 	EditMessage(ctx context.Context, channelID, messageID, content string) (*dctl.Message, error)
 	DeleteMessage(ctx context.Context, channelID, messageID string) error
+	DeleteChannel(ctx context.Context, channelID string) error
 }
 
 var (
@@ -56,22 +41,21 @@ var (
 // (EventSink).
 type Gateway struct {
 	c     client
+	run   lifetime
+	log   *slog.Logger
 	slash *slash
 	sinks *sinks
 
-	// deletes is the operator's opt-in for the `message delete` verb, and it
-	// gates whether that verb is contributed at all. Everything an agent reads
-	// out of a channel is text other people wrote, and delete is the only verb
-	// it could ask for that nothing undoes — so the deployment where nobody
-	// wants it does not merely refuse it, it never offers it.
 	deletes bool
-	// selfID is the bot's own user id, which is what makes "did this bot write
-	// that message" answerable at all. Empty outside the real factory, and a
-	// delete refuses rather than guesses when it is.
-	selfID string
+	selfID  string
 }
 
-func NewGateway(c client) *Gateway { return &Gateway{c: c} }
+// NewGateway returns a Gateway that sends through c, runs its slash surface on the
+// lifetime run and logs to log. It starts no work: that begins when the host calls
+// BindSessionControl.
+func NewGateway(c client, run lifetime, log *slog.Logger) *Gateway {
+	return &Gateway{c: c, run: run, log: log}
+}
 
 // BindSessionControl receives the daemon's runtime session controller and starts
 // the slash command surface (sync + websocket loop). It satisfies
@@ -82,30 +66,29 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 		return
 	}
 	g.slash.ctrl = ctrl
-	go g.slash.start()
+	go g.slash.start(g.run())
 }
 
+// Manifest describes the gateway to the host: its kind, its category, the
+// capabilities Discord offers and the attachment hosts it accepts.
 func (g *Gateway) Manifest() contracts.Manifest {
 	return contracts.Manifest{
-		Kind:         "discord",
-		Category:     contracts.CategoryGateway,
-		Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
-		// The host downloads the attachment urls this gateway hands it, and pins
-		// them to what the gateway vouches for. Without this the allowlist is
-		// empty and every screenshot is refused before it is fetched.
-		AttachmentHosts: attachmentHosts,
+		Kind:            gatewayKind,
+		Category:        contracts.CategoryGateway,
+		Capabilities:    contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
+		AttachmentHosts: attachmentHostList(),
 	}
 }
 
 // EmitTo renders one live turn event into the conversation the host routed it
 // to. It satisfies contracts.RoutedEventSink, which the host prefers over the
-// flat EventSink — so each session renders into its own channel instead of one
+// flat EventSink, so each session renders into its own channel instead of one
 // global default.
-func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
+func (g *Gateway) EmitTo(conv contracts.Conversation, event contracts.Event) {
 	if g.sinks == nil || conv.ID == "" {
 		return
 	}
-	g.sinks.at(conv.ID).handle(e)
+	g.sinks.at(conv.ID).handle(event)
 }
 
 // Emit is the unrouted fallback for a host that does not route events. Without a
@@ -113,22 +96,28 @@ func (g *Gateway) EmitTo(conv contracts.Conversation, e contracts.Event) {
 // a channel. It satisfies contracts.EventSink.
 func (g *Gateway) Emit(contracts.Event) {}
 
+// Post sends text as a new message in conv. It returns the id Discord gave the
+// message, and an error that wraps the Discord failure.
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
-	m, err := g.c.Send(ctx, conv.ID, text)
+	sent, err := g.c.Send(ctx, conv.ID, text)
 	if err != nil {
-		return msgID(m), fmt.Errorf("discord post: %w", err)
+		return msgID(sent), fmt.Errorf("discord post: %w", err)
 	}
-	return msgID(m), nil
+	return msgID(sent), nil
 }
 
+// Reply sends text as an answer to replyTo in conv. It returns the id Discord gave
+// the answer, and an error that wraps the Discord failure.
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
-	m, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
+	sent, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
 	if err != nil {
-		return msgID(m), fmt.Errorf("discord reply: %w", err)
+		return msgID(sent), fmt.Errorf("discord reply: %w", err)
 	}
-	return msgID(m), nil
+	return msgID(sent), nil
 }
 
+// React adds emoji to msg in conv. It returns an error that wraps the Discord
+// failure.
 func (g *Gateway) React(ctx context.Context, conv contracts.Conversation, msg contracts.MessageID, emoji string) error {
 	if err := g.c.React(ctx, conv.ID, string(msg), emoji); err != nil {
 		return fmt.Errorf("discord react: %w", err)
@@ -136,13 +125,14 @@ func (g *Gateway) React(ctx context.Context, conv contracts.Conversation, msg co
 	return nil
 }
 
+// Menu sends prompt in reply to replyTo with a select menu of opts. The menu carries
+// the choice custom id of conv, so a pick is routed back to conv's session. It
+// returns an error that wraps the Discord failure.
 func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, prompt string, opts []contracts.Choice) error {
 	out := make([]dctl.SelectOption, 0, len(opts))
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	// customID carries the conversation id so a click routes its component
-	// interaction back to the originating conversation.
 	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
@@ -158,12 +148,6 @@ func (g *Gateway) Edit(ctx context.Context, channelID, messageID, content string
 }
 
 // Delete removes a message already sent. It satisfies contracts.MessageEditor.
-//
-// It deletes what it is told to and checks nothing: the authorship bound lives
-// in the `message delete` handler, which already fetches the message to apply
-// it, and repeating the check here would buy a second REST round-trip for the
-// only caller that has it. A future caller reaching this port directly owns
-// that bound itself.
 func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error {
 	if err := g.c.DeleteMessage(ctx, channelID, messageID); err != nil {
 		return fmt.Errorf("discord delete: %w", err)
@@ -171,8 +155,6 @@ func (g *Gateway) Delete(ctx context.Context, channelID, messageID string) error
 	return nil
 }
 
-// discordClient adapts *dctl.Client's sub-clients to the narrow client seam the
-// Gateway needs (and that tests fake).
 type discordClient struct{ c *dctl.Client }
 
 func (d discordClient) Send(ctx context.Context, channelID, content string) (*dctl.Message, error) {
@@ -204,25 +186,25 @@ func (d discordClient) GetMessage(ctx context.Context, channelID, messageID stri
 }
 
 func (d discordClient) CreatePrivateThread(ctx context.Context, channelID, name string) (string, error) {
-	ch, err := d.c.Threads().StartPrivate(ctx, channelID, name)
+	thread, err := d.c.Threads().StartPrivate(ctx, channelID, name)
 	if err != nil {
 		return "", err
 	}
-	if ch == nil {
+	if thread == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return thread.ID, nil
 }
 
 func (d discordClient) StartThread(ctx context.Context, channelID, messageID, name string) (string, error) {
-	ch, err := d.c.Threads().Start(ctx, channelID, messageID, name)
+	thread, err := d.c.Threads().Start(ctx, channelID, messageID, name)
 	if err != nil {
 		return "", err
 	}
-	if ch == nil {
+	if thread == nil {
 		return "", nil
 	}
-	return ch.ID, nil
+	return thread.ID, nil
 }
 
 func (d discordClient) AddThreadMember(ctx context.Context, threadID, userID string) error {
@@ -237,9 +219,13 @@ func (d discordClient) DeleteMessage(ctx context.Context, channelID, messageID s
 	return d.c.Messages().Delete(ctx, channelID, messageID)
 }
 
-func msgID(m *dctl.Message) contracts.MessageID {
-	if m == nil {
+func (d discordClient) DeleteChannel(ctx context.Context, channelID string) error {
+	return d.c.Channels().Delete(ctx, channelID)
+}
+
+func msgID(msg *dctl.Message) contracts.MessageID {
+	if msg == nil {
 		return ""
 	}
-	return contracts.MessageID(m.ID)
+	return contracts.MessageID(msg.ID)
 }

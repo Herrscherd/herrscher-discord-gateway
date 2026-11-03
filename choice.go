@@ -2,9 +2,6 @@ package discord
 
 import "strings"
 
-// The gateway routes two kinds of select-menu click, told apart by the prefix of
-// their custom_id. Neither prefix is a prefix of the other, so a click can never
-// take the wrong route.
 const (
 	choiceCustomIDPrefix = "dctlchoice:"
 	bindCustomIDPrefix   = "dctlbind:"

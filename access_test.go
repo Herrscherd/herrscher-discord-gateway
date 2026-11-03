@@ -32,6 +32,7 @@ func policy(s spec) *accessPolicy {
 		return v
 	}
 	return &accessPolicy{
+		log:      testLog(),
 		owner:    s.owner,
 		selfID:   s.selfID,
 		bots:     s.bots,

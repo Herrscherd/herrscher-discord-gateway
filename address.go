@@ -15,16 +15,16 @@ func defaultAddress(appID string) addressPolicy {
 	return addressPolicy{appID: appID, requireMention: true}
 }
 
-func (p addressPolicy) mentioned(m messageCreate) bool {
+func (p addressPolicy) mentioned(msg messageCreate) bool {
 	if p.appID == "" {
 		return false
 	}
-	for _, u := range m.Mentions {
+	for _, u := range msg.Mentions {
 		if u.ID == p.appID {
 			return true
 		}
 	}
-	for _, hit := range rawMention.FindAllStringSubmatch(m.Content, -1) {
+	for _, hit := range rawMention.FindAllStringSubmatch(msg.Content, -1) {
 		if hit[1] == p.appID {
 			return true
 		}
@@ -36,8 +36,8 @@ func (p addressPolicy) repliesToSelf(m messageCreate) bool {
 	return p.appID != "" && m.Referenced != nil && m.Referenced.Author.ID == p.appID
 }
 
-func (p addressPolicy) addressed(m messageCreate, chatType, parent string) bool {
-	if p.mentioned(m) || p.repliesToSelf(m) {
+func (p addressPolicy) addressed(msg messageCreate, chatType, parent string) bool {
+	if p.mentioned(msg) || p.repliesToSelf(msg) {
 		return true
 	}
 	if chatType == chatDM {
@@ -46,7 +46,7 @@ func (p addressPolicy) addressed(m messageCreate, chatType, parent string) bool 
 	if chatType == chatThread && !p.threadRequireMention {
 		return true
 	}
-	if p.free.matches(m.ChannelID, parent) {
+	if p.free.matches(msg.ChannelID, parent) {
 		return true
 	}
 	return !p.requireMention
