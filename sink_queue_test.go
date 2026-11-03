@@ -268,6 +268,7 @@ func TestSinkHandsOverWhenItsContextEndsBetweenSteps(t *testing.T) {
 		var order []int
 		var leaderErr error
 		var wg sync.WaitGroup
+		leaderDone := make(chan struct{})
 
 		leadCtx, cancelLead := context.WithCancel(context.Background())
 		wg.Go(func() {
@@ -275,10 +276,14 @@ func TestSinkHandsOverWhenItsContextEndsBetweenSteps(t *testing.T) {
 				<-release
 				order = append(order, 0)
 			})
+			close(leaderDone)
 		})
 		synctest.Wait()
 		wg.Go(func() {
-			if err := s.submit(context.Background(), "next", func() { order = append(order, 1) }); err != nil {
+			if err := s.submit(context.Background(), "next", func() {
+				<-leaderDone
+				order = append(order, 1)
+			}); err != nil {
 				t.Errorf("waiter submit: %v", err)
 			}
 		})
@@ -502,7 +507,7 @@ func TestSinkPromotedWaiterThatGivesUpStillHandsOver(t *testing.T) {
 	}
 }
 
-func TestSinkHandOffStopsAtItsBudgetAndLeavesTheTailForTheNextSubmit(t *testing.T) {
+func TestSinkOrphanedStepsRunWithoutANextSubmit(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
@@ -521,26 +526,25 @@ func TestSinkHandOffStopsAtItsBudgetAndLeavesTheTailForTheNextSubmit(t *testing.
 		})
 		synctest.Wait()
 
-		const abandoned = sinkDrainBudget + 4
-		submitAbandoned(t, s, abandoned, &order)
+		const orphans = sinkDrainBudget + 4
+		submitAbandoned(t, s, orphans, &order)
 
 		cancelLead()
 		close(release)
 		wg.Wait()
-		if got := len(order); got != 1+sinkDrainBudget {
-			t.Fatalf("steps run when the lead handed off = %d, want %d: handOff must honour its budget", got, 1+sinkDrainBudget)
-		}
 
-		if err := s.submit(context.Background(), "next", func() { order = append(order, 99) }); err != nil {
-			t.Fatalf("next submit returned %v", err)
+		want := make([]int, orphans+1)
+		for i := range want {
+			want[i] = i
 		}
-		want := make([]int, 0, abandoned+2)
-		for i := range abandoned + 1 {
-			want = append(want, i)
-		}
-		want = append(want, 99)
 		if !slices.Equal(order, want) {
-			t.Fatalf("steps ran in order %v, want %v", order, want)
+			t.Fatalf("steps ran in order %v without any later submit, want %v: an orphaned step must never wait for a next event", order, want)
+		}
+		s.mu.Lock()
+		queued, draining := len(s.queue), s.draining
+		s.mu.Unlock()
+		if queued != 0 || draining {
+			t.Fatalf("queue length = %d, draining = %v after the hand-off, want 0 and false", queued, draining)
 		}
 	})
 }
