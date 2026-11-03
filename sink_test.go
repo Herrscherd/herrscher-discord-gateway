@@ -37,9 +37,19 @@ type fakeRender struct {
 	statusID  string
 
 	postChans []string
+
+	held      func() bool
+	heldCalls int
+}
+
+func (f *fakeRender) observe() {
+	if f.held != nil && f.held() {
+		f.heldCalls++
+	}
 }
 
 func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string) (string, error) {
+	f.observe()
 	f.upserts = append(f.upserts, content)
 	if f.statusID == "" {
 		f.statusID = "status1"
@@ -48,22 +58,26 @@ func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string
 }
 
 func (f *fakeRender) Post(_ context.Context, ch, content string) error {
+	f.observe()
 	f.posts = append(f.posts, content)
 	f.postChans = append(f.postChans, ch)
 	return nil
 }
 
 func (f *fakeRender) React(_ context.Context, _, _, emoji string) error {
+	f.observe()
 	f.reacted = append(f.reacted, emoji)
 	return nil
 }
 
 func (f *fakeRender) Unreact(_ context.Context, _, _, emoji string) error {
+	f.observe()
 	f.unreacted = append(f.unreacted, emoji)
 	return nil
 }
 
 func (f *fakeRender) Delete(_ context.Context, ch, id string) error {
+	f.observe()
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}

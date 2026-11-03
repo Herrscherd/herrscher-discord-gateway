@@ -34,9 +34,17 @@ type sink struct {
 	log   *slog.Logger
 
 	mu       sync.Mutex
+	queue    []*sinkJob
+	draining bool
+
 	pv       *progressView
 	lastUser msgRef
 	acked    msgRef
+}
+
+type sinkJob struct {
+	step func()
+	done chan struct{}
 }
 
 type msgRef struct{ ch, id, author string }
@@ -94,21 +102,60 @@ func (s *sinks) drop(convID string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) noteUser(channelID, messageID, author string) {
+func (s *sink) submit(step func()) {
+	job := &sinkJob{step: step, done: make(chan struct{})}
 	s.mu.Lock()
-	s.lastUser = msgRef{ch: channelID, id: messageID, author: author}
+	s.queue = append(s.queue, job)
+	leads := !s.draining
+	s.draining = true
 	s.mu.Unlock()
+	if !leads {
+		<-job.done
+		return
+	}
+	s.drain()
+}
+
+func (s *sink) drain() {
+	for {
+		s.mu.Lock()
+		if len(s.queue) == 0 {
+			s.draining = false
+			s.mu.Unlock()
+			return
+		}
+		job := s.queue[0]
+		s.queue[0] = nil
+		s.queue = s.queue[1:]
+		s.mu.Unlock()
+		s.execute(job)
+	}
+}
+
+func (s *sink) execute(job *sinkJob) {
+	defer close(job.done)
+	if s.run().Err() != nil {
+		return
+	}
+	job.step()
+}
+
+func (s *sink) noteUser(channelID, messageID, author string) {
+	ref := msgRef{ch: channelID, id: messageID, author: author}
+	s.submit(func() {
+		s.lastUser = ref
+	})
 }
 
 func (s *sink) ack(ctx context.Context, channelID, messageID, author string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	ref := msgRef{ch: channelID, id: messageID, author: author}
-	s.lastUser = ref
-	if messageID == "" || s.acked == ref {
-		return
-	}
-	s.addAck(ctx, ref)
+	s.submit(func() {
+		s.lastUser = ref
+		if messageID == "" || s.acked == ref {
+			return
+		}
+		s.addAck(ctx, ref)
+	})
 }
 
 func (s *sink) addAck(ctx context.Context, ref msgRef) {
@@ -120,16 +167,21 @@ func (s *sink) addAck(ctx context.Context, ref msgRef) {
 }
 
 func (s *sink) fail(ctx context.Context, reason string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.submit(func() {
+		s.applyFail(ctx, reason)
+	})
+}
+
+func (s *sink) applyFail(ctx context.Context, reason string) {
 	if s.pv != nil {
 		s.pv.flush(true)
 		s.pv = nil
 	}
 	channel := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
+		failed := s.acked
 		s.clearAck(ctx, channel)
-		if err := s.rc.React(ctx, channel, s.acked.id, failEmoji); err != nil {
+		if err := s.rc.React(ctx, channel, failed.id, failEmoji); err != nil {
 			s.log.Warn("add failure reaction failed", "err", err)
 		}
 		s.acked = msgRef{}
@@ -141,9 +193,12 @@ func (s *sink) fail(ctx context.Context, reason string) {
 }
 
 func (s *sink) handle(event contracts.Event) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ctx := s.run()
+	s.submit(func() {
+		s.apply(s.run(), event)
+	})
+}
+
+func (s *sink) apply(ctx context.Context, event contracts.Event) {
 	switch event.T {
 	case "human":
 		s.onHuman(ctx)
