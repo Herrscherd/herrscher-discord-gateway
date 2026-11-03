@@ -117,7 +117,7 @@ func (s *sink) submit(ctx context.Context, kind string, step func()) error {
 	s.draining = true
 	s.mu.Unlock()
 	if leads && s.drain(ctx, job) {
-		return ctx.Err()
+		return s.stoppedOutcome(ctx, job)
 	}
 	return s.await(ctx, job)
 }
@@ -142,7 +142,7 @@ func (s *sink) await(ctx context.Context, job *sinkJob) error {
 				return nil
 			}
 			if s.drain(ctx, job) {
-				return ctx.Err()
+				return s.stoppedOutcome(ctx, job)
 			}
 		case <-ctx.Done():
 			if s.leave(job) {
@@ -151,6 +151,16 @@ func (s *sink) await(ctx context.Context, job *sinkJob) error {
 			return ctx.Err()
 		}
 	}
+}
+
+func (s *sink) stoppedOutcome(ctx context.Context, job *sinkJob) error {
+	s.mu.Lock()
+	finished := job.finished
+	s.mu.Unlock()
+	if finished {
+		return nil
+	}
+	return ctx.Err()
 }
 
 func (s *sink) leave(job *sinkJob) bool {
@@ -216,6 +226,7 @@ func (s *sink) handOff() {
 			s.abort()
 		}
 	}()
+	executed := 0
 	for {
 		s.mu.Lock()
 		if len(s.queue) == 0 {
@@ -232,9 +243,16 @@ func (s *sink) handOff() {
 			clean = true
 			return
 		}
+		if executed == sinkDrainBudget {
+			s.draining = false
+			s.mu.Unlock()
+			clean = true
+			return
+		}
 		s.pop()
 		s.mu.Unlock()
 		s.execute(head)
+		executed++
 	}
 }
 

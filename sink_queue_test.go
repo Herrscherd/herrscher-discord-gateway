@@ -145,36 +145,36 @@ func TestSinkKeepsEachProducersOrderUnderConcurrentSubmits(t *testing.T) {
 }
 
 func TestSinkWaiterLeavesWhenItsContextEndsDuringARenderCall(t *testing.T) {
-	g := newGatedRender()
-	s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
-	leader := make(chan struct{})
-	go func() {
-		defer close(leader)
-		s.fail(context.Background(), "a")
-	}()
-	<-g.entered
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		g := newGatedRender()
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		var wg sync.WaitGroup
+		wg.Go(func() { s.fail(context.Background(), "a") })
+		synctest.Wait()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	waiter := make(chan error, 1)
-	go func() {
-		waiter <- s.submit(ctx, "late", func() { g.gate("late") })
-	}()
-	select {
-	case err := <-waiter:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("submit returned %v, want context.Canceled", err)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		waiter := make(chan error, 1)
+		go func() {
+			waiter <- s.submit(ctx, "late", func() { g.gate("late") })
+		}()
+		select {
+		case err := <-waiter:
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("submit returned %v, want context.Canceled", err)
+			}
+		case <-time.After(sinkBubbleBound):
+			t.Fatal("waiter still blocked behind a render call after its context ended")
 		}
-	case <-time.After(sinkBubbleBound):
-		t.Fatal("waiter still blocked behind a render call after its context ended")
-	}
 
-	close(g.release)
-	<-leader
-	want := []string{"post:" + failEmoji + " a", "late"}
-	if !slices.Equal(g.calls, want) {
-		t.Fatalf("render calls = %q, want %q: a step whose waiter gave up must still run, in order", g.calls, want)
-	}
+		close(g.release)
+		wg.Wait()
+		want := []string{"post:" + failEmoji + " a", "late"}
+		if !slices.Equal(g.calls, want) {
+			t.Fatalf("render calls = %q, want %q: a step whose waiter gave up must still run, in order", g.calls, want)
+		}
+	})
 }
 
 func TestSinkCancelledNoteDoesNotHideTheNextHumanAck(t *testing.T) {
@@ -288,8 +288,8 @@ func TestSinkHandsOverWhenItsContextEndsBetweenSteps(t *testing.T) {
 		close(release)
 		wg.Wait()
 
-		if !errors.Is(leaderErr, context.Canceled) {
-			t.Errorf("leader returned %v, want context.Canceled", leaderErr)
+		if leaderErr != nil {
+			t.Errorf("leader returned %v, want nil: its own step already ran", leaderErr)
 		}
 		if want := []int{0, 1}; !slices.Equal(order, want) {
 			t.Fatalf("steps ran in order %v, want %v", order, want)
@@ -451,8 +451,8 @@ func TestSinkHandOverRunsTheStepOfAWaiterThatGaveUp(t *testing.T) {
 		if !errors.Is(gaveUpErr, context.Canceled) {
 			t.Errorf("waiter returned %v, want context.Canceled", gaveUpErr)
 		}
-		if !errors.Is(leaderErr, context.Canceled) {
-			t.Errorf("leader returned %v, want context.Canceled", leaderErr)
+		if leaderErr != nil {
+			t.Errorf("leader returned %v, want nil: its own step already ran", leaderErr)
 		}
 		if lateErr != nil {
 			t.Errorf("submit after the hand-over returned %v", lateErr)
@@ -461,4 +461,98 @@ func TestSinkHandOverRunsTheStepOfAWaiterThatGaveUp(t *testing.T) {
 			t.Fatalf("steps ran in order %v, want %v: a waiter that gave up must not strand the drain", order, want)
 		}
 	})
+}
+
+func TestSinkPromotedWaiterThatGivesUpStillHandsOver(t *testing.T) {
+	for range 20 {
+		runSinkBubble(t, func(t *testing.T) {
+			t.Helper()
+			s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+			release := make(chan struct{})
+			var order []int
+			var wg sync.WaitGroup
+
+			leadCtx, cancelLead := context.WithCancel(context.Background())
+			waiterCtx, cancelWaiter := context.WithCancel(context.Background())
+			wg.Go(func() {
+				if err := s.submit(leadCtx, "lead", func() {
+					<-release
+					order = append(order, 0)
+					cancelWaiter()
+					cancelLead()
+				}); err != nil {
+					t.Errorf("lead submit: %v", err)
+				}
+			})
+			synctest.Wait()
+			wg.Go(func() {
+				if err := s.submit(waiterCtx, "waiter", func() { order = append(order, 1) }); err != nil && !errors.Is(err, context.Canceled) {
+					t.Errorf("waiter submit: %v", err)
+				}
+			})
+			synctest.Wait()
+
+			close(release)
+			wg.Wait()
+
+			if want := []int{0, 1}; !slices.Equal(order, want) {
+				t.Fatalf("steps ran in order %v, want %v: a promoted waiter that gave up must still run its step", order, want)
+			}
+		})
+	}
+}
+
+func TestSinkHandOffStopsAtItsBudgetAndLeavesTheTailForTheNextSubmit(t *testing.T) {
+	runSinkBubble(t, func(t *testing.T) {
+		t.Helper()
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		release := make(chan struct{})
+		var order []int
+		var wg sync.WaitGroup
+
+		leadCtx, cancelLead := context.WithCancel(context.Background())
+		wg.Go(func() {
+			if err := s.submit(leadCtx, "lead", func() {
+				<-release
+				order = append(order, 0)
+			}); err != nil {
+				t.Errorf("lead submit: %v", err)
+			}
+		})
+		synctest.Wait()
+
+		const abandoned = sinkDrainBudget + 4
+		submitAbandoned(t, s, abandoned, &order)
+
+		cancelLead()
+		close(release)
+		wg.Wait()
+		if got := len(order); got != 1+sinkDrainBudget {
+			t.Fatalf("steps run when the lead handed off = %d, want %d: handOff must honour its budget", got, 1+sinkDrainBudget)
+		}
+
+		if err := s.submit(context.Background(), "next", func() { order = append(order, 99) }); err != nil {
+			t.Fatalf("next submit returned %v", err)
+		}
+		want := make([]int, 0, abandoned+2)
+		for i := range abandoned + 1 {
+			want = append(want, i)
+		}
+		want = append(want, 99)
+		if !slices.Equal(order, want) {
+			t.Fatalf("steps ran in order %v, want %v", order, want)
+		}
+	})
+}
+
+func submitAbandoned(t *testing.T, s *sink, n int, order *[]int) {
+	t.Helper()
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	for i := 1; i <= n; i++ {
+		step := i
+		if err := s.submit(gone, "gone", func() { *order = append(*order, step) }); !errors.Is(err, context.Canceled) {
+			t.Fatalf("abandoned submit returned %v, want context.Canceled", err)
+		}
+	}
 }
