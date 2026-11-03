@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Herrscherd/dctl"
 	"github.com/coder/websocket"
@@ -227,6 +228,28 @@ func TestStartReturnsOnlyAfterCommandSyncFinishes(t *testing.T) {
 		case <-finished:
 		default:
 			t.Fatal("start returned while the command sync was still running")
+		}
+	}
+}
+
+func TestStopWaitsForHeartbeatLoopToExit(t *testing.T) {
+	for range lifetimeRounds {
+		w := newWS("t", testLog(), nil, nil, nil)
+		beats := 0
+		ticked := make(chan struct{}, 1)
+		w.beat = func(context.Context, *websocket.Conn) error {
+			beats++
+			select {
+			case ticked <- struct{}{}:
+			default:
+			}
+			return nil
+		}
+		stop := w.startHeartbeat(context.Background(), nil, time.Nanosecond)
+		<-ticked
+		stop()
+		if beats == 0 {
+			t.Fatal("the heartbeat never ran")
 		}
 	}
 }
