@@ -50,9 +50,9 @@ const (
 )
 
 const (
-	refusedReason    = "comment refused (decision 1): only the docs of exported identifiers, the known //go: directives and example outputs are allowed"
-	nolintReason     = "//nolint is refused (decision 4): fix the code, or exclude the lint by path and text in .golangci.yml"
-	unreadableReason = "not checked (decision 1): only regular files and directories are read, so a symbolic link or special file is refused"
+	refusedReason     = "comment refused (decision 1): only the docs of exported identifiers, the known //go: directives and example outputs are allowed"
+	suppressionReason = "lint suppression directives are refused (decision 4): fix the code, or exclude the lint by path and text in .golangci.yml"
+	unreadableReason  = "not checked (decision 1): only regular files and directories are read, so a symbolic link or special file is refused"
 )
 
 type finding struct {

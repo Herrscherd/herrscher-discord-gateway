@@ -22,8 +22,8 @@ func strayComments(files *token.FileSet, path string, file *ast.File, namedByAGe
 	directory := filepath.Dir(path)
 	var found []finding
 	for _, group := range file.Comments {
-		if nolints := nolintDirectives(files, group); len(nolints) > 0 {
-			found = append(found, nolints...)
+		if suppressions := suppressionDirectives(files, group); len(suppressions) > 0 {
+			found = append(found, suppressions...)
 			continue
 		}
 		switch {
@@ -40,19 +40,29 @@ func strayComments(files *token.FileSet, path string, file *ast.File, namedByAGe
 	return found
 }
 
-func nolintDirectives(files *token.FileSet, group *ast.CommentGroup) []finding {
+func suppressionDirectives(files *token.FileSet, group *ast.CommentGroup) []finding {
 	var found []finding
 	for _, line := range group.List {
-		if isNolintDirective(line.Text) {
-			found = append(found, at(files, line.Slash, nolintReason))
+		if isSuppressionDirective(line.Text) {
+			found = append(found, at(files, line.Slash, suppressionReason))
 		}
 	}
 	return found
 }
 
-func isNolintDirective(text string) bool {
-	body, isLineComment := strings.CutPrefix(text, "//")
-	return isLineComment && strings.HasPrefix(strings.TrimLeftFunc(body, unicode.IsSpace), "nolint")
+func isSuppressionDirective(text string) bool {
+	body, found := strings.CutPrefix(text, "//")
+	if !found {
+		body, found = strings.CutPrefix(text, "/*")
+	}
+	if !found {
+		return false
+	}
+	body = strings.TrimLeftFunc(body, unicode.IsSpace)
+	prefixes := []string{"nolint", "lint:ignore", "lint:file-ignore"}
+	return slices.ContainsFunc(prefixes, func(prefix string) bool {
+		return strings.HasPrefix(body, prefix)
+	})
 }
 
 func strayDirectiveLines(files *token.FileSet, directory string, group *ast.CommentGroup) []finding {
