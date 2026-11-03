@@ -15,12 +15,12 @@ type slashRuntime struct {
 
 func startSlashRuntime(parent context.Context, handler *slash) *slashRuntime {
 	ctx, cancel := context.WithCancelCause(parent)
-	runtime := &slashRuntime{cancel: cancel, done: make(chan struct{})}
+	running := &slashRuntime{cancel: cancel, done: make(chan struct{})}
 	go func() {
-		defer close(runtime.done)
+		defer close(running.done)
 		handler.start(ctx)
 	}()
-	return runtime
+	return running
 }
 
 func (r *slashRuntime) stop(ctx context.Context) error {
