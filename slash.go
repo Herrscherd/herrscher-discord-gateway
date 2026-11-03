@@ -219,7 +219,7 @@ func (s *slash) handleAllow(ctx context.Context, interaction dctl.Interaction) (
 	case "remove":
 		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("<@%s> retiré de la liste", user)))
 	case "list":
-		s.respond(ctx, interaction, listUsers("command allowlist", s.allow.ListGlobal()))
+		s.respond(ctx, interaction, listUsers("liste d'autorisation globale", s.allow.ListGlobal()))
 	}
 	return dctl.Response{}, nil
 }
@@ -438,7 +438,7 @@ func valStr(v any) string {
 
 func listUsers(label string, users []string) string {
 	if len(users) == 0 {
-		return label + ": empty (everyone allowed)"
+		return label + " : vide (tout le monde est autorisé)"
 	}
 	mentions := make([]string, 0, len(users))
 	for _, u := range users {

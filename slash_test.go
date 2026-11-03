@@ -77,7 +77,7 @@ func TestValStr(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
-	if got := listUsers("allowlist", nil); got != "allowlist: empty (everyone allowed)" {
+	if got := listUsers("allowlist", nil); got != "allowlist : vide (tout le monde est autorisé)" {
 		t.Fatalf("empty list = %q", got)
 	}
 	if got := listUsers("allowlist", []string{"a", "b"}); got != "allowlist: <@a>, <@b>" {
