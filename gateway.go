@@ -31,6 +31,7 @@ type client interface {
 var (
 	_ contracts.Gateway                = (*Gateway)(nil)
 	_ contracts.SessionControlReceiver = (*Gateway)(nil)
+	_ contracts.GatewayCloser          = (*Gateway)(nil)
 	_ contracts.EventSink              = (*Gateway)(nil)
 	_ contracts.RoutedEventSink        = (*Gateway)(nil)
 	_ contracts.MessageEditor          = (*Gateway)(nil)
