@@ -171,13 +171,42 @@ func TestNolintIsRefusedWhereverItStands(t *testing.T) {
 	for _, path := range []string{"sample.go", "sample_test.go"} {
 		var lines []int
 		for _, item := range findings(t, path, nolints, false) {
-			if item.reason != nolintReason {
-				t.Fatalf("%s:%d reason %q, want %q", path, item.position.Line, item.reason, nolintReason)
+			if item.reason != suppressionReason {
+				t.Fatalf("%s:%d reason %q, want %q", path, item.position.Line, item.reason, suppressionReason)
 			}
 			lines = append(lines, item.position.Line)
 		}
 		if want := []int{4, 7, 12, 16}; !slices.Equal(lines, want) {
 			t.Fatalf("%s: nolint directives on lines %v, want %v", path, lines, want)
 		}
+	}
+}
+
+func TestEveryLintSuppressionFormIsRefused(t *testing.T) {
+	t.Parallel()
+	for _, form := range []struct{ name, directive string }{
+		{"line nolint", "//nolint:gosec"},
+		{"bare line nolint", "//nolint"},
+		{"line nolint with a space", "// nolint:revive"},
+		{"block nolint", "/* nolint:gosec */"},
+		{"multi-line block nolint", "/*\nnolint:gosec\n*/"},
+		{"lint:ignore", "//lint:ignore SA1019 the API is kept"},
+		{"lint:file-ignore", "//lint:file-ignore U1000 generated fixtures"},
+	} {
+		t.Run(form.name, func(t *testing.T) {
+			t.Parallel()
+			items := findings(t, "sample.go", "package sample\n\n"+form.directive+"\nfunc Parse() {}\n", false)
+			if len(items) != 1 || items[0].reason != suppressionReason || items[0].position.Line != 3 {
+				t.Fatalf("findings %v, want one suppression refusal on line 3", items)
+			}
+		})
+	}
+}
+
+func TestProseMentioningNolintIsNotADirective(t *testing.T) {
+	t.Parallel()
+	const prose = "package sample\n\n// Parse explains that the word nolint is only prose here.\nfunc Parse() {}\n"
+	if items := findings(t, "sample.go", prose, false); len(items) != 0 {
+		t.Fatalf("findings %v, want none", items)
 	}
 }
