@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -162,25 +163,76 @@ func TestBindStoreRefusesWritesOnUnreadableFile(t *testing.T) {
 	}
 }
 
-func TestBindStoreWritesNeverOverlap(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "router.json")
-	s := newBindStore(path, testLog())
-	var inFlight atomic.Int32
-	var overlapped atomic.Bool
-	var mu sync.Mutex
-	var last []byte
-	s.write = func(_ string, data []byte) error {
-		if inFlight.Add(1) > 1 {
-			overlapped.Store(true)
+func recordedChannels(s *bindStore) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.Channels)
+}
+
+type writeGate struct {
+	s           *bindStore
+	channels    int
+	inFlight    atomic.Int32
+	maxInFlight atomic.Int32
+	entered     chan struct{}
+	release     chan struct{}
+	mu          sync.Mutex
+	last        []byte
+}
+
+func (g *writeGate) write(_ string, data []byte) error {
+	g.markEntered()
+	g.entered <- struct{}{}
+	g.awaitRecorded()
+	<-g.release
+	g.inFlight.Add(-1)
+	g.mu.Lock()
+	g.last = data
+	g.mu.Unlock()
+	return nil
+}
+
+func (g *writeGate) markEntered() {
+	n := g.inFlight.Add(1)
+	for {
+		m := g.maxInFlight.Load()
+		if n <= m || g.maxInFlight.CompareAndSwap(m, n) {
+			return
 		}
-		time.Sleep(time.Millisecond)
-		inFlight.Add(-1)
-		mu.Lock()
-		last = data
-		mu.Unlock()
-		return nil
 	}
+}
+
+func (g *writeGate) awaitRecorded() {
+	for range 10000 {
+		if recordedChannels(g.s) == g.channels {
+			return
+		}
+		runtime.Gosched()
+	}
+}
+
+func (g *writeGate) releaseEach(t *testing.T) {
+	t.Helper()
+	for range g.channels {
+		select {
+		case <-g.entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("a snapshot write never started")
+		}
+		g.release <- struct{}{}
+	}
+}
+
+func TestBindStoreWritesNeverOverlap(t *testing.T) {
 	const channels = 50
+	s := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	gate := &writeGate{
+		s:        s,
+		channels: channels,
+		entered:  make(chan struct{}, channels),
+		release:  make(chan struct{}),
+	}
+	s.write = gate.write
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range channels {
@@ -194,14 +246,15 @@ func TestBindStoreWritesNeverOverlap(t *testing.T) {
 		}()
 	}
 	close(start)
+	gate.releaseEach(t)
 	wg.Wait()
-	if overlapped.Load() {
-		t.Fatal("two snapshots were written at the same time")
+	if n := gate.maxInFlight.Load(); n > 1 {
+		t.Fatalf("%d snapshots were written at the same time", n)
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	gate.mu.Lock()
+	defer gate.mu.Unlock()
 	for i := range channels {
-		if !strings.Contains(string(last), fmt.Sprintf("\"c%d\"", i)) {
+		if !strings.Contains(string(gate.last), fmt.Sprintf("\"c%d\"", i)) {
 			t.Fatalf("the last snapshot misses c%d, so it is older than the in-memory state", i)
 		}
 	}
