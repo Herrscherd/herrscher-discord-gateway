@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -378,11 +379,14 @@ const (
 )
 
 func (s *slash) saveNote(err error, store, ok string) string {
-	if err != nil {
-		s.log.Warn("store save failed", "store", store, "err", err)
-		return ok + " (attention : non sauvegardé, perdu au prochain lancement)"
+	if err == nil {
+		return ok
 	}
-	return ok
+	s.log.Warn("store save failed", "store", store, "err", err)
+	if errors.Is(err, errStoreLocked) {
+		return ok + " (attention : non sauvegardé, le fichier est illisible, aucun changement ne sera retenu tant qu'il n'est pas réparé)"
+	}
+	return ok + " (attention : non sauvegardé, perdu au prochain lancement)"
 }
 
 func route(data dctl.InteractionData) ([]string, []dctl.InteractionOption) {

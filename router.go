@@ -248,60 +248,6 @@ func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
 	return opts
 }
 
-func (r *router) place(ctx context.Context, msg messageCreate) job {
-	task := r.conversation(ctx, msg)
-	chatType := chatChannel
-	switch {
-	case msg.direct():
-		chatType = chatDM
-	case task.thread:
-		chatType = chatThread
-	}
-	task.slot = r.cfg.scope.slot(chatType, task.conv, msg.Author.ID)
-	task.shared = r.cfg.scope.multiUser(chatType)
-	return task
-}
-
-func (r *router) conversation(ctx context.Context, msg messageCreate) job {
-	here := job{conv: msg.ChannelID, parent: msg.ChannelID}
-	if r.binds.IsThread(msg.ChannelID) {
-		here.thread = true
-		return here
-	}
-	if r.binds.Mode(msg.ChannelID) == supportMode {
-		threadID, err := r.c.StartThread(ctx, msg.ChannelID, msg.ID, threadName(msg.Content))
-		if err == nil && threadID != "" {
-			r.adoptThread(ctx, msg.ChannelID, threadID)
-			return job{conv: threadID, thread: true, parent: msg.ChannelID}
-		}
-		r.log.Warn("support thread failed", "channel", msg.ChannelID, "err", err)
-		r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois.")
-		return here
-	}
-	if !wantsThread(msg.Content) {
-		return here
-	}
-	threadID, err := r.c.CreatePrivateThread(ctx, msg.ChannelID, threadName(msg.Content))
-	if err == nil && threadID != "" {
-		if err = r.c.AddThreadMember(ctx, threadID, msg.Author.ID); err == nil {
-			r.adoptThread(ctx, msg.ChannelID, threadID)
-			r.post(ctx, msg.ChannelID, "je continue en privé dans <#"+threadID+">")
-			return job{conv: threadID, thread: true, parent: msg.ChannelID}
-		}
-		r.log.Warn("private thread left without its member, deleting it", "channel", msg.ChannelID, "thread", threadID, "err", err)
-		r.deleteOrphanThread(ctx, msg.ChannelID, threadID)
-	}
-	r.log.Warn("private thread failed", "channel", msg.ChannelID, "err", err)
-	r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
-	return here
-}
-
-func (r *router) deleteOrphanThread(ctx context.Context, channel, thread string) {
-	if err := r.c.DeleteChannel(ctx, thread); err != nil {
-		r.log.Warn("orphan private thread could not be deleted, delete it by hand", "channel", channel, "thread", thread, "err", err)
-	}
-}
-
 func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 	r.log.Warn("bind store save failed", "conv", conv, "err", err)
 	reason := "le fichier des rattachements n'a pas pu être écrit, ce rattachement sera perdu à la prochaine relance"
@@ -309,38 +255,6 @@ func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 		reason = "le fichier des rattachements est illisible, aucun rattachement ne sera retenu tant qu'il n'est pas réparé"
 	}
 	r.sinks.at(conv).fail(ctx, reason)
-}
-
-func (r *router) adoptThread(ctx context.Context, channel, thread string) {
-	if err := r.binds.MarkThread(thread, channel); err != nil {
-		r.noteSaveFailure(ctx, channel, err)
-	}
-	level := r.binds.Level(channel)
-	if level == "" {
-		return
-	}
-	if err := r.binds.SetLevel(thread, level); err != nil {
-		r.noteSaveFailure(ctx, channel, err)
-	}
-}
-
-func (r *router) fork(ctx context.Context, ctrl contracts.SessionControl, session string, msg messageCreate) bool {
-	if !wantsThread(msg.Content) || r.binds.IsThread(msg.ChannelID) {
-		return false
-	}
-	value, ok := repoOf(ctrl, session)
-	if !ok {
-		return false
-	}
-	task := r.place(ctx, msg)
-	if !task.thread {
-		return false
-	}
-	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
-	if failure := r.bind(ctx, ctrl, task, value, msg, true); failure != "" {
-		r.sinks.at(task.conv).fail(ctx, failure)
-	}
-	return true
 }
 
 func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
