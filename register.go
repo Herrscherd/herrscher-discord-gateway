@@ -108,7 +108,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
-	gateway.slash = newSlash(bot.Interactions(), bot.Components(), token, newAllowStore(allowPath, log), binds, log)
+	gateway.slash = newSlash(bot.Interactions(), bot.Components(), gatewayURL, token, newAllowStore(allowPath, log), binds, log)
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
