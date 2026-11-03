@@ -54,6 +54,7 @@ const (
 
 type ws struct {
 	url       string
+	beat      func(context.Context, *websocket.Conn) error
 	token     string
 	log       *slog.Logger
 	handle    func(context.Context, dctl.Interaction)
@@ -79,7 +80,9 @@ type gwPayload struct {
 }
 
 func newWS(token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	return &ws{url: gatewayURL, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+	socket := &ws{url: gatewayURL, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+	socket.beat = socket.sendHeartbeat
+	return socket
 }
 
 func (w *ws) run(ctx context.Context) {
@@ -286,7 +289,7 @@ func (w *ws) heartbeatLoop(ctx context.Context, conn *websocket.Conn, interval t
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := w.sendHeartbeat(ctx, conn); err != nil {
+			if err := w.beat(ctx, conn); err != nil {
 				w.closeSocket(conn, websocket.StatusInternalError, "heartbeat")
 				return
 			}
