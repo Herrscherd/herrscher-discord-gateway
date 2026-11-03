@@ -572,6 +572,22 @@ func TestThreadWithoutItsMemberIsDeleted(t *testing.T) {
 	}
 }
 
+func TestOrphanThreadSurvivesAFailedDelete(t *testing.T) {
+	r, ctrl, c := newTestRouter(t)
+	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+	c.memberErr = errors.New("forbidden")
+	c.deleteChanErr = errors.New("missing permission")
+
+	r.onMessage(context.Background(), ownerPing("dans un fil, herrscher"))
+
+	if !slices.Equal(c.deletedChannels, []string{"thread1"}) {
+		t.Fatalf("deleted channels = %v, want the delete attempted", c.deletedChannels)
+	}
+	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
+		t.Fatalf("spec = %+v, want the job to fall back to the channel after a failed delete", spec)
+	}
+}
+
 func TestRebindingInsideAThreadStaysInIt(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
@@ -842,15 +858,34 @@ func TestUndeliverableBufferedMessageIsReported(t *testing.T) {
 	}
 }
 
-func TestLockedBindStoreReportsInTheChannel(t *testing.T) {
-	r, ctrl, _, f := newTestRouterRendering(t)
-	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
-	r.onMessage(context.Background(), ownerPing("fix the login bug"))
-	r.binds.locked = fmt.Errorf("%w: corrupt", errStoreLocked)
+func TestBindSaveFailureReportsInTheChannel(t *testing.T) {
+	cases := map[string]struct {
+		breakStore func(*bindStore)
+		wantMsg    string
+	}{
+		"locked store": {
+			breakStore: func(b *bindStore) { b.locked = fmt.Errorf("%w: corrupt", errStoreLocked) },
+			wantMsg:    "illisible",
+		},
+		"write error": {
+			breakStore: func(b *bindStore) {
+				b.write = func(string, []byte) error { return errors.New("disk full") }
+			},
+			wantMsg: "pas pu être écrit",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			r, ctrl, _, f := newTestRouterRendering(t)
+			ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
+			r.onMessage(context.Background(), ownerPing("fix the login bug"))
+			tc.breakStore(r.binds)
 
-	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
+			r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	if len(f.posts) == 0 || !strings.Contains(f.posts[0], "illisible") {
-		t.Fatalf("the channel was not told the binding store is unreadable: posts=%q", f.posts)
+			if len(f.posts) == 0 || !strings.Contains(f.posts[0], tc.wantMsg) {
+				t.Fatalf("the channel was not told the save failed: posts=%q", f.posts)
+			}
+		})
 	}
 }

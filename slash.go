@@ -14,7 +14,6 @@ import (
 
 type slash struct {
 	log    *slog.Logger
-	token  string
 	ix     *dctl.Interactions
 	reg    *dctl.Registry
 	allow  *allowStore
@@ -22,16 +21,16 @@ type slash struct {
 	ctrl   contracts.SessionControl
 	comp   acker
 	router *router
-
-	gateway string
+	socket *ws
 }
 
 type acker interface {
 	Ack(ctx context.Context, id, token, content string) error
 }
 
-func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
-	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+func newSlash(ix *dctl.Interactions, comp acker, gatewayURL, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
+	handler := &slash{log: log, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+	handler.socket = newWS(gatewayURL, token, log, handler.onInteraction, handler.onMessage, handler.onGone)
 	handler.reg.
 		Add(commandSet(), handler.handleSet).
 		Add(commandSession(), handler.handleSession).
@@ -50,11 +49,7 @@ func (s *slash) start(ctx context.Context) {
 		defer close(syncDone)
 		s.sync(ctx)
 	}()
-	gateway := newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone)
-	if s.gateway != "" {
-		gateway.url = s.gateway
-	}
-	gateway.run(ctx)
+	s.socket.run(ctx)
 	<-syncDone
 }
 
@@ -328,7 +323,7 @@ func (s *slash) gate(ctx context.Context, interaction dctl.Interaction) bool {
 	if s.allow.Allowed(interaction.UserID()) {
 		return true
 	}
-	s.respond(ctx, interaction, "you are not allowed to run commands here")
+	s.respond(ctx, interaction, "tu n'es pas autorisé à utiliser le bot ici")
 	return false
 }
 

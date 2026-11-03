@@ -48,6 +48,7 @@ type fakeClient struct {
 	edited          []outEdit
 	deleted         []string
 	deletedChannels []string
+	deleteChanErr   error
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -140,7 +141,7 @@ func (f *fakeClient) DeleteMessage(_ context.Context, ch, id string) error {
 
 func (f *fakeClient) DeleteChannel(_ context.Context, id string) error {
 	f.deletedChannels = append(f.deletedChannels, id)
-	return nil
+	return f.deleteChanErr
 }
 
 var _ contracts.Gateway = (*Gateway)(nil)

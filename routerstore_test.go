@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestBindStoreRoundTrips(t *testing.T) {
@@ -173,7 +173,7 @@ func TestBindStoreWritesNeverOverlap(t *testing.T) {
 		if inFlight.Add(1) > 1 {
 			overlapped.Store(true)
 		}
-		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 		inFlight.Add(-1)
 		mu.Lock()
 		last = data
@@ -181,16 +181,19 @@ func TestBindStoreWritesNeverOverlap(t *testing.T) {
 		return nil
 	}
 	const channels = 50
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := range channels {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			<-start
 			if err := s.Bind(fmt.Sprintf("c%d", i), fmt.Sprintf("ch-c%d", i)); err != nil {
 				t.Error(err)
 			}
 		}()
 	}
+	close(start)
 	wg.Wait()
 	if overlapped.Load() {
 		t.Fatal("two snapshots were written at the same time")
