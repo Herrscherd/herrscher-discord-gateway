@@ -159,7 +159,9 @@ func TestBindStoreRefusesWritesOnUnreadableFile(t *testing.T) {
 
 func TestBindStoreWritesUnderWriteLock(t *testing.T) {
 	s := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
+	writes := 0
 	s.write = func(string, []byte) error {
+		writes++
 		if s.writeMu.TryLock() {
 			s.writeMu.Unlock()
 			t.Error("the snapshot was written without holding writeMu, so two writes could overlap")
@@ -168,5 +170,8 @@ func TestBindStoreWritesUnderWriteLock(t *testing.T) {
 	}
 	if err := s.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
+	}
+	if writes != 1 {
+		t.Fatalf("Bind wrote %d times, want exactly one write for the lock check to mean anything", writes)
 	}
 }

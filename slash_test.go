@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"slices"
@@ -366,5 +367,21 @@ func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
 				t.Fatalf("acked = %v, want the click acknowledged", ack.acked)
 			}
 		})
+	}
+}
+
+func TestSaveNoteSaysAnUnreadableFileRefusesChanges(t *testing.T) {
+	s := &slash{log: testLog()}
+	got := s.saveNote(fmt.Errorf("%w: corrupt", errStoreLocked), "allow", "ok")
+	if !strings.Contains(got, "illisible") || strings.Contains(got, "prochain lancement") {
+		t.Fatalf("saveNote = %q, want the unreadable-file refusal", got)
+	}
+}
+
+func TestSaveNoteSaysAFailedWriteIsLost(t *testing.T) {
+	s := &slash{log: testLog()}
+	got := s.saveNote(errors.New("disk full"), "allow", "ok")
+	if !strings.Contains(got, "perdu au prochain lancement") || strings.Contains(got, "illisible") {
+		t.Fatalf("saveNote = %q, want the lost-on-restart warning", got)
 	}
 }
