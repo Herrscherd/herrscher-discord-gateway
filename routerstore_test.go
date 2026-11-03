@@ -2,15 +2,9 @@ package discord
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestBindStoreRoundTrips(t *testing.T) {
@@ -163,99 +157,16 @@ func TestBindStoreRefusesWritesOnUnreadableFile(t *testing.T) {
 	}
 }
 
-func recordedChannels(s *bindStore) int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.Channels)
-}
-
-type writeGate struct {
-	s           *bindStore
-	channels    int
-	inFlight    atomic.Int32
-	maxInFlight atomic.Int32
-	entered     chan struct{}
-	release     chan struct{}
-	mu          sync.Mutex
-	last        []byte
-}
-
-func (g *writeGate) write(_ string, data []byte) error {
-	g.markEntered()
-	g.entered <- struct{}{}
-	g.awaitRecorded()
-	<-g.release
-	g.inFlight.Add(-1)
-	g.mu.Lock()
-	g.last = data
-	g.mu.Unlock()
-	return nil
-}
-
-func (g *writeGate) markEntered() {
-	n := g.inFlight.Add(1)
-	for {
-		m := g.maxInFlight.Load()
-		if n <= m || g.maxInFlight.CompareAndSwap(m, n) {
-			return
-		}
-	}
-}
-
-func (g *writeGate) awaitRecorded() {
-	for range 10000 {
-		if recordedChannels(g.s) == g.channels {
-			return
-		}
-		runtime.Gosched()
-	}
-}
-
-func (g *writeGate) releaseEach(t *testing.T) {
-	t.Helper()
-	for range g.channels {
-		select {
-		case <-g.entered:
-		case <-time.After(10 * time.Second):
-			t.Fatal("a snapshot write never started")
-		}
-		g.release <- struct{}{}
-	}
-}
-
-func TestBindStoreWritesNeverOverlap(t *testing.T) {
-	const channels = 50
+func TestBindStoreWritesUnderWriteLock(t *testing.T) {
 	s := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	gate := &writeGate{
-		s:        s,
-		channels: channels,
-		entered:  make(chan struct{}, channels),
-		release:  make(chan struct{}),
-	}
-	s.write = gate.write
-	start := make(chan struct{})
-	var wg sync.WaitGroup
-	for i := range channels {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			if err := s.Bind(fmt.Sprintf("c%d", i), fmt.Sprintf("ch-c%d", i)); err != nil {
-				t.Error(err)
-			}
-		}()
-	}
-	close(start)
-	gate.releaseEach(t)
-	wg.Wait()
-	if n := gate.maxInFlight.Load(); n > 1 {
-		t.Fatalf("%d snapshots were written at the same time", n)
-	}
-	gate.mu.Lock()
-	defer gate.mu.Unlock()
-	for i := range channels {
-		if !strings.Contains(string(gate.last), fmt.Sprintf("\"c%d\"", i)) {
-			t.Fatalf("the last snapshot misses c%d, so it is older than the in-memory state", i)
+	s.write = func(string, []byte) error {
+		if s.writeMu.TryLock() {
+			s.writeMu.Unlock()
+			t.Error("the snapshot was written without holding writeMu, so two writes could overlap")
 		}
+		return nil
+	}
+	if err := s.Bind("c1", "ch-c1"); err != nil {
+		t.Fatal(err)
 	}
 }

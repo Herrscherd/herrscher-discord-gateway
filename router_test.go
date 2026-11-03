@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -574,6 +575,8 @@ func TestThreadWithoutItsMemberIsDeleted(t *testing.T) {
 
 func TestOrphanThreadSurvivesAFailedDelete(t *testing.T) {
 	r, ctrl, c := newTestRouter(t)
+	var logs bytes.Buffer
+	r.log = bufferLog(&logs)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	c.memberErr = errors.New("forbidden")
 	c.deleteChanErr = errors.New("missing permission")
@@ -585,6 +588,9 @@ func TestOrphanThreadSurvivesAFailedDelete(t *testing.T) {
 	}
 	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
 		t.Fatalf("spec = %+v, want the job to fall back to the channel after a failed delete", spec)
+	}
+	if !strings.Contains(logs.String(), "orphan private thread could not be deleted") || !strings.Contains(logs.String(), "thread=thread1") {
+		t.Fatalf("logs = %q, want a warning that names the orphan thread", logs.String())
 	}
 }
 
