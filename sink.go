@@ -226,7 +226,6 @@ func (s *sink) handOff() {
 			s.abort()
 		}
 	}()
-	executed := 0
 	for {
 		s.mu.Lock()
 		if len(s.queue) == 0 {
@@ -243,16 +242,9 @@ func (s *sink) handOff() {
 			clean = true
 			return
 		}
-		if executed == sinkDrainBudget {
-			s.draining = false
-			s.mu.Unlock()
-			clean = true
-			return
-		}
 		s.pop()
 		s.mu.Unlock()
 		s.execute(head)
-		executed++
 	}
 }
 
