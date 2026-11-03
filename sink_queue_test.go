@@ -1,11 +1,16 @@
 package discord
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
@@ -54,41 +59,13 @@ func (g *gatedRender) Delete(_ context.Context, _, id string) error {
 	return nil
 }
 
-func TestSinkCallsTheRenderClientOutsideItsLock(t *testing.T) {
-	f := &fakeRender{channel: "c1"}
-	s := newSink(testRun(), f, "c1", staticLevel(levelFull), "42", true, testLog())
-	f.held = func() bool {
-		if s.mu.TryLock() {
-			s.mu.Unlock()
-			return false
-		}
-		return true
-	}
-
-	s.noteUser("c1", "m1", "42")
-	s.handle(contracts.Event{T: "human"})
-	s.handle(contracts.Event{T: "status", Text: "Read x"})
-	s.handle(contracts.Event{T: "reply", Text: "ok", Done: true, Cost: 0.1})
-	s.noteUser("c1", "m2", "42")
-	s.handle(contracts.Event{T: "human"})
-	s.fail(context.Background(), "boom")
-
-	if f.heldCalls != 0 {
-		t.Fatalf("render client calls made while the sink lock was held = %d, want 0", f.heldCalls)
-	}
-	if len(f.upserts) == 0 || len(f.posts) == 0 || len(f.reacted) == 0 || len(f.unreacted) == 0 || len(f.deleted) == 0 {
-		t.Fatalf("upserts=%d posts=%d reacted=%d unreacted=%d deleted=%d, want every render call exercised",
-			len(f.upserts), len(f.posts), len(f.reacted), len(f.unreacted), len(f.deleted))
-	}
-}
-
-func TestSinkKeepsConversationOrderUnderConcurrentEvents(t *testing.T) {
+func TestSinkRunsEventsInSubmissionOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		g := newGatedRender()
 		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
 		var wg sync.WaitGroup
 
-		s.noteUser("c1", "m1", "42")
+		s.noteUser(context.Background(), "c1", "m1", "42")
 		wg.Go(func() { s.handle(contracts.Event{T: "human"}) })
 		synctest.Wait()
 		wg.Go(func() { s.ack(context.Background(), "c1", "m2", "42") })
@@ -118,11 +95,82 @@ func TestSinkKeepsConversationOrderUnderConcurrentEvents(t *testing.T) {
 	})
 }
 
+type stamp struct{ producer, seq int }
+
+func TestSinkKeepsEachProducersOrderUnderConcurrentSubmits(t *testing.T) {
+	s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+	const producers, perProducer = 4, 50
+	var order []stamp
+	var wg sync.WaitGroup
+	for p := range producers {
+		wg.Go(func() {
+			for i := range perProducer {
+				if err := s.submit(context.Background(), "order", func() {
+					order = append(order, stamp{producer: p, seq: i})
+				}); err != nil {
+					t.Errorf("submit: %v", err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+
+	next := make([]int, producers)
+	for _, got := range order {
+		if got.seq != next[got.producer] {
+			t.Fatalf("producer %d ran step %d, want step %d next", got.producer, got.seq, next[got.producer])
+		}
+		next[got.producer]++
+	}
+	if len(order) != producers*perProducer {
+		t.Fatalf("steps run = %d, want %d", len(order), producers*perProducer)
+	}
+}
+
+func TestSinkWaiterLeavesWhenItsContextEndsDuringARenderCall(t *testing.T) {
+	g := newGatedRender()
+	s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+	leader := make(chan struct{})
+	go func() {
+		defer close(leader)
+		s.fail(context.Background(), "a")
+	}()
+	<-g.entered
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var lateRan bool
+	waiter := make(chan error, 1)
+	go func() {
+		waiter <- s.submit(ctx, "late", func() { lateRan = true })
+	}()
+	select {
+	case err := <-waiter:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("submit returned %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("waiter still blocked behind a render call after its context ended")
+	}
+
+	close(g.release)
+	<-leader
+	if lateRan {
+		t.Fatal("a step whose waiter gave up still ran")
+	}
+	want := []string{"post:" + failEmoji + " a"}
+	if !slices.Equal(g.calls, want) {
+		t.Fatalf("render calls = %q, want %q", g.calls, want)
+	}
+}
+
 func TestSinkDropsQueuedWorkOnceTheLifetimeEnds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		g := newGatedRender()
-		s := newSink(lifetimeFrom(ctx), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		var logs bytes.Buffer
+		log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		s := newSink(lifetimeFrom(ctx), g, "c1", staticLevel(levelSilent), "", false, log)
 		var wg sync.WaitGroup
 
 		wg.Go(func() { s.fail(context.Background(), "a") })
@@ -138,6 +186,96 @@ func TestSinkDropsQueuedWorkOnceTheLifetimeEnds(t *testing.T) {
 		want := []string{"post:" + failEmoji + " a"}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q: work queued after the lifetime ended must not reach the client", g.calls, want)
+		}
+		if dropped := strings.Count(logs.String(), "step=fail"); dropped != 2 {
+			t.Fatalf("dropped steps logged = %d, want 2 (b and c): %s", dropped, logs.String())
+		}
+	})
+}
+
+func budgetStep(i int, release, hold <-chan struct{}, order *[]int) func() {
+	return func() {
+		switch i {
+		case 0:
+			<-release
+		case sinkDrainBudget:
+			<-hold
+		}
+		*order = append(*order, i)
+	}
+}
+
+func TestSinkHandsTheDrainOverAfterItsBudget(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		release := make(chan struct{})
+		hold := make(chan struct{})
+		const jobs = sinkDrainBudget + 4
+		var order []int
+		var wg sync.WaitGroup
+		leaderDone := make(chan struct{})
+
+		wg.Go(func() {
+			s.dispatch(context.Background(), "job", budgetStep(0, release, hold, &order))
+			close(leaderDone)
+		})
+		synctest.Wait()
+		for i := 1; i < jobs; i++ {
+			wg.Go(func() { s.dispatch(context.Background(), "job", budgetStep(i, release, hold, &order)) })
+			synctest.Wait()
+		}
+
+		close(release)
+		<-leaderDone
+		close(hold)
+		wg.Wait()
+
+		want := make([]int, jobs)
+		for i := range want {
+			want[i] = i
+		}
+		if !slices.Equal(order, want) {
+			t.Fatalf("steps ran in order %v, want %v", order, want)
+		}
+	})
+}
+
+func TestSinkRecoversFromAPanickingStep(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		release := make(chan struct{})
+		var recovered any
+		var queuedRan, afterRan bool
+		var queuedErr error
+		var wg sync.WaitGroup
+
+		wg.Go(func() {
+			defer func() { recovered = recover() }()
+			s.dispatch(context.Background(), "panic", func() {
+				<-release
+				panic("step failed")
+			})
+		})
+		synctest.Wait()
+		wg.Go(func() {
+			queuedErr = s.submit(context.Background(), "queued", func() { queuedRan = true })
+		})
+		synctest.Wait()
+
+		close(release)
+		wg.Wait()
+		if recovered != "step failed" {
+			t.Errorf("recovered = %v, want the step's panic", recovered)
+		}
+		if queuedRan || queuedErr != nil {
+			t.Errorf("queued submit ran = %v, err = %v; want it released without running", queuedRan, queuedErr)
+		}
+
+		if err := s.submit(context.Background(), "after", func() { afterRan = true }); err != nil {
+			t.Fatalf("submit after the panic returned %v", err)
+		}
+		if !afterRan {
+			t.Fatal("a submit after the panic did not run its step")
 		}
 	})
 }

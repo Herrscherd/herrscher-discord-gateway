@@ -428,7 +428,7 @@ func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, sess
 	if !ctrl.Submit(session, inbound) {
 		return false
 	}
-	r.sinks.at(conv).noteUser(msg.ChannelID, msg.ID, msg.Author.ID)
+	r.sinks.at(conv).noteUser(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
 	return true
 }
 

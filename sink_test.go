@@ -37,19 +37,9 @@ type fakeRender struct {
 	statusID  string
 
 	postChans []string
-
-	held      func() bool
-	heldCalls int
-}
-
-func (f *fakeRender) observe() {
-	if f.held != nil && f.held() {
-		f.heldCalls++
-	}
 }
 
 func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string) (string, error) {
-	f.observe()
 	f.upserts = append(f.upserts, content)
 	if f.statusID == "" {
 		f.statusID = "status1"
@@ -58,26 +48,22 @@ func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string
 }
 
 func (f *fakeRender) Post(_ context.Context, ch, content string) error {
-	f.observe()
 	f.posts = append(f.posts, content)
 	f.postChans = append(f.postChans, ch)
 	return nil
 }
 
 func (f *fakeRender) React(_ context.Context, _, _, emoji string) error {
-	f.observe()
 	f.reacted = append(f.reacted, emoji)
 	return nil
 }
 
 func (f *fakeRender) Unreact(_ context.Context, _, _, emoji string) error {
-	f.observe()
 	f.unreacted = append(f.unreacted, emoji)
 	return nil
 }
 
 func (f *fakeRender) Delete(_ context.Context, ch, id string) error {
-	f.observe()
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
@@ -127,7 +113,7 @@ func TestSinkLevelIsResolvedPerTurn(t *testing.T) {
 func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "", false, testLog())
-	s.noteUser("c1", "u1", "42")
+	s.noteUser(context.Background(), "c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Bash go test ./..."})
@@ -148,7 +134,7 @@ func TestSilentLevelPostsOnlyTheAnswer(t *testing.T) {
 func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "", false, testLog())
-	s.noteUser("c1", "u1", "42")
+	s.noteUser(context.Background(), "c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "abandoned"})
@@ -202,8 +188,8 @@ func TestSinksRenderPerConversationIndependently(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
 
-	set.at("chanA").noteUser("chanA", "mA", "42")
-	set.at("chanB").noteUser("chanB", "mB", "42")
+	set.at("chanA").noteUser(context.Background(), "chanA", "mA", "42")
+	set.at("chanB").noteUser(context.Background(), "chanB", "mB", "42")
 	set.at("chanA").handle(contracts.Event{T: "human"})
 	set.at("chanB").handle(contracts.Event{T: "human"})
 	set.at("chanA").handle(contracts.Event{T: "reply", Text: "answer A", Done: true})
@@ -238,7 +224,7 @@ func TestGatewayEmitToRoutesByConversation(t *testing.T) {
 func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1", "42")
+	s.noteUser(context.Background(), "c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human", Who: "alice", Text: "hi"})
 	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
@@ -262,7 +248,7 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 func TestSinkAbandonedClearsAck(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1", "42")
+	s.noteUser(context.Background(), "c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "status", Text: "Edit y"})
@@ -297,7 +283,7 @@ func TestSinkChunksLongReply(t *testing.T) {
 func TestSinkResetDiscardsAndContinues(t *testing.T) {
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
-	s.noteUser("c1", "u1", "42")
+	s.noteUser(context.Background(), "c1", "u1", "42")
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "reset"})
