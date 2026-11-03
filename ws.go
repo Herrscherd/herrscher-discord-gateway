@@ -54,7 +54,6 @@ const (
 
 type ws struct {
 	url       string
-	beat      func(context.Context, *websocket.Conn) error
 	token     string
 	log       *slog.Logger
 	handle    func(context.Context, dctl.Interaction)
@@ -80,9 +79,7 @@ type gwPayload struct {
 }
 
 func newWS(token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	socket := &ws{url: gatewayURL, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
-	socket.beat = socket.sendHeartbeat
-	return socket
+	return &ws{url: gatewayURL, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
 }
 
 func (w *ws) run(ctx context.Context) {
@@ -154,7 +151,9 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 	connected()
 
 	w.acked.Store(true)
-	stopHeartbeat := w.startHeartbeat(ctx, conn, time.Duration(handshake.HeartbeatInterval)*time.Millisecond)
+	stopHeartbeat := w.startHeartbeat(ctx, time.Duration(handshake.HeartbeatInterval)*time.Millisecond, func(beatCtx context.Context) error {
+		return w.beatOrClose(beatCtx, conn)
+	})
 	defer stopHeartbeat()
 
 	for {
@@ -265,12 +264,12 @@ func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 	})
 }
 
-func (w *ws) startHeartbeat(ctx context.Context, conn *websocket.Conn, interval time.Duration) func() {
+func (w *ws) startHeartbeat(ctx context.Context, interval time.Duration, beat func(context.Context) error) func() {
 	hbCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		w.heartbeatLoop(hbCtx, conn, interval)
+		heartbeatLoop(hbCtx, interval, beat)
 	}()
 	return func() {
 		cancel()
@@ -278,7 +277,7 @@ func (w *ws) startHeartbeat(ctx context.Context, conn *websocket.Conn, interval 
 	}
 }
 
-func (w *ws) heartbeatLoop(ctx context.Context, conn *websocket.Conn, interval time.Duration) {
+func heartbeatLoop(ctx context.Context, interval time.Duration, beat func(context.Context) error) {
 	if interval <= 0 {
 		return
 	}
@@ -289,12 +288,19 @@ func (w *ws) heartbeatLoop(ctx context.Context, conn *websocket.Conn, interval t
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := w.beat(ctx, conn); err != nil {
-				w.closeSocket(conn, websocket.StatusInternalError, "heartbeat")
+			if err := beat(ctx); err != nil {
 				return
 			}
 		}
 	}
+}
+
+func (w *ws) beatOrClose(ctx context.Context, conn *websocket.Conn) error {
+	if err := w.sendHeartbeat(ctx, conn); err != nil {
+		w.closeSocket(conn, websocket.StatusInternalError, "heartbeat")
+		return err
+	}
+	return nil
 }
 
 func (w *ws) sendHeartbeat(ctx context.Context, conn *websocket.Conn) error {

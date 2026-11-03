@@ -2,8 +2,13 @@ package discord
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -154,5 +159,47 @@ func TestBindStoreRefusesWritesOnUnreadableFile(t *testing.T) {
 	s := newBindStore(t.TempDir(), testLog())
 	if err := s.Bind("c1", "ch-c1"); !errors.Is(err, errStoreLocked) {
 		t.Fatalf("an unreadable bind store must refuse changes, got %v", err)
+	}
+}
+
+func TestBindStoreWritesNeverOverlap(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "router.json")
+	s := newBindStore(path, testLog())
+	var inFlight atomic.Int32
+	var overlapped atomic.Bool
+	var mu sync.Mutex
+	var last []byte
+	s.write = func(_ string, data []byte) error {
+		if inFlight.Add(1) > 1 {
+			overlapped.Store(true)
+		}
+		runtime.Gosched()
+		inFlight.Add(-1)
+		mu.Lock()
+		last = data
+		mu.Unlock()
+		return nil
+	}
+	const channels = 50
+	var wg sync.WaitGroup
+	for i := range channels {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.Bind(fmt.Sprintf("c%d", i), fmt.Sprintf("ch-c%d", i)); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if overlapped.Load() {
+		t.Fatal("two snapshots were written at the same time")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range channels {
+		if !strings.Contains(string(last), fmt.Sprintf("\"c%d\"", i)) {
+			t.Fatalf("the last snapshot misses c%d, so it is older than the in-memory state", i)
+		}
 	}
 }

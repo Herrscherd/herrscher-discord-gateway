@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -141,11 +142,7 @@ func fakeGateway(t *testing.T, script func(context.Context, *websocket.Conn)) st
 			t.Error(err)
 			return
 		}
-		defer func() {
-			if err := conn.CloseNow(); err != nil {
-				t.Error(err)
-			}
-		}()
+		defer conn.CloseNow()
 		script(r.Context(), conn)
 	}))
 	t.Cleanup(srv.Close)
@@ -204,24 +201,20 @@ func TestRunReturnsOnlyAfterInFlightHandlersFinish(t *testing.T) {
 
 func TestStartReturnsOnlyAfterCommandSyncFinishes(t *testing.T) {
 	for range lifetimeRounds {
-		finished := make(chan struct{})
-		s := &slash{
-			log:     testLog(),
-			token:   "t",
-			gateway: "ws://127.0.0.1:1",
-			syncCommands: func(ctx context.Context) error {
-				<-ctx.Done()
-				runtime.Gosched()
-				close(finished)
-				return nil
-			},
-		}
+		entered, finished := make(chan struct{}), make(chan struct{})
+		client := dctl.New("t", "chan",
+			dctl.WithHTTPClient(&http.Client{Transport: blockingTransport{entered: entered, finished: finished}}),
+			dctl.WithGlobalCommands(),
+		)
+		s := newSlash(client.Interactions(), nil, "t", nil, nil, testLog())
+		s.gateway = fakeGateway(t, serveOneInteraction)
 		ctx, cancel := context.WithCancel(context.Background())
 		startDone := make(chan struct{})
 		go func() {
 			defer close(startDone)
 			s.start(ctx)
 		}()
+		<-entered
 		cancel()
 		<-startDone
 		select {
@@ -232,24 +225,36 @@ func TestStartReturnsOnlyAfterCommandSyncFinishes(t *testing.T) {
 	}
 }
 
+type blockingTransport struct {
+	entered  chan struct{}
+	finished chan struct{}
+}
+
+func (b blockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	close(b.entered)
+	<-req.Context().Done()
+	close(b.finished)
+	return nil, req.Context().Err()
+}
+
 func TestStopWaitsForHeartbeatLoopToExit(t *testing.T) {
 	for range lifetimeRounds {
 		w := newWS("t", testLog(), nil, nil, nil)
-		beats := 0
+		var stopped atomic.Bool
 		ticked := make(chan struct{}, 1)
-		w.beat = func(context.Context, *websocket.Conn) error {
-			beats++
+		beat := func(context.Context) error {
+			if stopped.Load() {
+				t.Error("the heartbeat ran after stop returned")
+			}
 			select {
 			case ticked <- struct{}{}:
 			default:
 			}
 			return nil
 		}
-		stop := w.startHeartbeat(context.Background(), nil, time.Nanosecond)
+		stop := w.startHeartbeat(context.Background(), time.Nanosecond, beat)
 		<-ticked
 		stop()
-		if beats == 0 {
-			t.Fatal("the heartbeat never ran")
-		}
+		stopped.Store(true)
 	}
 }

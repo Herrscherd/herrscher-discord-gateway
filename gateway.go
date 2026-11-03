@@ -24,6 +24,7 @@ type client interface {
 	StartThread(ctx context.Context, channelID, messageID, name string) (string, error)
 	EditMessage(ctx context.Context, channelID, messageID, content string) (*dctl.Message, error)
 	DeleteMessage(ctx context.Context, channelID, messageID string) error
+	DeleteChannel(ctx context.Context, channelID string) error
 }
 
 var (
@@ -216,6 +217,10 @@ func (d discordClient) EditMessage(ctx context.Context, channelID, messageID, co
 
 func (d discordClient) DeleteMessage(ctx context.Context, channelID, messageID string) error {
 	return d.c.Messages().Delete(ctx, channelID, messageID)
+}
+
+func (d discordClient) DeleteChannel(ctx context.Context, channelID string) error {
+	return d.c.Channels().Delete(ctx, channelID)
 }
 
 func msgID(msg *dctl.Message) contracts.MessageID {

@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
+
+const undeliveredMessage = "je n'ai pas pu transmettre ton message à la session, renvoie-le"
 
 type routerConfig struct {
 	owner           string
@@ -136,7 +139,7 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 			return
 		}
 		if err := r.binds.Unbind(slot); err != nil {
-			r.log.Warn("unbind slot failed", "slot", slot, "err", err)
+			r.noteSaveFailure(ctx, msg.ChannelID, err)
 		}
 	}
 	r.ask(ctx, ctrl, msg)
@@ -204,8 +207,8 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 }
 
 func (r *router) bindOrFail(ctx context.Context, ctrl contracts.SessionControl, task job, value string, m messageCreate) {
-	if msg := r.bind(ctx, ctrl, task, value, m, true); msg != "" {
-		r.sinks.at(task.conv).fail(ctx, msg)
+	if failure := r.bind(ctx, ctrl, task, value, m, true); failure != "" {
+		r.sinks.at(task.conv).fail(ctx, failure)
 	}
 }
 
@@ -268,7 +271,7 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 	if r.binds.Mode(msg.ChannelID) == supportMode {
 		threadID, err := r.c.StartThread(ctx, msg.ChannelID, msg.ID, threadName(msg.Content))
 		if err == nil && threadID != "" {
-			r.adoptThread(msg.ChannelID, threadID)
+			r.adoptThread(ctx, msg.ChannelID, threadID)
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
 		r.log.Warn("support thread failed", "channel", msg.ChannelID, "err", err)
@@ -281,27 +284,43 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 	threadID, err := r.c.CreatePrivateThread(ctx, msg.ChannelID, threadName(msg.Content))
 	if err == nil && threadID != "" {
 		if err = r.c.AddThreadMember(ctx, threadID, msg.Author.ID); err == nil {
-			r.adoptThread(msg.ChannelID, threadID)
+			r.adoptThread(ctx, msg.ChannelID, threadID)
 			r.post(ctx, msg.ChannelID, "je continue en privé dans <#"+threadID+">")
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
-		r.log.Warn("private thread left without its member, delete it by hand", "channel", msg.ChannelID, "thread", threadID, "err", err)
+		r.log.Warn("private thread left without its member, deleting it", "channel", msg.ChannelID, "thread", threadID, "err", err)
+		r.deleteOrphanThread(ctx, msg.ChannelID, threadID)
 	}
 	r.log.Warn("private thread failed", "channel", msg.ChannelID, "err", err)
 	r.post(ctx, msg.ChannelID, "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici.")
 	return here
 }
 
-func (r *router) adoptThread(channel, thread string) {
+func (r *router) deleteOrphanThread(ctx context.Context, channel, thread string) {
+	if err := r.c.DeleteChannel(ctx, thread); err != nil {
+		r.log.Warn("orphan private thread could not be deleted, delete it by hand", "channel", channel, "thread", thread, "err", err)
+	}
+}
+
+func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
+	r.log.Warn("bind store save failed", "conv", conv, "err", err)
+	reason := "le fichier des rattachements n'a pas pu être écrit, ce rattachement sera perdu à la prochaine relance"
+	if errors.Is(err, errStoreLocked) {
+		reason = "le fichier des rattachements est illisible, aucun rattachement ne sera retenu tant qu'il n'est pas réparé"
+	}
+	r.sinks.at(conv).fail(ctx, reason)
+}
+
+func (r *router) adoptThread(ctx context.Context, channel, thread string) {
 	if err := r.binds.MarkThread(thread, channel); err != nil {
-		r.log.Warn("bind store save failed", "err", err)
+		r.noteSaveFailure(ctx, channel, err)
 	}
 	level := r.binds.Level(channel)
 	if level == "" {
 		return
 	}
 	if err := r.binds.SetLevel(thread, level); err != nil {
-		r.log.Warn("bind store save failed", "err", err)
+		r.noteSaveFailure(ctx, channel, err)
 	}
 }
 
@@ -364,19 +383,19 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 		save = func(slot, session string) error { return r.binds.BindThread(slot, task.conv, task.parent, session) }
 	}
 	if err := save(task.slot, spec.Name); err != nil {
-		r.log.Warn("bind store save failed", "err", err)
+		r.noteSaveFailure(ctx, task.conv, err)
 	}
 	if r.binds.Mode(task.parent) == supportMode {
 		if err := r.binds.SetRepo(task.parent, value); err != nil {
-			r.log.Warn("bind store save failed", "err", err)
+			r.noteSaveFailure(ctx, task.conv, err)
 		}
 	}
 	if err := r.binds.SetLastRepo(value); err != nil {
-		r.log.Warn("bind store save failed", "err", err)
+		r.noteSaveFailure(ctx, task.conv, err)
 	}
 	if buffered && !r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared) {
 		r.log.Warn("buffered message not delivered to the new session", "session", spec.Name, "conv", task.conv)
-		r.sinks.at(task.conv).fail(ctx, "je n'ai pas pu transmettre ton message à la session, renvoie-le")
+		r.sinks.at(task.conv).fail(ctx, undeliveredMessage)
 	}
 	return ""
 }
@@ -431,9 +450,9 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		task = r.replaceLostJob(channel, user)
 	}
 
-	if msg := r.bind(ctx, ctrl, task, value, pending, buffered); msg != "" {
+	if failure := r.bind(ctx, ctrl, task, value, pending, buffered); failure != "" {
 		r.sinks.at(task.conv).fail(ctx, "")
-		return msg
+		return failure
 	}
 	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
 }

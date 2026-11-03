@@ -23,8 +23,7 @@ type slash struct {
 	comp   acker
 	router *router
 
-	gateway      string
-	syncCommands func(context.Context) error
+	gateway string
 }
 
 type acker interface {
@@ -32,8 +31,7 @@ type acker interface {
 }
 
 func newSlash(ix *dctl.Interactions, comp acker, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
-	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds, gateway: gatewayURL}
-	handler.syncCommands = handler.reg.Sync
+	handler := &slash{log: log, token: token, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
 	handler.reg.
 		Add(commandSet(), handler.handleSet).
 		Add(commandSession(), handler.handleSession).
@@ -53,7 +51,9 @@ func (s *slash) start(ctx context.Context) {
 		s.sync(ctx)
 	}()
 	gateway := newWS(s.token, s.log, s.onInteraction, s.onMessage, s.onGone)
-	gateway.url = s.gateway
+	if s.gateway != "" {
+		gateway.url = s.gateway
+	}
 	gateway.run(ctx)
 	<-syncDone
 }
@@ -62,7 +62,7 @@ func syncBackoffs() []time.Duration {
 	return []time.Duration{5 * time.Second, 30 * time.Second, 2 * time.Minute}
 }
 
-func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.syncCommands, s.log, syncBackoffs()) }
+func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log, syncBackoffs()) }
 
 func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger, backoff []time.Duration) {
 	for attempt := 0; ; attempt++ {
@@ -155,6 +155,7 @@ func (s *slash) onInteraction(ctx context.Context, interaction dctl.Interaction)
 		}
 		choices, err := s.reg.DispatchAutocomplete(ctx, interaction)
 		if err != nil {
+			s.log.Warn("autocomplete failed", "err", err)
 			return
 		}
 		if err := s.ix.RespondAutocomplete(ctx, interaction.ID, interaction.Token.Reveal(), choices); err != nil {
