@@ -34,9 +34,24 @@ type sink struct {
 	log   *slog.Logger
 
 	mu       sync.Mutex
+	queue    []*sinkJob
+	draining bool
+
 	pv       *progressView
 	lastUser msgRef
 	acked    msgRef
+}
+
+const sinkDrainBudget = 16
+
+type sinkJob struct {
+	kind     string
+	step     func()
+	done     chan struct{}
+	lead     chan struct{}
+	waiting  bool
+	promoted bool
+	finished bool
 }
 
 type msgRef struct{ ch, id, author string }
@@ -94,21 +109,202 @@ func (s *sinks) drop(convID string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) noteUser(channelID, messageID, author string) {
+func (s *sink) submit(ctx context.Context, kind string, step func()) error {
+	job := &sinkJob{kind: kind, step: step, done: make(chan struct{}), lead: make(chan struct{}, 1), waiting: true}
 	s.mu.Lock()
-	s.lastUser = msgRef{ch: channelID, id: messageID, author: author}
+	s.queue = append(s.queue, job)
+	leads := !s.draining
+	s.draining = true
 	s.mu.Unlock()
+	if leads && s.drain(ctx, job) {
+		return s.stoppedOutcome(ctx, job)
+	}
+	return s.await(ctx, job)
+}
+
+func (s *sink) dispatch(ctx context.Context, kind string, step func()) {
+	if err := s.submit(ctx, kind, step); err != nil {
+		s.log.Debug("sink waiter gave up, its step still runs in order", "step", kind, "err", err)
+	}
+}
+
+func (s *sink) await(ctx context.Context, job *sinkJob) error {
+	for {
+		select {
+		case <-job.done:
+			return nil
+		case <-job.lead:
+			s.mu.Lock()
+			job.promoted = false
+			finished := job.finished
+			s.mu.Unlock()
+			if finished {
+				return nil
+			}
+			if s.drain(ctx, job) {
+				return s.stoppedOutcome(ctx, job)
+			}
+		case <-ctx.Done():
+			if s.leave(job) {
+				return nil
+			}
+			return ctx.Err()
+		}
+	}
+}
+
+func (s *sink) stoppedOutcome(ctx context.Context, job *sinkJob) error {
+	s.mu.Lock()
+	finished := job.finished
+	s.mu.Unlock()
+	if finished {
+		return nil
+	}
+	return ctx.Err()
+}
+
+func (s *sink) leave(job *sinkJob) bool {
+	s.mu.Lock()
+	job.waiting = false
+	finished := job.finished
+	pending := job.promoted && !finished
+	job.promoted = false
+	s.mu.Unlock()
+	if pending {
+		<-job.lead
+		s.handOff()
+	}
+	return finished
+}
+
+func (s *sink) drain(ctx context.Context, own *sinkJob) bool {
+	clean := false
+	defer func() {
+		if !clean {
+			s.abort()
+		}
+	}()
+	for range sinkDrainBudget {
+		if ctx.Err() != nil {
+			s.stepDown(own)
+			clean = true
+			return true
+		}
+		job := s.take()
+		if job == nil {
+			clean = true
+			return false
+		}
+		s.execute(job)
+	}
+	s.handOff()
+	clean = true
+	return false
+}
+
+func (s *sink) stepDown(own *sinkJob) {
+	s.mu.Lock()
+	own.waiting = false
+	s.mu.Unlock()
+	s.handOff()
+}
+
+func (s *sink) take() *sinkJob {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.queue) == 0 {
+		s.draining = false
+		return nil
+	}
+	return s.pop()
+}
+
+func (s *sink) handOff() {
+	clean := false
+	defer func() {
+		if !clean {
+			s.abort()
+		}
+	}()
+	for {
+		s.mu.Lock()
+		if len(s.queue) == 0 {
+			s.draining = false
+			s.mu.Unlock()
+			clean = true
+			return
+		}
+		head := s.queue[0]
+		if head.waiting {
+			head.promoted = true
+			head.lead <- struct{}{}
+			s.mu.Unlock()
+			clean = true
+			return
+		}
+		s.pop()
+		s.mu.Unlock()
+		s.execute(head)
+	}
+}
+
+func (s *sink) abort() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.queue {
+		s.log.Warn("sink step dropped after a panic", "step", job.kind)
+		s.settleLocked(job)
+	}
+	s.queue = nil
+	s.draining = false
+}
+
+func (s *sink) pop() *sinkJob {
+	job := s.queue[0]
+	s.queue[0] = nil
+	s.queue = s.queue[1:]
+	return job
+}
+
+func (s *sink) execute(job *sinkJob) {
+	defer s.settle(job)
+	if s.run().Err() != nil {
+		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
+		return
+	}
+	job.step()
+}
+
+func (s *sink) settle(job *sinkJob) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.settleLocked(job)
+}
+
+func (s *sink) settleLocked(job *sinkJob) {
+	if job.finished {
+		return
+	}
+	job.finished = true
+	close(job.done)
+}
+
+func (s *sink) noteUser(ctx context.Context, channelID, messageID, author string) {
+	ref := msgRef{ch: channelID, id: messageID, author: author}
+	s.dispatch(ctx, "note", func() {
+		s.lastUser = ref
+	})
 }
 
 func (s *sink) ack(ctx context.Context, channelID, messageID, author string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	ref := msgRef{ch: channelID, id: messageID, author: author}
-	s.lastUser = ref
-	if messageID == "" || s.acked == ref {
-		return
-	}
-	s.addAck(ctx, ref)
+	s.dispatch(ctx, "ack", func() {
+		s.lastUser = ref
+		if messageID == "" || s.acked == ref {
+			return
+		}
+		s.addAck(ctx, ref)
+	})
 }
 
 func (s *sink) addAck(ctx context.Context, ref msgRef) {
@@ -120,16 +316,21 @@ func (s *sink) addAck(ctx context.Context, ref msgRef) {
 }
 
 func (s *sink) fail(ctx context.Context, reason string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.dispatch(ctx, "fail", func() {
+		s.applyFail(ctx, reason)
+	})
+}
+
+func (s *sink) applyFail(ctx context.Context, reason string) {
 	if s.pv != nil {
 		s.pv.flush(true)
 		s.pv = nil
 	}
 	channel := s.acked.chOr(s.ch)
 	if s.acked.id != "" {
+		failed := s.acked
 		s.clearAck(ctx, channel)
-		if err := s.rc.React(ctx, channel, s.acked.id, failEmoji); err != nil {
+		if err := s.rc.React(ctx, channel, failed.id, failEmoji); err != nil {
 			s.log.Warn("add failure reaction failed", "err", err)
 		}
 		s.acked = msgRef{}
@@ -141,9 +342,13 @@ func (s *sink) fail(ctx context.Context, reason string) {
 }
 
 func (s *sink) handle(event contracts.Event) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	ctx := s.run()
+	s.dispatch(ctx, "event:"+event.T, func() {
+		s.apply(ctx, event)
+	})
+}
+
+func (s *sink) apply(ctx context.Context, event contracts.Event) {
 	switch event.T {
 	case "human":
 		s.onHuman(ctx)

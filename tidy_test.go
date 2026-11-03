@@ -86,7 +86,7 @@ func TestTidyKeepsAPingThatArrivedMidTurn(t *testing.T) {
 	f := &fakeRender{}
 	s := tidySink(f, "c1")
 	s.ack(context.Background(), "c1", "m1", "42")
-	s.noteUser("c1", "m2", "42")
+	s.noteUser(context.Background(), "c1", "m2", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 
 	if len(f.deleted) != 1 || f.deleted[0].id != "m1" {
