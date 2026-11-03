@@ -45,14 +45,13 @@ type sink struct {
 const sinkDrainBudget = 16
 
 type sinkJob struct {
-	kind      string
-	step      func()
-	done      chan struct{}
-	lead      chan struct{}
-	finished  bool
-	taken     bool
-	promoted  bool
-	abandoned bool
+	kind     string
+	step     func()
+	done     chan struct{}
+	lead     chan struct{}
+	waiting  bool
+	promoted bool
+	finished bool
 }
 
 type msgRef struct{ ch, id, author string }
@@ -111,61 +110,64 @@ func (s *sinks) drop(convID string) {
 }
 
 func (s *sink) submit(ctx context.Context, kind string, step func()) error {
-	job := &sinkJob{kind: kind, step: step, done: make(chan struct{}), lead: make(chan struct{}, 1)}
+	job := &sinkJob{kind: kind, step: step, done: make(chan struct{}), lead: make(chan struct{}, 1), waiting: true}
 	s.mu.Lock()
 	s.queue = append(s.queue, job)
 	leads := !s.draining
 	s.draining = true
 	s.mu.Unlock()
-	if leads {
-		s.drain()
+	if leads && s.drain(ctx, job) {
+		return ctx.Err()
 	}
 	return s.await(ctx, job)
 }
 
 func (s *sink) dispatch(ctx context.Context, kind string, step func()) {
 	if err := s.submit(ctx, kind, step); err != nil {
-		s.log.Debug("sink step abandoned by its waiter", "step", kind, "err", err)
+		s.log.Debug("sink waiter gave up, its step still runs in order", "step", kind, "err", err)
 	}
 }
 
 func (s *sink) await(ctx context.Context, job *sinkJob) error {
-	cancelled := ctx.Done()
 	for {
 		select {
 		case <-job.done:
 			return nil
 		case <-job.lead:
-			if s.settled(job) {
+			s.mu.Lock()
+			job.promoted = false
+			finished := job.finished
+			s.mu.Unlock()
+			if finished {
 				return nil
 			}
-			s.drain()
-		case <-cancelled:
-			if s.abandon(job) {
+			if s.drain(ctx, job) {
 				return ctx.Err()
 			}
-			cancelled = nil
+		case <-ctx.Done():
+			if s.leave(job) {
+				return nil
+			}
+			return ctx.Err()
 		}
 	}
 }
 
-func (s *sink) settled(job *sinkJob) bool {
+func (s *sink) leave(job *sinkJob) bool {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return job.finished
-}
-
-func (s *sink) abandon(job *sinkJob) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if job.taken || job.promoted || job.finished {
-		return false
+	job.waiting = false
+	finished := job.finished
+	pending := job.promoted && !finished
+	job.promoted = false
+	s.mu.Unlock()
+	if pending {
+		<-job.lead
+		s.handOff()
 	}
-	job.abandoned = true
-	return true
+	return finished
 }
 
-func (s *sink) drain() {
+func (s *sink) drain(ctx context.Context, own *sinkJob) bool {
 	clean := false
 	defer func() {
 		if !clean {
@@ -173,52 +175,74 @@ func (s *sink) drain() {
 		}
 	}()
 	for range sinkDrainBudget {
+		if ctx.Err() != nil {
+			s.stepDown(own)
+			clean = true
+			return true
+		}
 		job := s.take()
 		if job == nil {
 			clean = true
-			return
+			return false
 		}
 		s.execute(job)
 	}
 	s.handOff()
 	clean = true
+	return false
+}
+
+func (s *sink) stepDown(own *sinkJob) {
+	s.mu.Lock()
+	own.waiting = false
+	s.mu.Unlock()
+	s.handOff()
 }
 
 func (s *sink) take() *sinkJob {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for len(s.queue) > 0 {
-		job := s.pop()
-		if job.abandoned {
-			s.settleLocked(job)
-			continue
-		}
-		job.taken = true
-		return job
+	if len(s.queue) == 0 {
+		s.draining = false
+		return nil
 	}
-	s.draining = false
-	return nil
+	return s.pop()
 }
 
 func (s *sink) handOff() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for len(s.queue) > 0 && s.queue[0].abandoned {
-		s.settleLocked(s.pop())
+	clean := false
+	defer func() {
+		if !clean {
+			s.abort()
+		}
+	}()
+	for {
+		s.mu.Lock()
+		if len(s.queue) == 0 {
+			s.draining = false
+			s.mu.Unlock()
+			clean = true
+			return
+		}
+		head := s.queue[0]
+		if head.waiting {
+			head.promoted = true
+			head.lead <- struct{}{}
+			s.mu.Unlock()
+			clean = true
+			return
+		}
+		s.pop()
+		s.mu.Unlock()
+		s.execute(head)
 	}
-	if len(s.queue) == 0 {
-		s.draining = false
-		return
-	}
-	head := s.queue[0]
-	head.promoted = true
-	head.lead <- struct{}{}
 }
 
 func (s *sink) abort() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, job := range s.queue {
+		s.log.Warn("sink step dropped after a panic", "step", job.kind)
 		s.settleLocked(job)
 	}
 	s.queue = nil
