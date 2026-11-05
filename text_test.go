@@ -169,13 +169,14 @@ func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) 
 }
 
 func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
-	if isKeyFunnel(decl) {
-		return nil
-	}
+	funnel := isKeyFunnel(decl)
 	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1}
 	var calls []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
 		if call, ok := node.(*ast.CallExpr); ok {
+			if funnel && forwardsKey(call, argIndex) {
+				return true
+			}
 			if found, isKeyCall := keyCallOf(fset, call, argIndex, consts); isKeyCall {
 				calls = append(calls, found)
 			}
@@ -183,6 +184,15 @@ func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []key
 		return true
 	})
 	return calls
+}
+
+func forwardsKey(call *ast.CallExpr, argIndex map[string]int) bool {
+	index, isKeyCall := argIndex[calleeName(call)]
+	if !isKeyCall || len(call.Args) <= index {
+		return false
+	}
+	ident, ok := call.Args[index].(*ast.Ident)
+	return ok && ident.Name == "key"
 }
 
 func isKeyFunnel(decl ast.Decl) bool {
@@ -470,6 +480,20 @@ func TestNotifyPostsFallbackAndReturnsRenderError(t *testing.T) {
 	}
 	if len(f.sent) != 1 || !strings.Contains(f.sent[0].content, "```") {
 		t.Fatalf("sent %+v, want one fallback block", f.sent)
+	}
+}
+
+func TestNotifyReturnsPostErrorWithoutFallbackSentinel(t *testing.T) {
+	postErr := errors.New("discord unreachable")
+	f := &fakeClient{sendErr: postErr}
+	g := NewGateway(f, testRun(), testMessages(), testLog())
+	notice := contracts.Notice{Code: contracts.Code(9999)}
+	_, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, notice)
+	if !errors.Is(err, postErr) {
+		t.Fatalf("Notify returned %v, want the Post error", err)
+	}
+	if errors.Is(err, ErrFallbackPosted) {
+		t.Fatalf("Notify returned %v with ErrFallbackPosted, but no fallback reached the channel", err)
 	}
 }
 

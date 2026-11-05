@@ -379,11 +379,13 @@ neutralised, and the output of commands an agent reads stays English.
 
 ## When a notice cannot be rendered
 
-`Notify` never leaves the operator without a message. When a notice cannot be
-rendered, the gateway posts a fallback text that names the failure, then returns the
-render error. That error satisfies `errors.Is(err, ErrFallbackPosted)`, which says the
-fallback is already in the channel. The host must not call `Notify` again for that
-notice, nor post `Degrade` behind it, or the operator receives the message twice.
+When a notice cannot be rendered, `Notify` posts a fallback text that names the
+failure, then returns the render error. That error satisfies
+`errors.Is(err, ErrFallbackPosted)`, which says the fallback is already in the channel.
+The host must not call `Notify` again for that notice, nor post `Degrade` behind it, or
+the operator receives the message twice. If the fallback itself cannot be posted,
+`Notify` returns the error of the post, which does not satisfy `ErrFallbackPosted`:
+the gateway posted nothing for that notice, so the host decides whether to retry.
 
 ## Reconnection
 

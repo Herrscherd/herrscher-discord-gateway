@@ -25,6 +25,7 @@ type fakeClient struct {
 	reacted    []outReact
 	menus      []outMenu
 	menuErr    error
+	sendErr    error
 	read       []dctl.Message
 	readLimit  int
 	readErr    error
@@ -52,6 +53,9 @@ type fakeClient struct {
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
+	if f.sendErr != nil {
+		return nil, f.sendErr
+	}
 	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
