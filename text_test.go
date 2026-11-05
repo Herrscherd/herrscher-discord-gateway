@@ -767,3 +767,24 @@ func TestCompactedNoticeIsPostedAsASuccess(t *testing.T) {
 		t.Fatalf("sent %+v, want the compaction as a success", f.sent)
 	}
 }
+
+func TestWithEmojiLeavesTextAloneWithoutEmoji(t *testing.T) {
+	if got := withEmoji("", "x"); got != "x" {
+		t.Errorf("withEmoji without emoji = %q, want the text alone", got)
+	}
+	if got := withEmoji(successEmoji, "x"); got != "✅ x" {
+		t.Errorf("withEmoji with emoji = %q, want the emoji then the text", got)
+	}
+}
+
+func TestUnknownCodeNoticeIsPostedAsAFailure(t *testing.T) {
+	f := &fakeClient{}
+	g := NewGateway(f, testRun(), testMessages(), testLog())
+	_, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, contracts.Notice{Code: contracts.Code(9999)})
+	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) {
+		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted", err)
+	}
+	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, failEmoji+" ") {
+		t.Fatalf("sent %+v, want the fallback under %s", f.sent, failEmoji)
+	}
+}
