@@ -358,8 +358,9 @@ principal out, so you can copy it back rather than look it up.
 ## Languages
 
 The gateway writes its own texts in the language of the conversation they concern:
-`Notify` renders a notice in the language the host passes with it. Texts that no
-notice carries (the repo menus, the prompts of a ping) use the operator's language, read from `HERRSCHER_LANG` when the gateway starts: `fr` for
+`Notify` renders a notice in the language of the session bound to its channel when
+that session has one, and otherwise in the language the host passes with it. Texts
+that no notice carries (the repo menus, the prompts of a ping) use the operator's language, read from `HERRSCHER_LANG` when the gateway starts: `fr` for
 French, `en` for English. When `HERRSCHER_LANG` is absent the texts are in English.
 A value the gateway does not support, such as `de`, is logged once as a warning and
 the texts stay in English. Nothing is repaired silently.
@@ -367,20 +368,26 @@ the texts stay in English. Nothing is repaired silently.
 The ephemeral replies of the slash commands follow the language of the person who
 typed the command, which Discord sends with each interaction as its locale. A
 French client gets French replies, and a locale the gateway does not support falls
-back to the operator's language. In a conversation bound to a session, the replies
-use the operator's language, because contracts v0.19.1 pass no session language to a
-plugin. For a bound session, Notify already carries the language the host passes
-with it. The menu replies (the repo and choice menus) are public, so they stay in
-the operator's language.
+back to the operator's language. This holds in a bound session too: an ephemeral
+reply is seen by its invoker alone, so the invoker's locale decides, not the
+session's language.
+
+In a channel bound to a session, the texts the gateway writes there, such as the
+notices about repos and threads, the message that could not be delivered and the
+progress lines, use the session's language when the session has one, and the
+operator's language otherwise. The menu replies (the repo and choice menus) are
+public and shared by everyone in the channel, so they stay in the operator's
+language even there.
 
 The slash commands are registered in English, with a French description for each
 command, option and choice, so the Discord client shows the descriptions in French
 to French users. The names stay identical in both languages, because they are fixed
 syntax.
 
-The gateway reads the variable itself because contracts v0.19.1 has no way for the
-host to pass a language to a plugin, apart from the language of a notice. The
-variable is therefore set in the environment of the daemon that loads the gateway.
+The gateway reads the variable itself because contracts v0.22.0 has no way for the
+host to pass the operator's default language to a plugin, only the language of each
+session (`SessionInfo.Language`) and of each notice. The variable is therefore set in
+the environment of the daemon that loads the gateway.
 
 The texts live in two catalogs, `locales/en.json` and `locales/fr.json`, in the
 go-i18n format. A test checks that the French catalog has every English key with

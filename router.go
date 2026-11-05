@@ -50,6 +50,7 @@ type router struct {
 	msgs  messages
 	log   *slog.Logger
 	cfg   routerConfig
+	langs sessionLanguages
 	acl   *accessPolicy
 
 	mu      sync.Mutex
@@ -77,6 +78,7 @@ func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStor
 		msgs:  msgs,
 		log:   log,
 		cfg:   cfg,
+		langs: sessionLanguages{ctrl: ctrl, binds: binds},
 		acl: &accessPolicy{
 			log:      log,
 			owner:    cfg.owner,
@@ -174,7 +176,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg mes
 		r.log.Warn("list repos failed", "err", err)
 	}
 	if len(repos) == 0 {
-		r.post(ctx, msg.ChannelID, r.msgs.say("repo.none", nil))
+		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("repo.none", nil))
 		return
 	}
 	task := r.place(ctx, msg)
@@ -202,7 +204,7 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 		r.sinks.at(task.conv).fail(ctx, failure)
 		return true
 	}
-	r.post(ctx, task.conv, r.msgs.say("repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
+	r.post(ctx, task.conv, r.textsIn(task.conv).say("repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
 	return true
 }
 
@@ -250,9 +252,10 @@ func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
 
 func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 	r.log.Warn("bind store save failed", "conv", conv, "err", err)
-	reason := r.msgs.say("bindings.write_failed", nil)
+	texts := r.textsIn(conv)
+	reason := texts.say("bindings.write_failed", nil)
 	if errors.Is(err, errStoreLocked) {
-		reason = r.msgs.say("bindings.unreadable", nil)
+		reason = texts.say("bindings.unreadable", nil)
 	}
 	r.sinks.at(conv).fail(ctx, reason)
 }
@@ -309,7 +312,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	}
 	if buffered && !r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared) {
 		r.log.Warn("buffered message not delivered to the new session", "session", spec.Name, "conv", task.conv)
-		r.sinks.at(task.conv).fail(ctx, r.msgs.say("undelivered", nil))
+		r.sinks.at(task.conv).fail(ctx, r.textsIn(task.conv).say("undelivered", nil))
 	}
 	return ""
 }
@@ -484,6 +487,10 @@ func (r *router) context(ctx context.Context, msg messageCreate) string {
 		}
 	}
 	return builder.String()
+}
+
+func (r *router) textsIn(conv string) messages {
+	return r.langs.messagesFor(conv, r.msgs)
 }
 
 func (r *router) post(ctx context.Context, channel, text string) {

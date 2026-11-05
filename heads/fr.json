@@ -123,5 +123,120 @@
     "id": "address.plaintext_refused",
     "description": "Tête de la notice : une adresse en clair a été refusée",
     "other": "❌"
+  },
+  {
+    "id": "agent.exists",
+    "description": "Tête de la notice : un agent de ce nom existe déjà",
+    "other": "❌"
+  },
+  {
+    "id": "agent.invalid_name",
+    "description": "Tête de la notice : ce nom d'agent n'est pas utilisable",
+    "other": "❌"
+  },
+  {
+    "id": "agent.not_found",
+    "description": "Tête de la notice : aucun agent ne porte ce nom",
+    "other": "❌"
+  },
+  {
+    "id": "agent.shared_refused",
+    "description": "Tête de la notice : l'agent ne peut pas tourner dans une session qui partage le dépôt principal",
+    "other": "❌"
+  },
+  {
+    "id": "approval.mode_unknown",
+    "description": "Tête de la notice : le mode d'approbation est inconnu",
+    "other": "❌"
+  },
+  {
+    "id": "channel.kind_home",
+    "description": "Tête de la notice : ce type de salon ne peut pas être l'accueil",
+    "other": "❌"
+  },
+  {
+    "id": "channel.kind_under",
+    "description": "Tête de la notice : ce type de salon ne peut pas accueillir un placement sous",
+    "other": "❌"
+  },
+  {
+    "id": "cmd.explicit_refused",
+    "description": "Tête de la notice : une commande explicite est refusée par la politique de routage",
+    "other": "❌"
+  },
+  {
+    "id": "compact.instruction_refused",
+    "description": "Tête de la notice : le backend refuse l'instruction de compaction",
+    "other": "❌"
+  },
+  {
+    "id": "compact.no_thread",
+    "description": "Tête de la notice : il n'y a pas encore de contexte à compacter",
+    "other": "❌"
+  },
+  {
+    "id": "compact.timeout_invalid",
+    "description": "Tête de la notice : le délai de compaction n'est pas une durée positive",
+    "other": "❌"
+  },
+  {
+    "id": "entity.not_found",
+    "description": "Tête de la notice : aucune entité de ce type ne porte ce nom",
+    "other": "❌"
+  },
+  {
+    "id": "entity.unknown",
+    "description": "Tête de la notice : ce type d'entité est inconnu",
+    "other": "❌"
+  },
+  {
+    "id": "home.missing",
+    "description": "Tête de la notice : aucun salon d'accueil n'est défini",
+    "other": "❌"
+  },
+  {
+    "id": "home.type_unsupported",
+    "description": "Tête de la notice : ce type de salon d'accueil ne peut pas héberger de sessions",
+    "other": "❌"
+  },
+  {
+    "id": "host.none_registered",
+    "description": "Tête de la notice : aucun hôte distant n'est enregistré",
+    "other": "❌"
+  },
+  {
+    "id": "model.required",
+    "description": "Tête de la notice : la session doit nommer un modèle",
+    "other": "❌"
+  },
+  {
+    "id": "schedule.not_found",
+    "description": "Tête de la notice : aucune planification ne porte ce nom",
+    "other": "❌"
+  },
+  {
+    "id": "service.control_unavailable",
+    "description": "Tête de la notice : l'hôte ne peut pas piloter son propre service",
+    "other": "❌"
+  },
+  {
+    "id": "session.close_dirty",
+    "description": "Tête de la notice : la session n'a pas été fermée, son worktree contient des modifications non commitées",
+    "other": "❌"
+  },
+  {
+    "id": "session.limit",
+    "description": "Tête de la notice : aucune session ne peut être créée, la limite est atteinte",
+    "other": "❌"
+  },
+  {
+    "id": "value.invalid",
+    "description": "Tête de la notice : valeur mal formée ou hors limites",
+    "other": "❌"
+  },
+  {
+    "id": "value.invalid_hint",
+    "description": "Tête de la notice : valeur mal formée ou hors limites, avec une indication",
+    "other": "❌"
   }
 ]

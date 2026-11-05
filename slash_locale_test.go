@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/Herrscherd/dctl"
+	contracts "github.com/Herrscherd/herrscher-contracts"
 	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
@@ -154,12 +155,13 @@ func TestReplyLanguageFallsBackToTheOperatorDefaultWhenLocaleIsMissing(t *testin
 	}
 }
 
-func TestSessionChannelKeepsTheSessionLanguageWhateverTheLocale(t *testing.T) {
+func TestSessionChannelReplyFollowsTheInteractionLocale(t *testing.T) {
 	r, ctrl, _ := boundRouter(t)
+	ctrl.sessions = []contracts.SessionInfo{{Name: "ch-c1", ChannelID: "c1", Language: i18n.English}}
 	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
 	got := s.replyLanguage(dctl.Interaction{ChannelID: "c1", Locale: dctl.LocaleFR})
-	if got != i18n.English {
-		t.Fatalf("replyLanguage in a session channel = %v, want the session language English", got)
+	if got != i18n.French {
+		t.Fatalf("replyLanguage in a session channel = %v, want the interaction locale French", got)
 	}
 }
 
@@ -230,10 +232,8 @@ func (tr *recordingTransport) RoundTrip(req *http.Request) (*http.Response, erro
 func (tr *recordingTransport) replies() []string {
 	var out []string
 	for _, call := range tr.calls {
-		if call.method == http.MethodPatch {
-			if content, ok := call.body["content"].(string); ok {
-				out = append(out, content)
-			}
+		if content, ok := call.body["content"].(string); ok {
+			out = append(out, content)
 			continue
 		}
 		if data, ok := call.body["data"].(map[string]any); ok {
@@ -270,10 +270,10 @@ func frenchInteraction(options ...dctl.InteractionOption) dctl.Interaction {
 	}
 }
 
-func frenchReply(t *testing.T, key string, params map[string]any) string {
+func frenchReply(t *testing.T, key string) string {
 	t.Helper()
-	english := testMessages().sayIn(i18n.English, key, params)
-	french := testMessages().sayIn(i18n.French, key, params)
+	english := testMessages().sayIn(i18n.English, key, nil)
+	french := testMessages().sayIn(i18n.French, key, nil)
 	if french == english {
 		t.Fatalf("%s has the same French and English text %q", key, french)
 	}
@@ -294,7 +294,7 @@ func TestFrenchModeInteractionGetsAFrenchEphemeralReply(t *testing.T) {
 	if _, err := s.handleMode(context.Background(), ix); err != nil {
 		t.Fatal(err)
 	}
-	requireReplies(t, tr, frenchReply(t, "mode.off", nil))
+	requireReplies(t, tr, frenchReply(t, "mode.off"))
 }
 
 func TestFrenchStopInteractionGetsAFrenchEphemeralReply(t *testing.T) {
@@ -305,7 +305,7 @@ func TestFrenchStopInteractionGetsAFrenchEphemeralReply(t *testing.T) {
 	if _, err := s.handleStop(context.Background(), frenchInteraction()); err != nil {
 		t.Fatal(err)
 	}
-	requireReplies(t, tr, frenchReply(t, "stop.none", nil))
+	requireReplies(t, tr, frenchReply(t, "stop.none"))
 }
 
 func TestFrenchInteractionDispatchEditsTheResponseInFrench(t *testing.T) {
@@ -314,5 +314,5 @@ func TestFrenchInteractionDispatchEditsTheResponseInFrench(t *testing.T) {
 	_, ctrl, _ := newTestRouter(t)
 	s.ctrl = ctrl
 	s.dispatch(context.Background(), frenchInteraction(), []string{"status"})
-	requireReplies(t, tr, frenchReply(t, "run.done", nil))
+	requireReplies(t, tr, frenchReply(t, "run.done"))
 }

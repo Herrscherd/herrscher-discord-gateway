@@ -77,6 +77,7 @@ type sinks struct {
 	owner string
 	tidy  bool
 	msgs  messages
+	langs sessionLanguages
 	log   *slog.Logger
 
 	mu sync.Mutex
@@ -96,7 +97,7 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.msgs, s.log)
+	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.langs.messagesFor(convID, s.msgs), s.log)
 	s.m[convID] = created
 	return created
 }

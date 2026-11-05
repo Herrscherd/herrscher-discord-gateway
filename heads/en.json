@@ -123,5 +123,120 @@
     "id": "address.plaintext_refused",
     "description": "Head of the notice that a plaintext address was refused",
     "other": "❌"
+  },
+  {
+    "id": "agent.exists",
+    "description": "Head of the notice that an agent with this name already exists",
+    "other": "❌"
+  },
+  {
+    "id": "agent.invalid_name",
+    "description": "Head of the notice that an agent name is not usable",
+    "other": "❌"
+  },
+  {
+    "id": "agent.not_found",
+    "description": "Head of the notice that no agent has the name",
+    "other": "❌"
+  },
+  {
+    "id": "agent.shared_refused",
+    "description": "Head of the notice that an agent cannot run in a session sharing the main checkout",
+    "other": "❌"
+  },
+  {
+    "id": "approval.mode_unknown",
+    "description": "Head of the notice that the approval mode is not known",
+    "other": "❌"
+  },
+  {
+    "id": "channel.kind_home",
+    "description": "Head of the notice that a channel kind cannot be the home",
+    "other": "❌"
+  },
+  {
+    "id": "channel.kind_under",
+    "description": "Head of the notice that a channel kind cannot hold an under placement",
+    "other": "❌"
+  },
+  {
+    "id": "cmd.explicit_refused",
+    "description": "Head of the notice that an explicit cmd is refused by the route policy",
+    "other": "❌"
+  },
+  {
+    "id": "compact.instruction_refused",
+    "description": "Head of the notice that the backend refuses a compaction instruction",
+    "other": "❌"
+  },
+  {
+    "id": "compact.no_thread",
+    "description": "Head of the notice that there is no context to compact yet",
+    "other": "❌"
+  },
+  {
+    "id": "compact.timeout_invalid",
+    "description": "Head of the notice that the compaction timeout is not a positive duration",
+    "other": "❌"
+  },
+  {
+    "id": "entity.not_found",
+    "description": "Head of the notice that no entity of the kind has the name",
+    "other": "❌"
+  },
+  {
+    "id": "entity.unknown",
+    "description": "Head of the notice that the entity kind is not known",
+    "other": "❌"
+  },
+  {
+    "id": "home.missing",
+    "description": "Head of the notice that no home channel is set",
+    "other": "❌"
+  },
+  {
+    "id": "home.type_unsupported",
+    "description": "Head of the notice that the home channel kind cannot host sessions",
+    "other": "❌"
+  },
+  {
+    "id": "host.none_registered",
+    "description": "Head of the notice that no remote host is registered",
+    "other": "❌"
+  },
+  {
+    "id": "model.required",
+    "description": "Head of the notice that the session must name a model",
+    "other": "❌"
+  },
+  {
+    "id": "schedule.not_found",
+    "description": "Head of the notice that no schedule has the name",
+    "other": "❌"
+  },
+  {
+    "id": "service.control_unavailable",
+    "description": "Head of the notice that the host cannot control its own service",
+    "other": "❌"
+  },
+  {
+    "id": "session.close_dirty",
+    "description": "Head of the notice that a session was not closed because its worktree has uncommitted changes",
+    "other": "❌"
+  },
+  {
+    "id": "session.limit",
+    "description": "Head of the notice that no session can be created because the limit is reached",
+    "other": "❌"
+  },
+  {
+    "id": "value.invalid",
+    "description": "Head of the notice that a value is malformed or out of range",
+    "other": "❌"
+  },
+  {
+    "id": "value.invalid_hint",
+    "description": "Head of the notice that a value is malformed or out of range, with a hint",
+    "other": "❌"
   }
 ]

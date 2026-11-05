@@ -632,7 +632,7 @@ func TestNewNoticeCodesRenderInFrenchAndEnglish(t *testing.T) {
 			name:    "node merged",
 			notice:  contracts.Notice{Code: contracts.CodeNodeMerged},
 			emoji:   englishHead(headFail),
-			french:  "ce nœud est replié dans un umbrella ; restaure-le avec l'option force pour le détacher",
+			french:  "ce nœud est replié dans un regroupement ; pour le détacher, restaure-le en forçant l'opération",
 			english: "this node is folded into an umbrella; restore it with force to detach it",
 		},
 		{
