@@ -409,7 +409,7 @@
   {
     "id": "slash.session.close.force",
     "description": "Texte de commande slash, base française",
-    "other": "abandonner les modifications non commitées du worktree"
+    "other": "abandonner les modifications non validées du worktree"
   },
   {
     "id": "slash.session.list",
