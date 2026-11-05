@@ -110,10 +110,11 @@ func TestGatewayCatalogIsComplete(t *testing.T) {
 }
 
 type keyCall struct {
-	where   token.Position
-	name    string
-	key     string
-	literal bool
+	where      token.Position
+	name       string
+	key        string
+	literal    bool
+	reassigned bool
 }
 
 func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
@@ -121,6 +122,10 @@ func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
 	files := productionFiles(t, fset)
 	used := make(map[string]bool)
 	for _, call := range keyCalls(fset, files, stringConstants(files)) {
+		if call.reassigned {
+			t.Errorf("%s: the key parameter %s is reassigned, so the key it carries cannot be checked", call.where, call.name)
+			continue
+		}
 		if !call.literal {
 			t.Errorf("%s: the key of %s is neither a string literal nor a string constant", call.where, call.name)
 			continue
@@ -169,14 +174,14 @@ func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) 
 }
 
 func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
-	funnel := isKeyFunnel(decl)
 	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1}
+	keyParam := funnelKeyParam(decl)
 	var calls []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok {
-			if funnel && forwardsKey(call, argIndex) {
-				return true
-			}
+		if assign, ok := node.(*ast.AssignStmt); ok && keyParam != "" && assignsTo(assign, keyParam) {
+			calls = append(calls, keyCall{where: fset.Position(assign.Pos()), name: keyParam, reassigned: true})
+		}
+		if call, ok := node.(*ast.CallExpr); ok && !forwardsKey(call, argIndex, keyParam) {
 			if found, isKeyCall := keyCallOf(fset, call, argIndex, consts); isKeyCall {
 				calls = append(calls, found)
 			}
@@ -186,13 +191,44 @@ func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []key
 	return calls
 }
 
-func forwardsKey(call *ast.CallExpr, argIndex map[string]int) bool {
+func funnelKeyParam(decl ast.Decl) string {
+	if isKeyFunnel(decl) && declaresParam(decl, "key") {
+		return "key"
+	}
+	return ""
+}
+
+func declaresParam(decl ast.Decl, name string) bool {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok {
+		return false
+	}
+	for _, field := range fn.Type.Params.List {
+		for _, ident := range field.Names {
+			if ident.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func assignsTo(assign *ast.AssignStmt, name string) bool {
+	for _, lhs := range assign.Lhs {
+		if ident, ok := lhs.(*ast.Ident); ok && ident.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func forwardsKey(call *ast.CallExpr, argIndex map[string]int, keyParam string) bool {
 	index, isKeyCall := argIndex[calleeName(call)]
-	if !isKeyCall || len(call.Args) <= index {
+	if keyParam == "" || !isKeyCall || len(call.Args) <= index {
 		return false
 	}
 	ident, ok := call.Args[index].(*ast.Ident)
-	return ok && ident.Name == "key"
+	return ok && ident.Name == keyParam
 }
 
 func isKeyFunnel(decl ast.Decl) bool {
