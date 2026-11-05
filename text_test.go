@@ -169,10 +169,10 @@ func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) 
 }
 
 func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
-	if fn, ok := decl.(*ast.FuncDecl); ok && (fn.Name.Name == "say" || fn.Name.Name == "sayIn") {
+	if isKeyFunnel(decl) {
 		return nil
 	}
-	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1}
+	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1}
 	var calls []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
 		if call, ok := node.(*ast.CallExpr); ok {
@@ -183,6 +183,29 @@ func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []key
 		return true
 	})
 	return calls
+}
+
+func isKeyFunnel(decl ast.Decl) bool {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
+		return false
+	}
+	switch fn.Name.Name {
+	case "say", "sayIn", "catalogText":
+	default:
+		return false
+	}
+	return receiverName(fn.Recv.List[0].Type) == "messages"
+}
+
+func receiverName(expr ast.Expr) string {
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		return ident.Name
+	}
+	return ""
 }
 
 func keyCallOf(fset *token.FileSet, call *ast.CallExpr, argIndex map[string]int, consts map[string]string) (keyCall, bool) {
@@ -441,6 +464,9 @@ func TestNotifyPostsFallbackAndReturnsRenderError(t *testing.T) {
 	_, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, notice)
 	if !errors.Is(err, contracts.ErrUnknownCode) {
 		t.Fatalf("Notify returned %v, want the render error", err)
+	}
+	if !errors.Is(err, ErrFallbackPosted) {
+		t.Fatalf("Notify returned %v, want ErrFallbackPosted so the host never retries", err)
 	}
 	if len(f.sent) != 1 || !strings.Contains(f.sent[0].content, "```") {
 		t.Fatalf("sent %+v, want one fallback block", f.sent)
