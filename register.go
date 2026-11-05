@@ -58,6 +58,7 @@ func init() {
 				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many earlier channel messages to carry as context (30 by default)"},
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "name of the skill a new session follows (pr-job by default)"},
 				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so the channel keeps the work and not the messages that started it (off by default, never applies when the answer lives in a thread opened from the ping)"},
+				{Key: headsSetting, Env: headsEnv, Help: "JSON file of the emoji heads the gateway puts in front of its messages, an object from head key to emoji, an empty value turns a head off (built-in heads by default, the keys are listed in the README)"},
 				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "add the `message delete` verb, so an agent can delete messages this bot sent (off by default, the verb is absent until this is on, and even then it refuses any message written by another author)"},
 			},
 		},
@@ -71,6 +72,14 @@ func init() {
 func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return embeddedSkills() }
 
 const operatorLanguageEnv = "HERRSCHER_LANG"
+
+func gatewayMessages(cfg contracts.PluginConfig, log *slog.Logger) (messages, error) {
+	msgs, err := messagesFromEnv(log)
+	if err != nil {
+		return messages{}, err
+	}
+	return msgs.withHeadsFile(cfg.Get(headsSetting))
+}
 
 func messagesFromEnv(log *slog.Logger) (messages, error) {
 	return operatorMessages(os.Getenv(operatorLanguageEnv), log)
@@ -96,7 +105,7 @@ func operatorLanguage(raw string, log *slog.Logger) i18n.Language {
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
 	log = log.With("gateway", gatewayKind)
-	msgs, err := messagesFromEnv(log)
+	msgs, err := gatewayMessages(cfg, log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}

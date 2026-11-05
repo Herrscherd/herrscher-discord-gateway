@@ -60,14 +60,14 @@ func (p *progressView) add(event contracts.BackendEvent) {
 		if p.level != levelFull {
 			return
 		}
-		p.push("💭 " + clip(flatten(event.Detail), previewWidth))
+		p.push(withEmoji(p.msgs.head(headThinking), clip(flatten(event.Detail), previewWidth)))
 	case "tool":
 		if _, seen := p.counts[event.Tool]; !seen {
 			p.order = append(p.order, event.Tool)
 		}
 		p.counts[event.Tool]++
 		p.actions++
-		line := emojiFor(event.Tool) + " " + event.Tool
+		line := withEmoji(p.msgs.head(toolHead(event.Tool)), event.Tool)
 		if d := clip(flatten(event.Detail), previewWidth); d != "" && p.level != levelQuiet {
 			line += " · " + d
 		}
@@ -146,7 +146,7 @@ func (p *progressView) render() string {
 }
 
 func (p *progressView) frame(lines []string, elided bool) string {
-	header := "⏳ " + p.msgs.say("progress.running", nil) + "\n"
+	header := withEmoji(p.msgs.head(headRunning), p.msgs.say("progress.running", nil)) + "\n"
 	if elided {
 		header += "…\n"
 	}
@@ -164,9 +164,9 @@ func (p *progressView) summary() string {
 	}
 	var summary string
 	if p.actions == 0 {
-		summary = "✅ " + p.msgs.say("progress.done", nil)
+		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("progress.done", nil))
 	} else {
-		summary = "✅ " + p.msgs.say("progress.actions", map[string]any{countArg: p.actions})
+		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("progress.actions", map[string]any{countArg: p.actions}))
 		if len(parts) > 0 {
 			summary += " (" + strings.Join(parts, ", ") + ")"
 		}
@@ -185,25 +185,6 @@ func formatCost(cost float64) string {
 		return fmt.Sprintf("$%.4f", cost)
 	}
 	return fmt.Sprintf("$%.2f", cost)
-}
-
-func emojiFor(tool string) string {
-	switch tool {
-	case "Read":
-		return "📖"
-	case "Edit", "Write", "MultiEdit", "NotebookEdit":
-		return "✏️"
-	case "Grep", "Glob":
-		return "🔎"
-	case "Task", "Agent":
-		return "🤖"
-	case "WebFetch", "WebSearch":
-		return "🌐"
-	case "TodoWrite":
-		return "📝"
-	default:
-		return "🔧"
-	}
 }
 
 func flatten(s string) string { return strings.Join(strings.Fields(s), " ") }

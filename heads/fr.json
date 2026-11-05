@@ -1,0 +1,127 @@
+[
+  {
+    "id": "ack",
+    "description": "Réaction posée sur le message dont un tour part, retirée à la fin du tour",
+    "other": "⏳"
+  },
+  {
+    "id": "running",
+    "description": "En-tête du message de progression en direct pendant qu'un tour tourne",
+    "other": "⏳"
+  },
+  {
+    "id": "fail",
+    "description": "Réaction et préfixe d'un échec, et d'une notice qui n'a pas pu être rendue",
+    "other": "❌"
+  },
+  {
+    "id": "done",
+    "description": "Préfixe d'un tour terminé, ou de son résumé de progression",
+    "other": "✅"
+  },
+  {
+    "id": "stop",
+    "description": "Préfixe de la confirmation qu'un tour a été arrêté",
+    "other": "⏹️"
+  },
+  {
+    "id": "thinking",
+    "description": "Préfixe du texte de l'assistant au niveau de verbosité complet",
+    "other": "💭"
+  },
+  {
+    "id": "tool.read",
+    "description": "Tête d'une ligne d'outil Read dans la vue de progression",
+    "other": "📖"
+  },
+  {
+    "id": "tool.edit",
+    "description": "Tête d'une ligne d'outil Edit, Write, MultiEdit ou NotebookEdit",
+    "other": "✏️"
+  },
+  {
+    "id": "tool.search",
+    "description": "Tête d'une ligne d'outil Grep ou Glob",
+    "other": "🔎"
+  },
+  {
+    "id": "tool.agent",
+    "description": "Tête d'une ligne d'outil Task ou Agent",
+    "other": "🤖"
+  },
+  {
+    "id": "tool.web",
+    "description": "Tête d'une ligne d'outil WebFetch ou WebSearch",
+    "other": "🌐"
+  },
+  {
+    "id": "tool.write",
+    "description": "Tête d'une ligne d'outil TodoWrite",
+    "other": "📝"
+  },
+  {
+    "id": "tool.other",
+    "description": "Tête de toute autre ligne d'outil",
+    "other": "🔧"
+  },
+  {
+    "id": "session.not_found",
+    "description": "Tête de la notice : la session n'existe pas",
+    "other": "❌"
+  },
+  {
+    "id": "session.exists",
+    "description": "Tête de la notice : la session existe déjà",
+    "other": "❌"
+  },
+  {
+    "id": "agent.unknown",
+    "description": "Tête de la notice : l'agent est inconnu",
+    "other": "❌"
+  },
+  {
+    "id": "session.created",
+    "description": "Tête de la notice : une session a été créée",
+    "other": "✅"
+  },
+  {
+    "id": "session.closed",
+    "description": "Tête de la notice : une session a été fermée",
+    "other": "⏹️"
+  },
+  {
+    "id": "internal.unexpected",
+    "description": "Tête de la notice : erreur interne inattendue",
+    "other": "❌"
+  },
+  {
+    "id": "setting.invalid",
+    "description": "Tête de la notice : un réglage a une valeur refusée",
+    "other": "❌"
+  },
+  {
+    "id": "setting.missing",
+    "description": "Tête de la notice : un réglage obligatoire est absent",
+    "other": "❌"
+  },
+  {
+    "id": "node.merged",
+    "description": "Tête de la notice : un nœud est replié dans une ombrelle",
+    "other": "❌"
+  },
+  {
+    "id": "compact.unavailable",
+    "description": "Tête de la notice : la compaction ne peut pas tourner",
+    "other": "❌"
+  },
+  {
+    "id": "compaction.done",
+    "description": "Tête de la notice : le contexte a été compacté",
+    "other": "✅"
+  },
+  {
+    "id": "address.plaintext_refused",
+    "description": "Tête de la notice : une adresse en clair a été refusée",
+    "other": "❌"
+  }
+]

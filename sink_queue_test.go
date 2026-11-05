@@ -99,11 +99,11 @@ func TestSinkRunsEventsInSubmissionOrder(t *testing.T) {
 		wg.Wait()
 
 		want := []string{
-			"react:m1:" + ackEmoji,
-			"react:m2:" + ackEmoji,
-			"unreact:m2:" + ackEmoji,
-			"react:m2:" + failEmoji,
-			"post:" + failEmoji + " boom",
+			"react:m1:" + englishHead(headAck),
+			"react:m2:" + englishHead(headAck),
+			"unreact:m2:" + englishHead(headAck),
+			"react:m2:" + englishHead(headFail),
+			"post:" + englishHead(headFail) + " boom",
 			"post:ok",
 		}
 		if !slices.Equal(g.calls, want) {
@@ -170,7 +170,7 @@ func TestSinkWaiterLeavesWhenItsContextEndsDuringARenderCall(t *testing.T) {
 
 		close(g.release)
 		wg.Wait()
-		want := []string{"post:" + failEmoji + " a", "late"}
+		want := []string{"post:" + englishHead(headFail) + " a", "late"}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q: a step whose waiter gave up must still run, in order", g.calls, want)
 		}
@@ -197,7 +197,7 @@ func TestSinkCancelledNoteDoesNotHideTheNextHumanAck(t *testing.T) {
 		wg.Wait()
 		s.handle(contracts.Event{T: "human"})
 
-		want := []string{"post:" + failEmoji + " a", "react:m2:" + ackEmoji}
+		want := []string{"post:" + englishHead(headFail) + " a", "react:m2:" + englishHead(headAck)}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q: the human ack must target m2, the last message noted", g.calls, want)
 		}
@@ -221,7 +221,7 @@ func TestSinkCancelledAckStillReactsOnItsMessage(t *testing.T) {
 		close(g.release)
 		wg.Wait()
 
-		want := []string{"post:" + failEmoji + " a", "react:m2:" + ackEmoji}
+		want := []string{"post:" + englishHead(headFail) + " a", "react:m2:" + englishHead(headAck)}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q: the abandoned ack must still mark m2", g.calls, want)
 		}
@@ -246,10 +246,10 @@ func TestSinkCancelledFailStillClosesTheOpenAck(t *testing.T) {
 		wg.Wait()
 
 		want := []string{
-			"react:m1:" + ackEmoji,
-			"unreact:m1:" + ackEmoji,
-			"react:m1:" + failEmoji,
-			"post:" + failEmoji + " boom",
+			"react:m1:" + englishHead(headAck),
+			"unreact:m1:" + englishHead(headAck),
+			"react:m1:" + englishHead(headFail),
+			"post:" + englishHead(headFail) + " boom",
 		}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q", g.calls, want)
@@ -322,7 +322,7 @@ func TestSinkDropsQueuedWorkOnceTheLifetimeEnds(t *testing.T) {
 		wg.Wait()
 		s.fail(context.Background(), "c")
 
-		want := []string{"post:" + failEmoji + " a"}
+		want := []string{"post:" + englishHead(headFail) + " a"}
 		if !slices.Equal(g.calls, want) {
 			t.Fatalf("render calls = %q, want %q: work queued after the lifetime ended must not reach the client", g.calls, want)
 		}
