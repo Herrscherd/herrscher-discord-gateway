@@ -73,7 +73,7 @@ func (m messages) notice(lang i18n.Language, notice contracts.Notice) (string, e
 	if notice.Code == contracts.CodeUnexpected {
 		return m.unexpected(lang, notice), nil
 	}
-	text, err := m.renderer.Render(lang, m.plainNotice(lang, notice))
+	text, err := m.renderer.Render(lang, plainNotice(notice))
 	if err != nil {
 		return "", fmt.Errorf("render notice %s: %w", notice.Code.Key(), err)
 	}
@@ -156,15 +156,13 @@ func neutralise(text string) string {
 	).Replace(text)
 }
 
-func (m messages) plainNotice(lang i18n.Language, notice contracts.Notice) contracts.Notice {
+func plainNotice(notice contracts.Notice) contracts.Notice {
 	args := make([]contracts.Arg, 0, len(notice.Args))
 	for _, arg := range notice.Args {
 		switch arg.Kind() {
-		case contracts.ArgRef:
-			args = append(args, contracts.Text(arg.Name(), m.channelRef(lang, fmt.Sprint(arg.Value()))))
 		case contracts.ArgText:
 			args = append(args, contracts.Text(arg.Name(), neutralise(fmt.Sprint(arg.Value()))))
-		case contracts.ArgCount:
+		case contracts.ArgRef, contracts.ArgCount:
 			args = append(args, arg)
 		}
 	}

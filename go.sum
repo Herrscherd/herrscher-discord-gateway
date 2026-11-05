@@ -2,8 +2,8 @@ github.com/BurntSushi/toml v1.6.0 h1:dRaEfpa2VI55EwlIW72hMRHdWouJeRF7TPYhI+AUQjk
 github.com/BurntSushi/toml v1.6.0/go.mod h1:ukJfTF/6rtPPRCnwkur4qwRxa8vTRFBF0uk2lLoLwho=
 github.com/Herrscherd/dctl v1.8.1 h1:SxDj0fAVS+WgUS40Kugm6e6F/iY/vojBViUB1com9I0=
 github.com/Herrscherd/dctl v1.8.1/go.mod h1:43yI1s+IzYjP0MPwkkN3rTKrBgXxqA2t7W6bkIjdiPA=
-github.com/Herrscherd/herrscher-contracts v0.18.0 h1:3fDQnkiY3h0dhhY3I2/xGjp9N1oZ8+Mp+5ykAoYDc0g=
-github.com/Herrscherd/herrscher-contracts v0.18.0/go.mod h1:MEoJye4dvm9yueLhb/9MrLQcBdXVm05ycSagXkjDaGw=
+github.com/Herrscherd/herrscher-contracts v0.19.1 h1:65LaapYAwsGx7ikRXorhshLpvoDWHSVU0eWOwx5xQX0=
+github.com/Herrscherd/herrscher-contracts v0.19.1/go.mod h1:MEoJye4dvm9yueLhb/9MrLQcBdXVm05ycSagXkjDaGw=
 github.com/coder/websocket v1.8.15 h1:6B2JPeOGlpff2Uz6vOEH1Vzpi0iUz20A+lPVhPHtNUA=
 github.com/coder/websocket v1.8.15/go.mod h1:NX3SzP+inril6yawo5CQXx8+fk145lPDC6pumgx0mVg=
 github.com/nicksnyder/go-i18n/v2 v2.7.0 h1:oiVQUmuCeNggvm/fUVb6/R0aP82BDVphZnmVHwut+J0=
