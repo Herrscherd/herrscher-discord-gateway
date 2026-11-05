@@ -330,5 +330,260 @@
     "id": "channel.unknown",
     "description": "Désigne un salon dont l'identifiant est vide",
     "other": "un salon inconnu"
+  },
+  {
+    "id": "slash.set",
+    "description": "Texte de commande slash, base française",
+    "other": "configurer le démon"
+  },
+  {
+    "id": "slash.set.home",
+    "description": "Texte de commande slash, base française",
+    "other": "définir la catégorie ou le forum qui accueille les salons de session"
+  },
+  {
+    "id": "slash.set.home.channel",
+    "description": "Texte de commande slash, base française",
+    "other": "salon de catégorie ou de forum"
+  },
+  {
+    "id": "slash.set.source",
+    "description": "Texte de commande slash, base française",
+    "other": "définir le dépôt source à partir duquel `service update` compile"
+  },
+  {
+    "id": "slash.set.source.path",
+    "description": "Texte de commande slash, base française",
+    "other": "chemin absolu du dépôt source"
+  },
+  {
+    "id": "slash.session",
+    "description": "Texte de commande slash, base française",
+    "other": "gérer les sessions"
+  },
+  {
+    "id": "slash.session.create",
+    "description": "Texte de commande slash, base française",
+    "other": "créer une session : un salon relié, un worktree isolé et un backend"
+  },
+  {
+    "id": "slash.session.create.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.session.create.cmd",
+    "description": "Texte de commande slash, base française",
+    "other": "commande reliée (par défaut la commande configurée)"
+  },
+  {
+    "id": "slash.session.create.shared",
+    "description": "Texte de commande slash, base française",
+    "other": "lancer dans le dépôt principal au lieu d'un worktree isolé"
+  },
+  {
+    "id": "slash.session.create.backend",
+    "description": "Texte de commande slash, base française",
+    "other": "backend du pont"
+  },
+  {
+    "id": "slash.session.create.project",
+    "description": "Texte de commande slash, base française",
+    "other": "sous-dossier de l'espace de travail où travaille le backend"
+  },
+  {
+    "id": "slash.session.create.clone",
+    "description": "Texte de commande slash, base française",
+    "other": "dépôt distant (propriétaire/nom) à cloner d'abord dans l'espace de travail"
+  },
+  {
+    "id": "slash.session.close",
+    "description": "Texte de commande slash, base française",
+    "other": "fermer une session : arrêter le pont, supprimer le worktree, archiver le salon"
+  },
+  {
+    "id": "slash.session.close.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.session.close.force",
+    "description": "Texte de commande slash, base française",
+    "other": "abandonner les modifications non validées du worktree"
+  },
+  {
+    "id": "slash.session.list",
+    "description": "Texte de commande slash, base française",
+    "other": "lister les sessions actives"
+  },
+  {
+    "id": "slash.session.who",
+    "description": "Texte de commande slash, base française",
+    "other": "lister les participants observés dans une session"
+  },
+  {
+    "id": "slash.session.who.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.session.allow",
+    "description": "Texte de commande slash, base française",
+    "other": "gérer qui peut participer à une session"
+  },
+  {
+    "id": "slash.session.allow.add",
+    "description": "Texte de commande slash, base française",
+    "other": "autoriser un utilisateur dans une session"
+  },
+  {
+    "id": "slash.session.allow.add.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.session.allow.add.user",
+    "description": "Texte de commande slash, base française",
+    "other": "utilisateur à autoriser"
+  },
+  {
+    "id": "slash.session.allow.remove",
+    "description": "Texte de commande slash, base française",
+    "other": "retirer l'autorisation d'un utilisateur dans une session"
+  },
+  {
+    "id": "slash.session.allow.remove.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.session.allow.remove.user",
+    "description": "Texte de commande slash, base française",
+    "other": "utilisateur à retirer"
+  },
+  {
+    "id": "slash.session.allow.list",
+    "description": "Texte de commande slash, base française",
+    "other": "lister les utilisateurs autorisés dans une session"
+  },
+  {
+    "id": "slash.session.allow.list.name",
+    "description": "Texte de commande slash, base française",
+    "other": "nom de la session"
+  },
+  {
+    "id": "slash.service",
+    "description": "Texte de commande slash, base française",
+    "other": "gérer le démon"
+  },
+  {
+    "id": "slash.service.restart",
+    "description": "Texte de commande slash, base française",
+    "other": "redémarrer le démon"
+  },
+  {
+    "id": "slash.service.update",
+    "description": "Texte de commande slash, base française",
+    "other": "recompiler le démon depuis les sources et le redémarrer"
+  },
+  {
+    "id": "slash.service.update.no_pull",
+    "description": "Texte de commande slash, base française",
+    "other": "ne pas faire de git pull avant la compilation"
+  },
+  {
+    "id": "slash.stop",
+    "description": "Texte de commande slash, base française",
+    "other": "annuler le tour en cours dans cette conversation"
+  },
+  {
+    "id": "slash.verbosity",
+    "description": "Texte de commande slash, base française",
+    "other": "régler ce que cette conversation affiche d'un tour"
+  },
+  {
+    "id": "slash.verbosity.level",
+    "description": "Texte de commande slash, base française",
+    "other": "ce qu'il faut afficher d'un tour ici"
+  },
+  {
+    "id": "slash.verbosity.level.silent",
+    "description": "Texte de commande slash, base française",
+    "other": "silencieux : seulement la réponse"
+  },
+  {
+    "id": "slash.verbosity.level.quiet",
+    "description": "Texte de commande slash, base française",
+    "other": "discret : aussi la liste en direct des noms d'outils"
+  },
+  {
+    "id": "slash.verbosity.level.actions",
+    "description": "Texte de commande slash, base française",
+    "other": "actions : aussi le détail de chaque outil"
+  },
+  {
+    "id": "slash.verbosity.level.full",
+    "description": "Texte de commande slash, base française",
+    "other": "complet : aussi le texte de l'assistant"
+  },
+  {
+    "id": "slash.mode",
+    "description": "Texte de commande slash, base française",
+    "other": "régler comment ce salon traite les mentions"
+  },
+  {
+    "id": "slash.mode.mode",
+    "description": "Texte de commande slash, base française",
+    "other": "comment les mentions sont traitées ici"
+  },
+  {
+    "id": "slash.mode.mode.normal",
+    "description": "Texte de commande slash, base française",
+    "other": "normal : le bot répond quand il est mentionné"
+  },
+  {
+    "id": "slash.mode.mode.support",
+    "description": "Texte de commande slash, base française",
+    "other": "support : chaque mention ouvre son propre fil"
+  },
+  {
+    "id": "slash.mode.mode.ambient",
+    "description": "Texte de commande slash, base française",
+    "other": "ambiant : le bot répond ici sans être mentionné"
+  },
+  {
+    "id": "slash.mode.mode.off",
+    "description": "Texte de commande slash, base française",
+    "other": "désactivé : le bot ignore entièrement ce salon"
+  },
+  {
+    "id": "slash.allow",
+    "description": "Texte de commande slash, base française",
+    "other": "gérer qui peut utiliser le bot"
+  },
+  {
+    "id": "slash.allow.add",
+    "description": "Texte de commande slash, base française",
+    "other": "autoriser un utilisateur à utiliser le bot"
+  },
+  {
+    "id": "slash.allow.add.user",
+    "description": "Texte de commande slash, base française",
+    "other": "utilisateur à autoriser"
+  },
+  {
+    "id": "slash.allow.remove",
+    "description": "Texte de commande slash, base française",
+    "other": "retirer un utilisateur de la liste d'autorisation"
+  },
+  {
+    "id": "slash.allow.remove.user",
+    "description": "Texte de commande slash, base française",
+    "other": "utilisateur à retirer"
+  },
+  {
+    "id": "slash.allow.list",
+    "description": "Texte de commande slash, base française",
+    "other": "lister les utilisateurs autorisés à utiliser le bot"
   }
 ]

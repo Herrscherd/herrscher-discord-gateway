@@ -34,11 +34,13 @@ type accessSettings struct {
 
 const selectMenuMax = 25
 
-const turnRule = "Rappel : ton travail s'arrête à la fin de ce tour, rien ne continue en tâche de fond. " +
-	"Fais le travail maintenant et rends le résultat, ou dis ce qui bloque, n'annonce jamais un travail « lancé » ou « en cours » pour plus tard.\n\n"
+const turnRule = "Reminder: your work ends with this turn, nothing keeps running in the background. " +
+	"Do the work now and report the result, or say what blocks you. Never announce work as \"started\" or \"in progress\" for later.\n\n"
 
-const sharedRule = "Session partagée : plusieurs personnes écrivent dans cette conversation. " +
-	"Chaque message est préfixé par [auteur] ; réponds à qui vient de parler, sans supposer que c'est toujours la même personne.\n\n"
+const sharedRule = "Shared session: several people write in this conversation. " +
+	"Each message is prefixed with [author]; answer whoever just spoke, without assuming it is always the same person.\n\n"
+
+const channelContextHeader = "Channel context (earlier messages, all authors):\n"
 
 type router struct {
 	ctrl  func() contracts.SessionControl
@@ -397,6 +399,13 @@ func (r *router) onChoicePick(_ context.Context, conv, user string, direct bool,
 }
 
 func (r *router) sessionOf(ctrl contracts.SessionControl, conv, user string, direct bool) string {
+	if session := r.boundSession(ctrl, conv, user, direct); session != "" {
+		return session
+	}
+	return conv
+}
+
+func (r *router) boundSession(ctrl contracts.SessionControl, conv, user string, direct bool) string {
 	if s := r.binds.Session(r.cfg.scope.slot(r.chatType(conv, direct), conv, user)); s != "" {
 		return s
 	}
@@ -410,7 +419,7 @@ func (r *router) sessionOf(ctrl contracts.SessionControl, conv, user string, dir
 			return item.Name
 		}
 	}
-	return conv
+	return ""
 }
 
 func (r *router) submit(ctx context.Context, ctrl contracts.SessionControl, session, conv string, msg messageCreate, opening, shared bool) bool {
@@ -436,13 +445,13 @@ func (r *router) compose(ctx context.Context, msg messageCreate, ref *dctl.Messa
 		parts = append(parts, sharedRule)
 	}
 	if lines := r.context(ctx, msg); lines != "" {
-		parts = append(parts, "Contexte du salon (messages précédents, tous auteurs) :\n", lines, "\n---\n\n")
+		parts = append(parts, channelContextHeader, lines, "\n---\n\n")
 	}
 	if q := quote(ref); q != "" {
 		parts = append(parts, q, "\n---\n\n")
 	}
 	if opening && r.cfg.playbook != "" {
-		parts = append(parts, fmt.Sprintf("Pour finir ce travail, suis la skill %q.\n\n", r.cfg.playbook))
+		parts = append(parts, fmt.Sprintf("To finish this work, follow the skill %q.\n\n", r.cfg.playbook))
 	}
 	parts = append(parts, turnRule)
 	if shared {

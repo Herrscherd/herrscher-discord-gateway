@@ -90,7 +90,7 @@ func TestASharedChannelPutsEveryoneInOneSession(t *testing.T) {
 	if len(turns) != 2 {
 		t.Fatalf("submitted %d turns into the shared session, want 2", len(turns))
 	}
-	if !strings.Contains(turns[0].Text, "Session partagée") {
+	if !strings.Contains(turns[0].Text, "Shared session") {
 		t.Fatalf("the opening turn of a shared session did not say so: %q", turns[0].Text)
 	}
 	for i, want := range []string{"[u1] fix the login bug", "[u2] and the signup one"} {
@@ -222,7 +222,7 @@ func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
 	}
 
 	s := &slash{log: testLog(), msgs: testMessages(), binds: r.binds, router: r, ctrl: ctrl}
-	s.setMode("c1", supportMode)
+	s.setMode(testMessages(), "c1", supportMode)
 
 	if got := r.binds.SessionsIn("c1"); len(got) != 0 {
 		t.Fatalf("SessionsIn = %v, want the room unbound so the new mode routes fresh", got)

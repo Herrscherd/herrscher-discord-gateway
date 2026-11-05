@@ -169,7 +169,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 	ctrl.live["ch-c1"] = true
 	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
 
-	if got := s.stop("c1", "", true); !strings.Contains(got, "interrupted") {
+	if got := s.stop(testMessages(), "c1", "", true); !strings.Contains(got, "interrupted") {
 		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
 	}
 	if !slices.Equal(ctrl.interrupted, []string{"ch-c1"}) {
@@ -180,7 +180,7 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
-	if got := s.stop("c1", "", true); !strings.Contains(got, "no turn is running") {
+	if got := s.stop(testMessages(), "c1", "", true); !strings.Contains(got, "no turn is running") {
 		t.Fatalf("stop = %q, want it to report no live turn", got)
 	}
 }
@@ -189,7 +189,7 @@ func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
-	if got := s.setVerbosity("c1", levelFull); !strings.Contains(got, levelFull) {
+	if got := s.setVerbosity(testMessages(), "c1", levelFull); !strings.Contains(got, levelFull) {
 		t.Fatalf("setVerbosity = %q, want the new level confirmed", got)
 	}
 	if got := binds.Level("c1"); got != levelFull {
@@ -204,7 +204,7 @@ func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
-	if got := s.setVerbosity("c1", "loud"); !strings.Contains(got, "unknown") {
+	if got := s.setVerbosity(testMessages(), "c1", "loud"); !strings.Contains(got, "unknown") {
 		t.Fatalf("setVerbosity = %q, want it refused", got)
 	}
 	if got := binds.Level("c1"); got != "" {
@@ -234,7 +234,7 @@ func TestSupportModeUnbindsTheChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := s.setMode("c1", supportMode); !strings.Contains(got, "support") {
+	if got := s.setMode(testMessages(), "c1", supportMode); !strings.Contains(got, "support") {
 		t.Fatalf("setMode = %q, want the mode confirmed", got)
 	}
 	if got := binds.Mode("c1"); got != supportMode {
@@ -251,11 +251,11 @@ func TestSupportModeUnbindsTheChannel(t *testing.T) {
 func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
-	if got := s.setMode("c1", supportMode); got == "" {
+	if got := s.setMode(testMessages(), "c1", supportMode); got == "" {
 		t.Fatal("setMode said nothing")
 	}
 
-	if got := s.setMode("c1", normalMode); !strings.Contains(got, "normal") {
+	if got := s.setMode(testMessages(), "c1", normalMode); !strings.Contains(got, "normal") {
 		t.Fatalf("setMode = %q, want the mode confirmed", got)
 	}
 	if got := binds.Mode("c1"); got != "" {
@@ -267,7 +267,7 @@ func TestAnUnknownModeIsRefused(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
-	if got := s.setMode("c1", "helpdesk"); !strings.Contains(got, "unknown") {
+	if got := s.setMode(testMessages(), "c1", "helpdesk"); !strings.Contains(got, "unknown") {
 		t.Fatalf("setMode = %q, want it refused", got)
 	}
 	if got := binds.Mode("c1"); got != "" {
@@ -372,7 +372,7 @@ func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
 
 func TestSaveNoteSaysAnUnreadableFileRefusesChanges(t *testing.T) {
 	s := &slash{log: testLog(), msgs: testMessages()}
-	got := s.saveNote(fmt.Errorf("%w: corrupt", errStoreLocked), "allow", "ok")
+	got := s.saveNote(testMessages(), fmt.Errorf("%w: corrupt", errStoreLocked), "allow", "ok")
 	if !strings.Contains(got, "unreadable") || strings.Contains(got, "next restart") {
 		t.Fatalf("saveNote = %q, want the unreadable-file refusal", got)
 	}
@@ -380,7 +380,7 @@ func TestSaveNoteSaysAnUnreadableFileRefusesChanges(t *testing.T) {
 
 func TestSaveNoteSaysAFailedWriteIsLost(t *testing.T) {
 	s := &slash{log: testLog(), msgs: testMessages()}
-	got := s.saveNote(errors.New("disk full"), "allow", "ok")
+	got := s.saveNote(testMessages(), errors.New("disk full"), "allow", "ok")
 	if !strings.Contains(got, "lost at the next restart") || strings.Contains(got, "unreadable") {
 		t.Fatalf("saveNote = %q, want the lost-on-restart warning", got)
 	}
@@ -404,7 +404,7 @@ func TestRunShowsWhatTheDispatchReturned(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctrl.dispatched = tc.result
-			if got := s.run(context.Background(), []string{"x"}); got != tc.want {
+			if got := s.run(context.Background(), testMessages(), []string{"x"}); got != tc.want {
 				t.Fatalf("run = %q, want %q", got, tc.want)
 			}
 		})

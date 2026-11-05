@@ -40,7 +40,7 @@ func TestEveryTurnCarriesTheNoBackgroundWorkRule(t *testing.T) {
 	r.onMessage(context.Background(), ownerPing("second"))
 
 	for i, in := range ctrl.submitted["ch-c1"] {
-		if !strings.Contains(in.Text, "rien ne continue en tâche de fond") {
+		if !strings.Contains(in.Text, "nothing keeps running in the background") {
 			t.Fatalf("turn %d dropped the rule:\n%s", i, in.Text)
 		}
 	}

@@ -54,6 +54,11 @@ func newMessages(lang i18n.Language, log *slog.Logger) (messages, error) {
 	return messages{catalog: catalog, renderer: contracts.NewRenderer(), heads: tables, lang: lang, log: log}, nil
 }
 
+func (m messages) in(lang i18n.Language) messages {
+	m.lang = lang
+	return m
+}
+
 func (m messages) head(key headKey) string {
 	return m.headIn(m.lang, key)
 }

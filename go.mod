@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.3
 
 require (
-	github.com/Herrscherd/dctl v1.8.1
+	github.com/Herrscherd/dctl v1.10.0
 	github.com/Herrscherd/herrscher-contracts v0.19.1
 	github.com/coder/websocket v1.8.15
 )
