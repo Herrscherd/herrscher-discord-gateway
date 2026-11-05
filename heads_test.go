@@ -295,16 +295,19 @@ func TestGatewayMessagesWithoutHeadsSettingKeepsTheDefaults(t *testing.T) {
 
 func TestFrenchHeadsArePinned(t *testing.T) {
 	french := testMessages().heads[i18n.French]
-	pinned := map[headKey]string{
-		headAck:      "⏳",
-		headFail:     "❌",
-		headDone:     "✅",
-		headToolRead: "📖",
-		headToolEdit: "✏️",
+	pinned := []struct {
+		key  headKey
+		want string
+	}{
+		{headAck, "⏳"},
+		{headFail, "❌"},
+		{headDone, "✅"},
+		{headToolRead, "📖"},
+		{headToolEdit, "✏️"},
 	}
-	for key, want := range pinned {
-		if got := french[string(key)]; got != want {
-			t.Errorf("fr head %s = %q, want %q", key, got, want)
+	for _, tc := range pinned {
+		if got := french[string(tc.key)]; got != tc.want {
+			t.Errorf("fr head %s = %q, want %q", tc.key, got, tc.want)
 		}
 	}
 }
