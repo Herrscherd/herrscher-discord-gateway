@@ -21,16 +21,17 @@ type renderClient interface {
 }
 
 type sink struct {
-	run   lifetime
-	rc    renderClient
-	ch    string
-	level func() string
-	owner string
-	tidy  bool
-	base  messages
-	msgs  messages
-	langs sessionLanguages
-	log   *slog.Logger
+	run       lifetime
+	rc        renderClient
+	ch        string
+	level     func() string
+	owner     string
+	tidy      bool
+	base      messages
+	msgs      messages
+	localized bool
+	langs     sessionLanguages
+	log       *slog.Logger
 
 	mu       sync.Mutex
 	queue    []*sinkJob
@@ -63,10 +64,18 @@ func newSink(run lifetime, renderer renderClient, channel string, level func() s
 }
 
 func (s *sink) localize() {
+	if s.localized {
+		return
+	}
+	s.localized = true
 	s.msgs = s.langs.messagesFor(s.ch, s.base)
 	if s.pv != nil {
 		s.pv.msgs = s.msgs
 	}
+}
+
+func (s *sink) endTurn() {
+	s.localized = false
 }
 
 func staticLevel(level string) func() string {
@@ -376,8 +385,12 @@ func (s *sink) apply(ctx context.Context, event contracts.Event) {
 		s.onReset()
 	case "abandoned":
 		s.onAbandoned(ctx)
+		s.endTurn()
 	case "reply":
 		s.onReply(ctx, event)
+		if event.Done {
+			s.endTurn()
+		}
 	}
 }
 

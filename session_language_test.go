@@ -131,6 +131,40 @@ func TestSinkProgressSpeaksTheSessionLanguage(t *testing.T) {
 	}
 }
 
+type countingCtrl struct {
+	*fakeCtrl
+
+	calls int
+}
+
+func (c *countingCtrl) Sessions() []contracts.SessionInfo {
+	c.calls++
+	return c.fakeCtrl.Sessions()
+}
+
+func TestSessionLanguageIsResolvedOncePerTurn(t *testing.T) {
+	f := &fakeRender{}
+	ctrl := &countingCtrl{fakeCtrl: newFakeCtrl()}
+	sessionLanguageOf(ctrl.fakeCtrl, "chanA", i18n.French)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
+	set.langs = sessionLanguages{
+		ctrl:  func() contracts.SessionControl { return ctrl },
+		binds: newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog()),
+	}
+	sink := set.at("chanA")
+
+	sink.handle(contracts.Event{T: "human"})
+	for range 20 {
+		sink.handle(contracts.Event{T: "status", Text: "Read"})
+		sink.handle(contracts.Event{T: "chunk", Text: "x"})
+	}
+	sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
+
+	if ctrl.calls != 1 {
+		t.Fatalf("Sessions() called %d times during one turn of 40 progress events, want exactly 1", ctrl.calls)
+	}
+}
+
 func TestSessionLanguageChangedBetweenTurnsProgressFollows(t *testing.T) {
 	f := &fakeRender{}
 	ctrl := newFakeCtrl()
