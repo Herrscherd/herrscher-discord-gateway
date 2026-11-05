@@ -27,7 +27,9 @@ type sink struct {
 	level func() string
 	owner string
 	tidy  bool
+	base  messages
 	msgs  messages
+	langs sessionLanguages
 	log   *slog.Logger
 
 	mu       sync.Mutex
@@ -57,7 +59,14 @@ func newSink(run lifetime, renderer renderClient, channel string, level func() s
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, msgs: msgs, log: log}
+	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, base: msgs, msgs: msgs, log: log}
+}
+
+func (s *sink) localize() {
+	s.msgs = s.langs.messagesFor(s.ch, s.base)
+	if s.pv != nil {
+		s.pv.msgs = s.msgs
+	}
 }
 
 func staticLevel(level string) func() string {
@@ -97,7 +106,8 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.langs.messagesFor(convID, s.msgs), s.log)
+	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.msgs, s.log)
+	created.langs = s.langs
 	s.m[convID] = created
 	return created
 }
@@ -271,6 +281,7 @@ func (s *sink) execute(job *sinkJob) {
 		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
 		return
 	}
+	s.localize()
 	job.step()
 }
 

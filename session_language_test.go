@@ -130,3 +130,29 @@ func TestSinkProgressSpeaksTheSessionLanguage(t *testing.T) {
 		t.Fatalf("posts = %q, want the French summary %q", got, want)
 	}
 }
+
+func TestSessionLanguageChangedBetweenTurnsProgressFollows(t *testing.T) {
+	f := &fakeRender{}
+	ctrl := newFakeCtrl()
+	sessionLanguageOf(ctrl, "chanA", i18n.French)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
+	set.langs = sessionLanguages{
+		ctrl:  func() contracts.SessionControl { return ctrl },
+		binds: newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog()),
+	}
+	sink := set.at("chanA")
+
+	sink.handle(contracts.Event{T: "human"})
+	sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
+	sessionLanguageOf(ctrl, "chanA", i18n.English)
+	sink.handle(contracts.Event{T: "human"})
+	sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
+
+	french := testMessages().in(i18n.French)
+	english := testMessages().in(i18n.English)
+	wantFrench := withEmoji(french.head(headDone), french.say("progress.done", nil))
+	wantEnglish := withEmoji(english.head(headDone), english.say("progress.done", nil))
+	if got := f.postsTo("chanA"); len(got) != 2 || got[0] != wantFrench || got[1] != wantEnglish {
+		t.Fatalf("posts = %q, want the French summary %q then the English one %q", got, wantFrench, wantEnglish)
+	}
+}
