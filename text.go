@@ -108,7 +108,7 @@ func (m messages) unexpectedDetail(lang i18n.Language, detail string) string {
 func (m messages) catalogText(lang i18n.Language, key string) string {
 	text, err := m.catalog.Message(lang, key, nil)
 	if err != nil {
-		m.log.Error("built-in message missing", "key", key, "err", err)
+		m.log.Error("built-in message missing", "err", err)
 		return ""
 	}
 	return text

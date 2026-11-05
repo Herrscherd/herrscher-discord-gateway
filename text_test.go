@@ -109,12 +109,14 @@ func TestGatewayCatalogIsComplete(t *testing.T) {
 	i18ntest.CheckDeclared(t, declaredMessages(), sources)
 }
 
+const keyVar = "key"
+
 type keyCall struct {
-	where      token.Position
-	name       string
-	key        string
-	literal    bool
-	reassigned bool
+	where   token.Position
+	name    string
+	key     string
+	literal bool
+	misuse  bool
 }
 
 func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
@@ -122,8 +124,8 @@ func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
 	files := productionFiles(t, fset)
 	used := make(map[string]bool)
 	for _, call := range keyCalls(fset, files, stringConstants(files)) {
-		if call.reassigned {
-			t.Errorf("%s: the key parameter %s is reassigned, so the key it carries cannot be checked", call.where, call.name)
+		if call.misuse {
+			t.Errorf("%s: the key parameter is used in a form the analysis cannot follow", call.where)
 			continue
 		}
 		if !call.literal {
@@ -174,14 +176,14 @@ func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) 
 }
 
 func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
-	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1}
-	keyParam := funnelKeyParam(decl)
+	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1, "failed": 1}
+	funnel := isKeyFunnel(decl)
 	var calls []keyCall
+	if funnel {
+		calls = append(calls, unexplainedKeyUses(fset, decl, argIndex)...)
+	}
 	ast.Inspect(decl, func(node ast.Node) bool {
-		if assign, ok := node.(*ast.AssignStmt); ok && keyParam != "" && assignsTo(assign, keyParam) {
-			calls = append(calls, keyCall{where: fset.Position(assign.Pos()), name: keyParam, reassigned: true})
-		}
-		if call, ok := node.(*ast.CallExpr); ok && !forwardsKey(call, argIndex, keyParam) {
+		if call, ok := node.(*ast.CallExpr); ok && (!funnel || keyArgument(call, argIndex) == nil) {
 			if found, isKeyCall := keyCallOf(fset, call, argIndex, consts); isKeyCall {
 				calls = append(calls, found)
 			}
@@ -191,44 +193,55 @@ func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []key
 	return calls
 }
 
-func funnelKeyParam(decl ast.Decl) string {
-	if isKeyFunnel(decl) && declaresParam(decl, "key") {
-		return "key"
+func unexplainedKeyUses(fset *token.FileSet, decl ast.Decl, argIndex map[string]int) []keyCall {
+	allowed := make(map[*ast.Ident]bool)
+	for _, ident := range keyParamIdents(decl) {
+		allowed[ident] = true
 	}
-	return ""
+	ast.Inspect(decl, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok {
+			if ident := keyArgument(call, argIndex); ident != nil {
+				allowed[ident] = true
+			}
+		}
+		return true
+	})
+	var misuses []keyCall
+	ast.Inspect(decl, func(node ast.Node) bool {
+		if ident, ok := node.(*ast.Ident); ok && ident.Name == keyVar && !allowed[ident] {
+			misuses = append(misuses, keyCall{where: fset.Position(ident.Pos()), name: keyVar, misuse: true})
+		}
+		return true
+	})
+	return misuses
 }
 
-func declaresParam(decl ast.Decl, name string) bool {
+func keyParamIdents(decl ast.Decl) []*ast.Ident {
 	fn, ok := decl.(*ast.FuncDecl)
 	if !ok {
-		return false
+		return nil
 	}
+	var idents []*ast.Ident
 	for _, field := range fn.Type.Params.List {
 		for _, ident := range field.Names {
-			if ident.Name == name {
-				return true
+			if ident.Name == keyVar {
+				idents = append(idents, ident)
 			}
 		}
 	}
-	return false
+	return idents
 }
 
-func assignsTo(assign *ast.AssignStmt, name string) bool {
-	for _, lhs := range assign.Lhs {
-		if ident, ok := lhs.(*ast.Ident); ok && ident.Name == name {
-			return true
-		}
-	}
-	return false
-}
-
-func forwardsKey(call *ast.CallExpr, argIndex map[string]int, keyParam string) bool {
+func keyArgument(call *ast.CallExpr, argIndex map[string]int) *ast.Ident {
 	index, isKeyCall := argIndex[calleeName(call)]
-	if keyParam == "" || !isKeyCall || len(call.Args) <= index {
-		return false
+	if !isKeyCall || len(call.Args) <= index {
+		return nil
 	}
 	ident, ok := call.Args[index].(*ast.Ident)
-	return ok && ident.Name == keyParam
+	if !ok || ident.Name != keyVar {
+		return nil
+	}
+	return ident
 }
 
 func isKeyFunnel(decl ast.Decl) bool {
