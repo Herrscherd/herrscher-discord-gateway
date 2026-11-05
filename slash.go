@@ -11,6 +11,7 @@ import (
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
 type slash struct {
@@ -33,14 +34,15 @@ type acker interface {
 func newSlash(ix *dctl.Interactions, comp acker, gatewayURL, token string, allow *allowStore, binds *bindStore, msgs messages, log *slog.Logger) *slash {
 	handler := &slash{log: log, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds, msgs: msgs}
 	handler.socket = newWS(gatewayURL, token, log, handler.onInteraction, handler.onMessage, handler.onGone)
+	lab := newLabels(msgs)
 	handler.reg.
-		Add(commandSet(), handler.handleSet).
-		Add(commandSession(), handler.handleSession).
-		Add(commandService(), handler.handleService).
-		Add(commandAllow(), handler.handleAllow).
-		Add(commandStop(), handler.handleStop).
-		Add(commandVerbosity(), handler.handleVerbosity).
-		Add(commandMode(), handler.handleMode).
+		Add(commandSet(lab), handler.handleSet).
+		Add(commandSession(lab), handler.handleSession).
+		Add(commandService(lab), handler.handleService).
+		Add(commandAllow(lab), handler.handleAllow).
+		Add(commandStop(lab), handler.handleStop).
+		Add(commandVerbosity(lab), handler.handleVerbosity).
+		Add(commandMode(lab), handler.handleMode).
 		Autocomplete("session", handler.autoSession)
 	return handler
 }
@@ -190,17 +192,18 @@ func (s *slash) handleSession(ctx context.Context, interaction dctl.Interaction)
 	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
+	texts := s.texts(interaction)
 	path, _ := route(interaction.Data)
 	if len(path) >= 3 && path[1] == "allow" {
 		name, _ := interaction.Data.Opt("name")
 		user, _ := interaction.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", s.msgs.say("allow.session_added", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
+			s.respond(ctx, interaction, s.saveNote(texts, s.allow.AddSession(name, user), "allow store", texts.say("allow.session_added", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "remove":
-			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", s.msgs.say("allow.session_removed", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
+			s.respond(ctx, interaction, s.saveNote(texts, s.allow.RemoveSession(name, user), "allow store", texts.say("allow.session_removed", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "list":
-			s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_session", map[string]any{nameArg: neutralise(name)}), s.allow.ListSession(name)))
+			s.respond(ctx, interaction, listUsers(texts, texts.say("allow.label_session", map[string]any{nameArg: neutralise(name)}), s.allow.ListSession(name)))
 		}
 		return dctl.Response{}, nil
 	}
@@ -212,15 +215,16 @@ func (s *slash) handleAllow(ctx context.Context, interaction dctl.Interaction) (
 	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
+	texts := s.texts(interaction)
 	path, _ := route(interaction.Data)
 	user, _ := interaction.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", s.msgs.say("allow.global_added", map[string]any{mentionArg: mention(user)})))
+		s.respond(ctx, interaction, s.saveNote(texts, s.allow.AddGlobal(user), "allow store", texts.say("allow.global_added", map[string]any{mentionArg: mention(user)})))
 	case "remove":
-		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", s.msgs.say("allow.global_removed", map[string]any{mentionArg: mention(user)})))
+		s.respond(ctx, interaction, s.saveNote(texts, s.allow.RemoveGlobal(user), "allow store", texts.say("allow.global_removed", map[string]any{mentionArg: mention(user)})))
 	case "list":
-		s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_global", nil), s.allow.ListGlobal()))
+		s.respond(ctx, interaction, listUsers(texts, texts.say("allow.label_global", nil), s.allow.ListGlobal()))
 	}
 	return dctl.Response{}, nil
 }
@@ -229,18 +233,18 @@ func (s *slash) handleStop(ctx context.Context, interaction dctl.Interaction) (d
 	if !s.gate(ctx, interaction) {
 		return dctl.Response{}, nil
 	}
-	s.respond(ctx, interaction, s.stop(interaction.ChannelID, interaction.UserID(), interaction.GuildID == ""))
+	s.respond(ctx, interaction, s.stop(s.texts(interaction), interaction.ChannelID, interaction.UserID(), interaction.GuildID == ""))
 	return dctl.Response{}, nil
 }
 
-func (s *slash) stop(channel, user string, direct bool) string {
+func (s *slash) stop(texts messages, channel, user string, direct bool) string {
 	if s.ctrl == nil || s.router == nil {
-		return s.msgs.say("control.unavailable", nil)
+		return texts.say("control.unavailable", nil)
 	}
 	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
-		return s.msgs.say("stop.none", nil)
+		return texts.say("stop.none", nil)
 	}
-	return withEmoji(s.msgs.head(headStop), s.msgs.say("stop.done", nil))
+	return withEmoji(texts.head(headStop), texts.say("stop.done", nil))
 }
 
 func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
@@ -248,18 +252,18 @@ func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interactio
 		return dctl.Response{}, nil
 	}
 	level, _ := interaction.Data.Opt("level")
-	s.respond(ctx, interaction, s.setVerbosity(interaction.ChannelID, level))
+	s.respond(ctx, interaction, s.setVerbosity(s.texts(interaction), interaction.ChannelID, level))
 	return dctl.Response{}, nil
 }
 
-func (s *slash) setVerbosity(channel, level string) string {
+func (s *slash) setVerbosity(texts messages, channel, level string) string {
 	if !knownLevel(level) {
-		return s.msgs.say("verbosity.unknown", map[string]any{"Level": neutralise(level)})
+		return texts.say("verbosity.unknown", map[string]any{"Level": neutralise(level)})
 	}
 	if s.binds == nil {
-		return s.msgs.say("store.unavailable", nil)
+		return texts.say("store.unavailable", nil)
 	}
-	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", s.msgs.say("verbosity.set", map[string]any{"Level": neutralise(level)}))
+	return s.saveNote(texts, s.binds.SetLevel(channel, level), "bind store", texts.say("verbosity.set", map[string]any{"Level": neutralise(level)}))
 }
 
 func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
@@ -267,19 +271,19 @@ func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (d
 		return dctl.Response{}, nil
 	}
 	mode, _ := interaction.Data.Opt("mode")
-	s.respond(ctx, interaction, s.setMode(interaction.ChannelID, mode))
+	s.respond(ctx, interaction, s.setMode(s.texts(interaction), interaction.ChannelID, mode))
 	return dctl.Response{}, nil
 }
 
-func (s *slash) setMode(channel, mode string) string {
+func (s *slash) setMode(texts messages, channel, mode string) string {
 	if s.binds == nil {
-		return s.msgs.say("store.unavailable", nil)
+		return texts.say("store.unavailable", nil)
 	}
 	if !knownMode(mode) {
-		return s.msgs.say("mode.unknown", map[string]any{"Mode": neutralise(mode)})
+		return texts.say("mode.unknown", map[string]any{"Mode": neutralise(mode)})
 	}
 	if mode == ambientMode && s.agent() == "" {
-		return s.msgs.say("mode.ambient_refused", nil)
+		return texts.say("mode.ambient_refused", nil)
 	}
 	if mode != normalMode {
 		if err := s.binds.UnbindAll(channel); err != nil {
@@ -288,13 +292,13 @@ func (s *slash) setMode(channel, mode string) string {
 	}
 	switch mode {
 	case supportMode:
-		return s.saveNote(s.binds.SetMode(channel, supportMode), "bind store", s.msgs.say("mode.support", nil))
+		return s.saveNote(texts, s.binds.SetMode(channel, supportMode), "bind store", texts.say("mode.support", nil))
 	case ambientMode:
-		return s.saveNote(s.binds.SetMode(channel, ambientMode), "bind store", s.msgs.say("mode.ambient", nil))
+		return s.saveNote(texts, s.binds.SetMode(channel, ambientMode), "bind store", texts.say("mode.ambient", nil))
 	case offMode:
-		return s.saveNote(s.binds.SetMode(channel, offMode), "bind store", s.msgs.say("mode.off", nil))
+		return s.saveNote(texts, s.binds.SetMode(channel, offMode), "bind store", texts.say("mode.off", nil))
 	}
-	return s.saveNote(s.binds.SetMode(channel, ""), "bind store", s.msgs.say("mode.normal", nil))
+	return s.saveNote(texts, s.binds.SetMode(channel, ""), "bind store", texts.say("mode.normal", nil))
 }
 
 func (s *slash) agent() string {
@@ -322,8 +326,30 @@ func (s *slash) gate(ctx context.Context, interaction dctl.Interaction) bool {
 	if s.allow.Allowed(interaction.UserID()) {
 		return true
 	}
-	s.respond(ctx, interaction, s.msgs.say("gate.denied", nil))
+	s.respond(ctx, interaction, s.texts(interaction).say("gate.denied", nil))
 	return false
+}
+
+func (s *slash) texts(interaction dctl.Interaction) messages {
+	return s.msgs.in(s.replyLanguage(interaction))
+}
+
+func (s *slash) replyLanguage(interaction dctl.Interaction) i18n.Language {
+	if s.sessionChannel(interaction) {
+		return s.msgs.lang
+	}
+	lang, err := i18n.ParseLanguage(string(interaction.Locale))
+	if err != nil {
+		return s.msgs.lang
+	}
+	return lang
+}
+
+func (s *slash) sessionChannel(interaction dctl.Interaction) bool {
+	if s.router == nil || s.ctrl == nil {
+		return false
+	}
+	return s.router.boundSession(s.ctrl, interaction.ChannelID, interaction.UserID(), interaction.GuildID == "") != ""
 }
 
 func (s *slash) sessions() []contracts.SessionInfo {
@@ -339,7 +365,7 @@ func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args
 		s.log.Warn("defer interaction failed", "err", err)
 		return
 	}
-	out := s.run(ctx, args)
+	out := s.run(ctx, s.texts(interaction), args)
 	appID, err := s.ix.AppID(ctx)
 	if err != nil {
 		s.log.Warn("resolve application id for the response failed", "err", err)
@@ -350,27 +376,27 @@ func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args
 	}
 }
 
-func (s *slash) run(ctx context.Context, args []string) string {
+func (s *slash) run(ctx context.Context, texts messages, args []string) string {
 	if s.ctrl == nil {
-		return s.msgs.say("control.unavailable", nil)
+		return texts.say("control.unavailable", nil)
 	}
 	result, err := s.ctrl.Dispatch(ctx, args)
 	if err != nil {
-		return s.msgs.noticeText(s.msgs.lang, contracts.NoticeOf(err))
+		return texts.noticeText(texts.lang, contracts.NoticeOf(err))
 	}
 	if notice, ok := result.Notice(); ok {
-		return s.msgs.noticeText(s.msgs.lang, notice)
+		return texts.noticeText(texts.lang, notice)
 	}
-	return s.dataText(result.Data())
+	return s.dataText(texts, result.Data())
 }
 
-func (s *slash) dataText(data any) string {
+func (s *slash) dataText(texts messages, data any) string {
 	if data == nil {
-		return s.msgs.say("run.done", nil)
+		return texts.say("run.done", nil)
 	}
 	text := fmt.Sprint(data)
 	if text == "" {
-		return s.msgs.say("run.done", nil)
+		return texts.say("run.done", nil)
 	}
 	return text
 }
@@ -387,15 +413,15 @@ const (
 	optBoolean         = 5
 )
 
-func (s *slash) saveNote(err error, store, ok string) string {
+func (s *slash) saveNote(texts messages, err error, store, ok string) string {
 	if err == nil {
 		return ok
 	}
 	s.log.Warn("store save failed", "store", store, "err", err)
 	if errors.Is(err, errStoreLocked) {
-		return ok + " " + s.msgs.say("save.unreadable", nil)
+		return ok + " " + texts.say("save.unreadable", nil)
 	}
-	return ok + " " + s.msgs.say("save.lost", nil)
+	return ok + " " + texts.say("save.lost", nil)
 }
 
 func route(data dctl.InteractionData) ([]string, []dctl.InteractionOption) {

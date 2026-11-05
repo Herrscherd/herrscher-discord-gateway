@@ -60,7 +60,7 @@ func quote(ref *dctl.Message) string {
 		return ""
 	}
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Message auquel il répond, %s :\n", ref.Author.Username)
+	fmt.Fprintf(&builder, "Message being replied to, from %s:\n", ref.Author.Username)
 	if body := strings.TrimSpace(ref.Content); body != "" {
 		for _, line := range strings.Split(body, "\n") {
 			fmt.Fprintf(&builder, "> %s\n", line)
@@ -92,7 +92,7 @@ func describe(msg dctl.Message) []string {
 			if field.Name == "" && field.Value == "" {
 				continue
 			}
-			add(fmt.Sprintf("[embed] %s : %s", field.Name, field.Value))
+			add(fmt.Sprintf("[embed] %s: %s", field.Name, field.Value))
 		}
 		if u := mediaURL(embed.Image); u != "" {
 			add("[image] " + label(u))

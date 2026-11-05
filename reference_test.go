@@ -174,7 +174,7 @@ func TestUnreadableReplyTargetStillLetsTheTurnThrough(t *testing.T) {
 	if len(got) != 1 || !strings.Contains(got[0].Text, "regarde ça") {
 		t.Fatalf("submitted = %+v, want the ping to go through anyway", got)
 	}
-	if strings.Contains(got[0].Text, "Message auquel il répond") {
+	if strings.Contains(got[0].Text, "Message being replied to") {
 		t.Fatalf("an empty quote was written anyway:\n%s", got[0].Text)
 	}
 }
@@ -186,7 +186,7 @@ func TestAPingThatRepliesToNothingReadsNothing(t *testing.T) {
 	if len(c.got) != 0 {
 		t.Fatalf("GetMessage calls = %+v, want none", c.got)
 	}
-	if strings.Contains(ctrl.submitted["ch-c1"][0].Text, "Message auquel il répond") {
+	if strings.Contains(ctrl.submitted["ch-c1"][0].Text, "Message being replied to") {
 		t.Fatal("a quote was written with nothing to quote")
 	}
 }
@@ -204,7 +204,7 @@ func TestChannelContextKeepsMessagesThatAreOnlyEmbeds(t *testing.T) {
 	r.onMessage(context.Background(), ownerPing("regarde le salon"))
 
 	text := ctrl.submitted["ch-c1"][0].Text
-	for _, want := range []string{"clownbot", "Quest failed", "step 3 never fires", "env : prod", "shot.png"} {
+	for _, want := range []string{"clownbot", "Quest failed", "step 3 never fires", "env: prod", "shot.png"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("context missing %q in:\n%s", want, text)
 		}
@@ -224,7 +224,7 @@ func TestADescribedLineNeverBreaksItsFrame(t *testing.T) {
 
 	text := ctrl.submitted["ch-c1"][0].Text
 	for _, line := range strings.Split(quote(c.getMsg), "\n") {
-		if line != "" && !strings.HasPrefix(line, "> ") && !strings.HasPrefix(line, "Message auquel") {
+		if line != "" && !strings.HasPrefix(line, "> ") && !strings.HasPrefix(line, "Message being replied to") {
 			t.Fatalf("line escaped the quote: %q", line)
 		}
 	}

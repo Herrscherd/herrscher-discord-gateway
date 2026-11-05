@@ -365,6 +365,19 @@ French, `en` for English. When `HERRSCHER_LANG` is absent the texts are in Engli
 A value the gateway does not support, such as `de`, is logged once as a warning and
 the texts stay in English. Nothing is repaired silently.
 
+The ephemeral replies of the slash commands follow the language of the person who
+typed the command, which Discord sends with each interaction as its locale. A
+French client gets French replies, and a locale the gateway does not support falls
+back to the operator's language. In a conversation bound to a session the language
+is the session's, and the gateway still answers in the operator's language there,
+because the contracts do not yet pass the session language to a plugin. The menu
+replies (the repo and choice menus) are public and stay in the operator's language.
+
+The slash commands are registered in English, with a French name and description
+for each command, option and choice, so the Discord client shows them in French to
+French users. The names of commands and options are fixed syntax and keep the same
+spelling in both languages.
+
 The gateway reads the variable itself because contracts v0.18.0 has no way for the
 host to pass a language to a plugin, apart from the language of a notice. The
 variable is therefore set in the environment of the daemon that loads the gateway.

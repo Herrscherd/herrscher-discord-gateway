@@ -330,5 +330,260 @@
     "id": "channel.unknown",
     "description": "Stands for a channel whose id is empty",
     "other": "an unknown channel"
+  },
+  {
+    "id": "slash.set",
+    "description": "Slash command text, English base",
+    "other": "configure the daemon"
+  },
+  {
+    "id": "slash.set.home",
+    "description": "Slash command text, English base",
+    "other": "set the category or forum that hosts session channels"
+  },
+  {
+    "id": "slash.set.home.channel",
+    "description": "Slash command text, English base",
+    "other": "category or forum channel"
+  },
+  {
+    "id": "slash.set.source",
+    "description": "Slash command text, English base",
+    "other": "set the source repository `service update` builds from"
+  },
+  {
+    "id": "slash.set.source.path",
+    "description": "Slash command text, English base",
+    "other": "absolute path of the source repository"
+  },
+  {
+    "id": "slash.session",
+    "description": "Slash command text, English base",
+    "other": "manage sessions"
+  },
+  {
+    "id": "slash.session.create",
+    "description": "Slash command text, English base",
+    "other": "create a session: a linked channel, an isolated worktree and a backend"
+  },
+  {
+    "id": "slash.session.create.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.session.create.cmd",
+    "description": "Slash command text, English base",
+    "other": "linked command (default: the configured command)"
+  },
+  {
+    "id": "slash.session.create.shared",
+    "description": "Slash command text, English base",
+    "other": "run in the main repository instead of an isolated worktree"
+  },
+  {
+    "id": "slash.session.create.backend",
+    "description": "Slash command text, English base",
+    "other": "bridge backend"
+  },
+  {
+    "id": "slash.session.create.project",
+    "description": "Slash command text, English base",
+    "other": "subfolder of the workspace where the backend works"
+  },
+  {
+    "id": "slash.session.create.clone",
+    "description": "Slash command text, English base",
+    "other": "remote repository (owner/name) to clone first into the workspace"
+  },
+  {
+    "id": "slash.session.close",
+    "description": "Slash command text, English base",
+    "other": "close a session: stop the bridge, delete the worktree, archive the channel"
+  },
+  {
+    "id": "slash.session.close.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.session.close.force",
+    "description": "Slash command text, English base",
+    "other": "discard uncommitted changes in the worktree"
+  },
+  {
+    "id": "slash.session.list",
+    "description": "Slash command text, English base",
+    "other": "list active sessions"
+  },
+  {
+    "id": "slash.session.who",
+    "description": "Slash command text, English base",
+    "other": "list the participants observed in a session"
+  },
+  {
+    "id": "slash.session.who.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.session.allow",
+    "description": "Slash command text, English base",
+    "other": "manage who can take part in a session"
+  },
+  {
+    "id": "slash.session.allow.add",
+    "description": "Slash command text, English base",
+    "other": "allow a user in a session"
+  },
+  {
+    "id": "slash.session.allow.add.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.session.allow.add.user",
+    "description": "Slash command text, English base",
+    "other": "user to allow"
+  },
+  {
+    "id": "slash.session.allow.remove",
+    "description": "Slash command text, English base",
+    "other": "remove a user's access to a session"
+  },
+  {
+    "id": "slash.session.allow.remove.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.session.allow.remove.user",
+    "description": "Slash command text, English base",
+    "other": "user to remove"
+  },
+  {
+    "id": "slash.session.allow.list",
+    "description": "Slash command text, English base",
+    "other": "list the users allowed in a session"
+  },
+  {
+    "id": "slash.session.allow.list.name",
+    "description": "Slash command text, English base",
+    "other": "session name"
+  },
+  {
+    "id": "slash.service",
+    "description": "Slash command text, English base",
+    "other": "manage the daemon"
+  },
+  {
+    "id": "slash.service.restart",
+    "description": "Slash command text, English base",
+    "other": "restart the daemon"
+  },
+  {
+    "id": "slash.service.update",
+    "description": "Slash command text, English base",
+    "other": "rebuild the daemon from source and restart it"
+  },
+  {
+    "id": "slash.service.update.no_pull",
+    "description": "Slash command text, English base",
+    "other": "skip git pull before building"
+  },
+  {
+    "id": "slash.stop",
+    "description": "Slash command text, English base",
+    "other": "cancel the current turn in this conversation"
+  },
+  {
+    "id": "slash.verbosity",
+    "description": "Slash command text, English base",
+    "other": "set what this conversation shows of a turn"
+  },
+  {
+    "id": "slash.verbosity.level",
+    "description": "Slash command text, English base",
+    "other": "what to show of a turn here"
+  },
+  {
+    "id": "slash.verbosity.level.silent",
+    "description": "Slash command text, English base",
+    "other": "silent: only the reply"
+  },
+  {
+    "id": "slash.verbosity.level.quiet",
+    "description": "Slash command text, English base",
+    "other": "quiet: also the live list of tool names"
+  },
+  {
+    "id": "slash.verbosity.level.actions",
+    "description": "Slash command text, English base",
+    "other": "actions: also the details of each tool"
+  },
+  {
+    "id": "slash.verbosity.level.full",
+    "description": "Slash command text, English base",
+    "other": "full: also the assistant's text"
+  },
+  {
+    "id": "slash.mode",
+    "description": "Slash command text, English base",
+    "other": "set how this channel handles mentions"
+  },
+  {
+    "id": "slash.mode.mode",
+    "description": "Slash command text, English base",
+    "other": "how mentions are handled here"
+  },
+  {
+    "id": "slash.mode.mode.normal",
+    "description": "Slash command text, English base",
+    "other": "normal: the bot replies when mentioned"
+  },
+  {
+    "id": "slash.mode.mode.support",
+    "description": "Slash command text, English base",
+    "other": "support: each mention opens its own thread"
+  },
+  {
+    "id": "slash.mode.mode.ambient",
+    "description": "Slash command text, English base",
+    "other": "ambient: the bot replies here without a mention"
+  },
+  {
+    "id": "slash.mode.mode.off",
+    "description": "Slash command text, English base",
+    "other": "off: the bot ignores this channel entirely"
+  },
+  {
+    "id": "slash.allow",
+    "description": "Slash command text, English base",
+    "other": "manage who can use the bot"
+  },
+  {
+    "id": "slash.allow.add",
+    "description": "Slash command text, English base",
+    "other": "allow a user to use the bot"
+  },
+  {
+    "id": "slash.allow.add.user",
+    "description": "Slash command text, English base",
+    "other": "user to allow"
+  },
+  {
+    "id": "slash.allow.remove",
+    "description": "Slash command text, English base",
+    "other": "remove a user from the allow list"
+  },
+  {
+    "id": "slash.allow.remove.user",
+    "description": "Slash command text, English base",
+    "other": "user to remove"
+  },
+  {
+    "id": "slash.allow.list",
+    "description": "Slash command text, English base",
+    "other": "list the users allowed to use the bot"
   }
 ]

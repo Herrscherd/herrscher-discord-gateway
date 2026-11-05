@@ -22,7 +22,7 @@ func modeSlash(t *testing.T, agent string) (*slash, *bindStore) {
 func TestAmbientModeIsRefusedWithoutAPersona(t *testing.T) {
 	s, binds := modeSlash(t, "")
 
-	got := s.setMode("c1", ambientMode)
+	got := s.setMode(testMessages(), "c1", ambientMode)
 	if !strings.Contains(got, "DISCORD_AGENT") {
 		t.Fatalf("setMode = %q, want it refused and the missing persona named", got)
 	}
@@ -34,7 +34,7 @@ func TestAmbientModeIsRefusedWithoutAPersona(t *testing.T) {
 func TestAmbientModeIsAllowedWithAPersona(t *testing.T) {
 	s, binds := modeSlash(t, "greeter")
 
-	if got := s.setMode("c1", ambientMode); !strings.Contains(got, "ambient") {
+	if got := s.setMode(testMessages(), "c1", ambientMode); !strings.Contains(got, "ambient") {
 		t.Fatalf("setMode = %q, want the mode confirmed", got)
 	}
 	if mode := binds.Mode("c1"); mode != ambientMode {
@@ -48,7 +48,7 @@ func TestOffModeIsStoredAndUnbinds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := s.setMode("c1", offMode); !strings.Contains(got, "off") {
+	if got := s.setMode(testMessages(), "c1", offMode); !strings.Contains(got, "off") {
 		t.Fatalf("setMode = %q, want the mode confirmed", got)
 	}
 	if mode := binds.Mode("c1"); mode != offMode {
