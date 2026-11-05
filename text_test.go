@@ -1,12 +1,18 @@
 package discord
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -54,7 +60,8 @@ func declaredMessages() map[string][]string {
 		"bindings.write_failed": {},
 		"bindings.unreadable":   {},
 		"bind.bad_choice":       {},
-		"bind.create_failed":    {"Detail"},
+		"notice.no_detail":      {},
+		"channel.unknown":       {},
 		"control.unavailable":   {},
 		"menu.owned_by":         {"Mention"},
 		"menu.denied":           {},
@@ -102,16 +109,25 @@ func TestGatewayCatalogIsComplete(t *testing.T) {
 	i18ntest.CheckDeclared(t, declaredMessages(), sources)
 }
 
-var sayCall = regexp.MustCompile(`\b(?:say|sayIn|Help|Param|ValueParam)\(\s*(?:[^,()]+,\s*)?"([^"]+)"`)
+type keyCall struct {
+	where   token.Position
+	name    string
+	key     string
+	literal bool
+}
 
 func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
+	fset := token.NewFileSet()
+	files := productionFiles(t, fset)
 	used := make(map[string]bool)
-	for _, src := range goSources(t) {
-		for _, match := range sayCall.FindAllStringSubmatch(src, -1) {
-			used[match[1]] = true
-			if _, declared := declaredMessages()[match[1]]; !declared {
-				t.Errorf("key %q is used by the code but not declared", match[1])
-			}
+	for _, call := range keyCalls(fset, files, stringConstants(files)) {
+		if !call.literal {
+			t.Errorf("%s: the key of %s is neither a string literal nor a string constant", call.where, call.name)
+			continue
+		}
+		used[call.key] = true
+		if _, declared := declaredMessages()[call.key]; !declared {
+			t.Errorf("%s: key %q is used by the code but not declared", call.where, call.key)
 		}
 	}
 	for key := range declaredMessages() {
@@ -121,25 +137,126 @@ func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
 	}
 }
 
-func goSources(t *testing.T) []string {
+func productionFiles(t *testing.T, fset *token.FileSet) []*ast.File {
 	t.Helper()
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out []string
+	var files []*ast.File
 	for _, entry := range entries {
 		name := entry.Name()
 		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Clean(name))
+		file, err := parser.ParseFile(fset, filepath.Clean(name), nil, parser.SkipObjectResolution)
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, string(data))
+		files = append(files, file)
 	}
-	return out
+	return files
+}
+
+func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) []keyCall {
+	var calls []keyCall
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			calls = append(calls, callsIn(fset, decl, consts)...)
+		}
+	}
+	return calls
+}
+
+func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
+	if fn, ok := decl.(*ast.FuncDecl); ok && (fn.Name.Name == "say" || fn.Name.Name == "sayIn") {
+		return nil
+	}
+	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1}
+	var calls []keyCall
+	ast.Inspect(decl, func(node ast.Node) bool {
+		if call, ok := node.(*ast.CallExpr); ok {
+			if found, isKeyCall := keyCallOf(fset, call, argIndex, consts); isKeyCall {
+				calls = append(calls, found)
+			}
+		}
+		return true
+	})
+	return calls
+}
+
+func keyCallOf(fset *token.FileSet, call *ast.CallExpr, argIndex map[string]int, consts map[string]string) (keyCall, bool) {
+	name := calleeName(call)
+	index, isKeyCall := argIndex[name]
+	if !isKeyCall || len(call.Args) <= index {
+		return keyCall{}, false
+	}
+	key, literal := literalKey(call.Args[index], consts)
+	return keyCall{where: fset.Position(call.Pos()), name: name, key: key, literal: literal}, true
+}
+
+func stringConstants(files []*ast.File) map[string]string {
+	consts := make(map[string]string)
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			for _, spec := range constSpecs(decl) {
+				addStringConstants(consts, spec)
+			}
+		}
+	}
+	return consts
+}
+
+func constSpecs(decl ast.Decl) []*ast.ValueSpec {
+	gen, ok := decl.(*ast.GenDecl)
+	if !ok || gen.Tok != token.CONST {
+		return nil
+	}
+	var specs []*ast.ValueSpec
+	for _, spec := range gen.Specs {
+		if value, ok := spec.(*ast.ValueSpec); ok {
+			specs = append(specs, value)
+		}
+	}
+	return specs
+}
+
+func addStringConstants(consts map[string]string, spec *ast.ValueSpec) {
+	for i, name := range spec.Names {
+		if i >= len(spec.Values) {
+			return
+		}
+		if key, ok := stringLiteral(spec.Values[i]); ok {
+			consts[name.Name] = key
+		}
+	}
+}
+
+func calleeName(call *ast.CallExpr) string {
+	switch fn := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		return fn.Sel.Name
+	case *ast.Ident:
+		return fn.Name
+	}
+	return ""
+}
+
+func literalKey(expr ast.Expr, consts map[string]string) (string, bool) {
+	if ident, ok := expr.(*ast.Ident); ok {
+		key, found := consts[ident.Name]
+		return key, found
+	}
+	return stringLiteral(expr)
+}
+
+func stringLiteral(expr ast.Expr) (string, bool) {
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return "", false
+	}
+	value, err := strconv.Unquote(lit.Value)
+	return value, err == nil
 }
 
 func TestNoticeRendersInEachLanguage(t *testing.T) {
@@ -283,4 +400,135 @@ func runText(ctx context.Context, cmd contracts.Cmd, in contracts.Input) (string
 		return "", fmt.Errorf("result data is %T, want a string", res.Data())
 	}
 	return text, nil
+}
+
+func TestOperatorLanguageComesFromHerrscherLang(t *testing.T) {
+	tests := []struct {
+		value  string
+		want   i18n.Language
+		warned bool
+	}{
+		{"", i18n.English, false},
+		{"en", i18n.English, false},
+		{"fr", i18n.French, false},
+		{"fr_FR.UTF-8", i18n.French, false},
+		{"de", i18n.English, true},
+	}
+	for _, tc := range tests {
+		var logs bytes.Buffer
+		t.Setenv(operatorLanguageEnv, tc.value)
+		msgs, err := messagesFromEnv(slog.New(slog.NewTextHandler(&logs, nil)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if msgs.lang != tc.want {
+			t.Errorf("HERRSCHER_LANG=%q: lang %s, want %s", tc.value, msgs.lang, tc.want)
+		}
+		wantWarnings := 0
+		if tc.warned {
+			wantWarnings = 1
+		}
+		if got := strings.Count(logs.String(), operatorLanguageEnv); got != wantWarnings {
+			t.Errorf("HERRSCHER_LANG=%q: %d warnings, want %d in %q", tc.value, got, wantWarnings, logs.String())
+		}
+	}
+}
+
+func TestNotifyPostsFallbackAndReturnsRenderError(t *testing.T) {
+	f := &fakeClient{}
+	g := NewGateway(f, testRun(), testMessages(), testLog())
+	notice := contracts.Notice{Code: contracts.Code(9999)}
+	_, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, notice)
+	if !errors.Is(err, contracts.ErrUnknownCode) {
+		t.Fatalf("Notify returned %v, want the render error", err)
+	}
+	if len(f.sent) != 1 || !strings.Contains(f.sent[0].content, "```") {
+		t.Fatalf("sent %+v, want one fallback block", f.sent)
+	}
+}
+
+func TestUndeclaredKeyIsNeverRenderedRaw(t *testing.T) {
+	got := testMessages().say("no.such.key", nil)
+	if got == "no.such.key" || !strings.HasPrefix(got, "something went wrong") || !strings.Contains(got, "```") {
+		t.Errorf("got %q, want the fallback block", got)
+	}
+}
+
+func TestTextArgumentCannotPingLinkOrFormat(t *testing.T) {
+	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Text("Name", "@everyone `x` [a](https://evil.example) **b**")}}
+	got, err := testMessages().notice(i18n.English, notice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{"@everyone", "`x`", "[a](", "**b**"} {
+		if strings.Contains(got, raw) {
+			t.Errorf("raw %q survives in %q", raw, got)
+		}
+	}
+}
+
+func TestNeutraliseDefusesMentionsAndMarkdown(t *testing.T) {
+	tests := map[string]string{
+		"@everyone":           "@\u200beveryone",
+		"`code`":              "`\u200bcode`\u200b",
+		"[masked](https://e)": "\\[masked\\]\\(https://e\\)",
+		"**bold** ~~x~~ _y_":  "\\*\\*bold\\*\\* \\~\\~x\\~\\~ \\_y\\_",
+		"# heading | spoiler": "\\# heading \\| spoiler",
+	}
+	for in, want := range tests {
+		if got := neutralise(in); got != want {
+			t.Errorf("neutralise(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestBindFailureIsShownAsNeutralisedBlock(t *testing.T) {
+	err := contracts.NoticeOf(testError("boom ``` @everyone [a](https://e.example)"))
+	got := testMessages().noticeText(i18n.English, err)
+	if n := strings.Count(got, "```"); n != 2 {
+		t.Errorf("got %d code fences in %q, want one block", n, got)
+	}
+	if strings.Contains(got, "@everyone") {
+		t.Errorf("raw mention survives in %q", got)
+	}
+}
+
+func TestUnexpectedWithoutDetailHasExplicitFallback(t *testing.T) {
+	got, err := testMessages().notice(i18n.English, contracts.Notice{Code: contracts.CodeUnexpected})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "```") || !strings.Contains(got, "the error carries no detail") {
+		t.Errorf("got %q, want the explicit no-detail fallback", got)
+	}
+}
+
+func TestEmptyRefRendersAsUnknownChannel(t *testing.T) {
+	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Ref("Name", "")}}
+	got, err := testMessages().notice(i18n.English, notice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "session an unknown channel created" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestCapLimitUsesTheCeilingGiven(t *testing.T) {
+	if got := capLimit("500", readCap); got != readCap {
+		t.Errorf("above the cap: got %d, want %d", got, readCap)
+	}
+	if got := capLimit("7", readCap); got != 7 {
+		t.Errorf("within the cap: got %d, want 7", got)
+	}
+	if got := capLimit("7", 5); got != 5 {
+		t.Errorf("ceiling 5: got %d, want 5", got)
+	}
+}
+
+func TestFrenchAllowListPutsASpaceBeforeTheColon(t *testing.T) {
+	got := testMessages().sayIn(i18n.French, "allow.list", map[string]any{"Label": "x", "Mentions": "y"})
+	if got != "x : y" {
+		t.Errorf("got %q, want %q", got, "x : y")
+	}
 }

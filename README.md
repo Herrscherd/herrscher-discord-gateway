@@ -42,7 +42,6 @@ interchangeable.
 | `playbook` | `DISCORD_PLAYBOOK` | `pr-job` | the playbook a session opens with |
 | `tidy_pings` | `DISCORD_TIDY_PINGS` | off | delete the ping once its answer is posted, see below |
 | `message_deletes` | `DISCORD_MESSAGE_DELETES` | off | contribute `discord message delete`, see below |
-| `language` | `DISCORD_LANGUAGE` | `en` | language of the gateway's own texts when the host does not set one, `en` or `fr`, see below |
 | | `DCTL_STATE_DIR` | `~/.config/dctl` | where the router and allow stores live |
 
 Ports implemented: `Gateway`, `EventSink`, `RoutedEventSink`,
@@ -359,8 +358,15 @@ principal out, so you can copy it back rather than look it up.
 
 The gateway writes its own texts in the language of the conversation they concern:
 `Notify` renders a notice in the language the host passes with it. Texts that no
-notice carries (the slash replies, the repo menus, the prompts of a ping) use
-`DISCORD_LANGUAGE`, the operator default, which is `en` unless set to `fr`.
+notice carries (the slash replies, the repo menus, the prompts of a ping) use the
+operator's language, read from `HERRSCHER_LANG` when the gateway starts: `fr` for
+French, `en` for English. When `HERRSCHER_LANG` is absent the texts are in English.
+A value the gateway does not support, such as `de`, is logged once as a warning and
+the texts stay in English. Nothing is repaired silently.
+
+The gateway reads the variable itself because contracts v0.18.0 has no way for the
+host to pass a language to a plugin, apart from the language of a notice. The
+variable is therefore set in the environment of the daemon that loads the gateway.
 
 The texts live in two catalogs, `locales/en.json` and `locales/fr.json`, in the
 go-i18n format. A test checks that the French catalog has every English key with

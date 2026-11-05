@@ -43,7 +43,7 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 	if err == nil && threadID != "" {
 		if err = r.c.AddThreadMember(ctx, threadID, msg.Author.ID); err == nil {
 			r.adoptThread(ctx, msg.ChannelID, threadID)
-			r.post(ctx, msg.ChannelID, r.msgs.say("thread.private_opened", map[string]any{"Channel": "<#" + threadID + ">"}))
+			r.post(ctx, msg.ChannelID, r.msgs.say("thread.private_opened", map[string]any{"Channel": r.msgs.channelRef(r.msgs.lang, threadID)}))
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
 		r.log.Warn("private thread left without its member, deleting it", "channel", msg.ChannelID, "thread", threadID, "err", err)

@@ -73,7 +73,7 @@ func (g *Gateway) Commands() []contracts.Cmd {
 func (g *Gateway) readChannel(ctx context.Context, input contracts.Input) (contracts.Result, error) {
 	limit, _ := input.Lookup("limit")
 	after, _ := input.Lookup("after")
-	msgs, err := g.c.ReadMessages(ctx, input.Args["id"], capLimit(limit), after)
+	msgs, err := g.c.ReadMessages(ctx, input.Args["id"], capLimit(limit, readCap), after)
 	if err != nil {
 		return contracts.Result{}, fmt.Errorf("discord channel read: %w", err)
 	}
@@ -150,10 +150,10 @@ func (g *Gateway) ownMessage(ctx context.Context, channelID, messageID string) e
 	return nil
 }
 
-func capLimit(v string) int {
+func capLimit(v string, ceiling int) int {
 	number, err := strconv.Atoi(strings.TrimSpace(v))
-	if err != nil || number < 1 || number > readCap {
-		return readCap
+	if err != nil || number < 1 || number > ceiling {
+		return ceiling
 	}
 	return number
 }
@@ -177,7 +177,7 @@ func bodyOf(texts messages, msg dctl.Message) string {
 		return body
 	}
 	if n := len(msg.Attachments); n > 0 {
-		return texts.say("command.attachments", map[string]any{countArg: n, nameArg: msg.Attachments[0].Filename})
+		return texts.say("command.attachments", map[string]any{countArg: n, nameArg: neutralise(msg.Attachments[0].Filename)})
 	}
 	if len(msg.Embeds) > 0 {
 		return "(embed)"

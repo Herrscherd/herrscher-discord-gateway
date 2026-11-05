@@ -118,7 +118,7 @@ func (s *slash) componentReply(ctx context.Context, interaction dctl.Interaction
 	if msg := s.router.onChoicePick(ctx, session, interaction.UserID(), interaction.GuildID == "", value); msg != "" {
 		return msg, true
 	}
-	return s.msgs.say("choice.saved", map[string]any{"Value": value}), true
+	return s.msgs.say("choice.saved", map[string]any{"Value": neutralise(value)}), true
 }
 
 func (s *slash) ackComponent(ctx context.Context, interaction dctl.Interaction, msg string) {
@@ -196,11 +196,11 @@ func (s *slash) handleSession(ctx context.Context, interaction dctl.Interaction)
 		user, _ := interaction.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", s.msgs.say("allow.session_added", map[string]any{mentionArg: mention(user), nameArg: name})))
+			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", s.msgs.say("allow.session_added", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "remove":
-			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", s.msgs.say("allow.session_removed", map[string]any{mentionArg: mention(user), nameArg: name})))
+			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", s.msgs.say("allow.session_removed", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "list":
-			s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_session", map[string]any{nameArg: name}), s.allow.ListSession(name)))
+			s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_session", map[string]any{nameArg: neutralise(name)}), s.allow.ListSession(name)))
 		}
 		return dctl.Response{}, nil
 	}
@@ -254,12 +254,12 @@ func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interactio
 
 func (s *slash) setVerbosity(channel, level string) string {
 	if !knownLevel(level) {
-		return s.msgs.say("verbosity.unknown", map[string]any{"Level": level})
+		return s.msgs.say("verbosity.unknown", map[string]any{"Level": neutralise(level)})
 	}
 	if s.binds == nil {
 		return s.msgs.say("store.unavailable", nil)
 	}
-	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", s.msgs.say("verbosity.set", map[string]any{"Level": level}))
+	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", s.msgs.say("verbosity.set", map[string]any{"Level": neutralise(level)}))
 }
 
 func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
@@ -276,7 +276,7 @@ func (s *slash) setMode(channel, mode string) string {
 		return s.msgs.say("store.unavailable", nil)
 	}
 	if !knownMode(mode) {
-		return s.msgs.say("mode.unknown", map[string]any{"Mode": mode})
+		return s.msgs.say("mode.unknown", map[string]any{"Mode": neutralise(mode)})
 	}
 	if mode == ambientMode && s.agent() == "" {
 		return s.msgs.say("mode.ambient_refused", nil)

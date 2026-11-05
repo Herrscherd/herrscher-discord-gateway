@@ -42,7 +42,7 @@
   {
     "id": "param.limit",
     "description": "Paramètre : combien de messages une lecture renvoie",
-    "other": "combien de messages, plafonné à 100"
+    "other": "combien de messages, dans la limite de lecture"
   },
   {
     "id": "param.after",
@@ -113,7 +113,7 @@
   {
     "id": "repo.ask_capped",
     "description": "Question sur le repo quand il y a plus de repos que le menu n'en montre",
-    "other": "{{.Question}}, {{.Count}} repos, les {{.Shown}} premiers sont listés"
+    "other": "{{.Question}} ({{.Count}} repos, les {{.Shown}} premiers affichés)"
   },
   {
     "id": "repo.menu_failed",
@@ -139,11 +139,6 @@
     "id": "bind.bad_choice",
     "description": "Un choix de repo que le routeur ne sait pas lire",
     "other": "choix illisible"
-  },
-  {
-    "id": "bind.create_failed",
-    "description": "Une session n'a pas pu être créée pour un rattachement",
-    "other": "création de session impossible : {{.Detail}}"
   },
   {
     "id": "control.unavailable",
@@ -303,7 +298,7 @@
   {
     "id": "allow.list",
     "description": "Une liste d'autorisation avec ses personnes",
-    "other": "{{.Label}}: {{.Mentions}}"
+    "other": "{{.Label}} : {{.Mentions}}"
   },
   {
     "id": "progress.running",
@@ -325,5 +320,15 @@
     "id": "notice.unexpected",
     "description": "Introduit le détail technique d'un échec inattendu affiché dans un bloc de code",
     "other": "une erreur interne s'est produite, voici le détail technique :"
+  },
+  {
+    "id": "notice.no_detail",
+    "description": "Remplace le bloc de code quand un échec inattendu n'a aucun détail",
+    "other": "l'erreur ne contient aucun détail"
+  },
+  {
+    "id": "channel.unknown",
+    "description": "Désigne un salon dont l'identifiant est vide",
+    "other": "un salon inconnu"
   }
 ]

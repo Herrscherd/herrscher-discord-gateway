@@ -42,7 +42,7 @@
   {
     "id": "param.limit",
     "description": "Parameter: how many messages a read returns",
-    "other": "how many messages, capped at 100"
+    "other": "how many messages, up to the read limit"
   },
   {
     "id": "param.after",
@@ -113,7 +113,7 @@
   {
     "id": "repo.ask_capped",
     "description": "Question asking which repo to work on when there are more repos than the menu shows",
-    "other": "{{.Question}}, {{.Count}} repos, the first {{.Shown}} are listed"
+    "other": "{{.Question}} ({{.Count}} repos, showing the first {{.Shown}})"
   },
   {
     "id": "repo.menu_failed",
@@ -139,11 +139,6 @@
     "id": "bind.bad_choice",
     "description": "A repo choice that the router cannot read",
     "other": "unreadable choice"
-  },
-  {
-    "id": "bind.create_failed",
-    "description": "A session could not be created for a binding",
-    "other": "session creation failed: {{.Detail}}"
   },
   {
     "id": "control.unavailable",
@@ -325,5 +320,15 @@
     "id": "notice.unexpected",
     "description": "Introduces the technical detail of an unexpected failure shown in a code block",
     "other": "something went wrong inside the gateway, here is the technical detail:"
+  },
+  {
+    "id": "notice.no_detail",
+    "description": "Replaces the code block when an unexpected failure carries no detail",
+    "other": "the error carries no detail"
+  },
+  {
+    "id": "channel.unknown",
+    "description": "Stands for a channel whose id is empty",
+    "other": "an unknown channel"
   }
 ]

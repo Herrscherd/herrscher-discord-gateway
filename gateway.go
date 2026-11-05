@@ -148,11 +148,19 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the
 // operator's default language. It satisfies contracts.NoticeSink.
 func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang i18n.Language, notice contracts.Notice) (contracts.MessageID, error) {
-	text, err := g.msgs.notice(g.msgs.resolve(lang), notice)
-	if err != nil {
-		return "", fmt.Errorf("discord notify: %w", err)
+	resolved := g.msgs.resolve(lang)
+	text, renderErr := g.msgs.notice(resolved, notice)
+	if renderErr != nil {
+		text = g.msgs.renderFailed(resolved, notice, renderErr)
 	}
-	return g.Post(ctx, conv, noticeEmoji(notice.Code)+" "+text)
+	sent, err := g.Post(ctx, conv, noticeEmoji(notice.Code)+" "+text)
+	if err != nil {
+		return sent, err
+	}
+	if renderErr != nil {
+		return sent, fmt.Errorf("discord notify: %w", renderErr)
+	}
+	return sent, nil
 }
 
 // React adds emoji to msg in conv. It returns an error that wraps the Discord

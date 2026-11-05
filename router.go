@@ -200,7 +200,7 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 		r.sinks.at(task.conv).fail(ctx, failure)
 		return true
 	}
-	r.post(ctx, task.conv, r.msgs.say("repo.reused", map[string]any{"Repo": repoLabel(last)}))
+	r.post(ctx, task.conv, r.msgs.say("repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
 	return true
 }
 
@@ -288,7 +288,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 		return r.msgs.say("bind.bad_choice", nil)
 	}
 	if _, err := ctrl.Create(ctx, spec); err != nil {
-		return r.msgs.say("bind.create_failed", map[string]any{"Detail": err.Error()})
+		return r.msgs.noticeText(r.msgs.lang, contracts.NoticeOf(err))
 	}
 	save := func(slot, session string) error { return r.binds.Bind(slot, session) }
 	if task.thread {
@@ -366,7 +366,7 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		r.sinks.at(task.conv).fail(ctx, "")
 		return failure
 	}
-	return r.msgs.say("repo.started", map[string]any{"Repo": strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")})
+	return r.msgs.say("repo.started", map[string]any{"Repo": neutralise(strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:"))})
 }
 
 func (r *router) replaceLostJob(channel, user string) job {

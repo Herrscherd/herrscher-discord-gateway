@@ -2,6 +2,7 @@ package discord
 
 import (
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -22,7 +23,12 @@ const (
 	detailMaxRunes       = 1500
 	zeroWidthSpace       = "\u200b"
 	channelMentionFormat = "<#%s>"
+	unexpectedKey        = "notice.unexpected"
+	noDetailKey          = "notice.no_detail"
+	unknownChannelKey    = "channel.unknown"
 )
+
+var errUndeclaredKey = errors.New("undeclared message key")
 
 type messages struct {
 	catalog  *i18n.Catalog
@@ -48,19 +54,26 @@ func (m messages) say(key string, params map[string]any) string {
 }
 
 func (m messages) sayIn(lang i18n.Language, key string, params map[string]any) string {
+	if !m.catalog.Has(key) {
+		return m.failed(lang, key, errUndeclaredKey)
+	}
 	text, err := m.catalog.Message(lang, key, params)
 	if err != nil {
-		m.log.Warn("message not rendered", "key", key, "err", err)
-		return key
+		return m.failed(lang, key, err)
 	}
 	return text
+}
+
+func (m messages) failed(lang i18n.Language, key string, err error) string {
+	m.log.Warn("message not rendered", "key", key, "err", err)
+	return m.unexpectedDetail(lang, fmt.Sprintf("%s: %v", key, err))
 }
 
 func (m messages) notice(lang i18n.Language, notice contracts.Notice) (string, error) {
 	if notice.Code == contracts.CodeUnexpected {
 		return m.unexpected(lang, notice), nil
 	}
-	text, err := m.renderer.Render(lang, plainNotice(notice))
+	text, err := m.renderer.Render(lang, m.plainNotice(lang, notice))
 	if err != nil {
 		return "", fmt.Errorf("render notice %s: %w", notice.Code.Key(), err)
 	}
@@ -69,15 +82,43 @@ func (m messages) notice(lang i18n.Language, notice contracts.Notice) (string, e
 
 func (m messages) noticeText(lang i18n.Language, notice contracts.Notice) string {
 	text, err := m.notice(lang, notice)
-	if err == nil {
-		return text
+	if err != nil {
+		return m.renderFailed(lang, notice, err)
 	}
+	return text
+}
+
+func (m messages) renderFailed(lang i18n.Language, notice contracts.Notice, err error) string {
 	m.log.Warn("notice not rendered", "code", notice.Code.Key(), "err", err)
-	return m.unexpected(lang, contracts.NoticeOf(err))
+	return m.unexpectedDetail(lang, err.Error())
 }
 
 func (m messages) unexpected(lang i18n.Language, notice contracts.Notice) string {
-	return m.sayIn(lang, "notice.unexpected", nil) + "\n" + codeBlock(detailOf(notice))
+	return m.unexpectedDetail(lang, detailOf(notice))
+}
+
+func (m messages) unexpectedDetail(lang i18n.Language, detail string) string {
+	intro := m.catalogText(lang, unexpectedKey)
+	if detail == "" {
+		return intro + "\n" + m.catalogText(lang, noDetailKey)
+	}
+	return intro + "\n" + codeBlock(detail)
+}
+
+func (m messages) catalogText(lang i18n.Language, key string) string {
+	text, err := m.catalog.Message(lang, key, nil)
+	if err != nil {
+		m.log.Error("built-in message missing", "key", key, "err", err)
+		return ""
+	}
+	return text
+}
+
+func (m messages) channelRef(lang i18n.Language, channelID string) string {
+	if channelID == "" {
+		return m.catalogText(lang, unknownChannelKey)
+	}
+	return fmt.Sprintf(channelMentionFormat, channelID)
 }
 
 func detailOf(notice contracts.Notice) string {
@@ -90,19 +131,37 @@ func detailOf(notice contracts.Notice) string {
 }
 
 func codeBlock(detail string) string {
-	return "```\n" + clip(neutralise(detail), detailMaxRunes) + "\n```"
+	return "```\n" + clip(neutraliseCode(detail), detailMaxRunes) + "\n```"
 }
 
-func neutralise(text string) string {
+func neutraliseCode(text string) string {
 	return strings.NewReplacer("`", "`"+zeroWidthSpace, "@", "@"+zeroWidthSpace).Replace(text)
 }
 
-func plainNotice(notice contracts.Notice) contracts.Notice {
+func neutralise(text string) string {
+	return strings.NewReplacer(
+		"`", "`"+zeroWidthSpace,
+		"@", "@"+zeroWidthSpace,
+		`\`, `\\`,
+		"*", `\*`,
+		"_", `\_`,
+		"~", `\~`,
+		"|", `\|`,
+		"[", `\[`,
+		"]", `\]`,
+		"(", `\(`,
+		")", `\)`,
+		"#", `\#`,
+		">", `\>`,
+	).Replace(text)
+}
+
+func (m messages) plainNotice(lang i18n.Language, notice contracts.Notice) contracts.Notice {
 	args := make([]contracts.Arg, 0, len(notice.Args))
 	for _, arg := range notice.Args {
 		switch arg.Kind() {
 		case contracts.ArgRef:
-			args = append(args, contracts.Text(arg.Name(), fmt.Sprintf(channelMentionFormat, arg.Value())))
+			args = append(args, contracts.Text(arg.Name(), m.channelRef(lang, fmt.Sprint(arg.Value()))))
 		case contracts.ArgText:
 			args = append(args, contracts.Text(arg.Name(), neutralise(fmt.Sprint(arg.Value()))))
 		case contracts.ArgCount:
@@ -120,13 +179,11 @@ func (m messages) resolve(lang i18n.Language) i18n.Language {
 }
 
 func noticeEmoji(code contracts.Code) string {
-	switch code {
-	case contracts.CodeSessionCreated:
+	if code == contracts.CodeSessionCreated {
 		return "✅"
-	case contracts.CodeSessionClosed:
+	}
+	if code == contracts.CodeSessionClosed {
 		return "⏹️"
-	case contracts.CodeSessionNotFound, contracts.CodeSessionExists, contracts.CodeUnknownAgent, contracts.CodeUnexpected:
-		return failEmoji
 	}
 	return failEmoji
 }

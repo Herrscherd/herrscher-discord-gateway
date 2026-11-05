@@ -59,7 +59,6 @@ func init() {
 				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "name of the skill a new session follows (pr-job by default)"},
 				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so the channel keeps the work and not the messages that started it (off by default, never applies when the answer lives in a thread opened from the ping)"},
 				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "add the `message delete` verb, so an agent can delete messages this bot sent (off by default, the verb is absent until this is on, and even then it refuses any message written by another author)"},
-				{Key: "language", Env: "DISCORD_LANGUAGE", Help: "language of the messages this gateway writes when no conversation sets one: en (default) or fr", Default: "en"},
 			},
 		},
 		Gateway: func(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
@@ -71,15 +70,33 @@ func init() {
 
 func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return embeddedSkills() }
 
+const operatorLanguageEnv = "HERRSCHER_LANG"
+
+func messagesFromEnv(log *slog.Logger) (messages, error) {
+	return operatorMessages(os.Getenv(operatorLanguageEnv), log)
+}
+
+func operatorMessages(raw string, log *slog.Logger) (messages, error) {
+	return newMessages(operatorLanguage(raw, log), log)
+}
+
+func operatorLanguage(raw string, log *slog.Logger) i18n.Language {
+	if raw == "" {
+		return i18n.English
+	}
+	lang, err := i18n.ParseLanguage(raw)
+	if err != nil {
+		log.Warn("HERRSCHER_LANG is not a supported language, the gateway's texts stay in English", "value", raw, "err", err)
+		return i18n.English
+	}
+	return lang
+}
+
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
 	log = log.With("gateway", gatewayKind)
-	lang, err := i18n.ParseLanguage(strSetting(cfg.Get("language"), "en"))
-	if err != nil {
-		return contracts.GatewaySet{}, fmt.Errorf("discord gateway: language: %w", err)
-	}
-	msgs, err := newMessages(lang, log)
+	msgs, err := messagesFromEnv(log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
