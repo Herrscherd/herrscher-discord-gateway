@@ -133,8 +133,8 @@ func TestAskAcksThePingItIsAnswering(t *testing.T) {
 
 	r.onMessage(context.Background(), ownerPing("fix the login bug"))
 
-	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
-		t.Fatalf("reacted = %v, want one %q on the ping that asked the question", f.reacted, ackEmoji)
+	if len(f.reacted) != 1 || f.reacted[0] != englishHead(headAck) {
+		t.Fatalf("reacted = %v, want one %q on the ping that asked the question", f.reacted, englishHead(headAck))
 	}
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 	s := r.sinks.at("c1")
@@ -143,7 +143,7 @@ func TestAskAcksThePingItIsAnswering(t *testing.T) {
 		t.Fatalf("reacted = %v, want the ack not to be repeated by the turn", f.reacted)
 	}
 	s.handle(contracts.Event{T: "reply", Text: "done", Done: true})
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
 		t.Fatalf("unreacted = %v, want the ack cleared once at turn end", f.unreacted)
 	}
 }
@@ -155,10 +155,10 @@ func TestAckResolvesToAFailureWhenTheMenuCannotBePosted(t *testing.T) {
 
 	r.onMessage(context.Background(), ownerPing("une question générale"))
 
-	if len(f.reacted) != 2 || f.reacted[0] != ackEmoji || f.reacted[1] != failEmoji {
-		t.Fatalf("reacted = %v, want the %s replaced by a %s", f.reacted, ackEmoji, failEmoji)
+	if len(f.reacted) != 2 || f.reacted[0] != englishHead(headAck) || f.reacted[1] != englishHead(headFail) {
+		t.Fatalf("reacted = %v, want the %s replaced by a %s", f.reacted, englishHead(headAck), englishHead(headFail))
 	}
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
 		t.Fatalf("unreacted = %v, want the pending mark cleared", f.unreacted)
 	}
 	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "repo menu") {
@@ -179,8 +179,8 @@ func TestAckResolvesToAFailureWhenTheSessionCannotBeCreated(t *testing.T) {
 
 	r.onMessage(context.Background(), ownerPing("répare le login sur herrscher"))
 
-	if len(f.reacted) != 2 || f.reacted[1] != failEmoji {
-		t.Fatalf("reacted = %v, want a %s once the session failed to start", f.reacted, failEmoji)
+	if len(f.reacted) != 2 || f.reacted[1] != englishHead(headFail) {
+		t.Fatalf("reacted = %v, want a %s once the session failed to start", f.reacted, englishHead(headFail))
 	}
 	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "no home set") {
 		t.Fatalf("posts = %v, want the daemon's own reason surfaced", f.posts)

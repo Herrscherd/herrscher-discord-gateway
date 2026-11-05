@@ -240,7 +240,7 @@ func (s *slash) stop(channel, user string, direct bool) string {
 	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
 		return s.msgs.say("stop.none", nil)
 	}
-	return "⏹️ " + s.msgs.say("stop.done", nil)
+	return withEmoji(s.msgs.head(headStop), s.msgs.say("stop.done", nil))
 }
 
 func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {

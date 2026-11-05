@@ -367,7 +367,7 @@ func TestRefArgumentIsRefusedForATextParameter(t *testing.T) {
 	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) || !errors.Is(err, contracts.ErrNoticeArgs) {
 		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted wrapping ErrNoticeArgs", err)
 	}
-	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, failEmoji+" ") {
+	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, englishHead(headFail)+" ") {
 		t.Fatalf("sent %+v, want the fallback under the failure emoji", f.sent)
 	}
 }
@@ -566,42 +566,42 @@ func TestNewNoticeCodesRenderInFrenchAndEnglish(t *testing.T) {
 		{
 			name:    "setting invalid",
 			notice:  contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", "mode"), contracts.Text("Value", "loud")}},
-			emoji:   failEmoji,
+			emoji:   englishHead(headFail),
 			french:  "valeur invalide loud pour le réglage mode",
 			english: "invalid value loud for setting mode",
 		},
 		{
 			name:    "setting missing",
 			notice:  contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", "token, guild")}},
-			emoji:   failEmoji,
+			emoji:   englishHead(headFail),
 			french:  "ces réglages doivent être définis : token, guild",
 			english: "these settings must be set: token, guild",
 		},
 		{
 			name:    "node merged",
 			notice:  contracts.Notice{Code: contracts.CodeNodeMerged},
-			emoji:   failEmoji,
+			emoji:   englishHead(headFail),
 			french:  "ce nœud est replié dans un umbrella ; restaure-le avec l'option force pour le détacher",
 			english: "this node is folded into an umbrella; restore it with force to detach it",
 		},
 		{
 			name:    "compact unavailable",
 			notice:  contracts.Notice{Code: contracts.CodeCompactUnavailable, Args: []contracts.Arg{contracts.Text("Reason", "no model")}},
-			emoji:   failEmoji,
+			emoji:   englishHead(headFail),
 			french:  "compaction du contexte indisponible : no model",
 			english: "context compaction unavailable: no model",
 		},
 		{
 			name:    "compacted",
 			notice:  contracts.Notice{Code: contracts.CodeCompacted},
-			emoji:   successEmoji,
+			emoji:   englishHead(headDone),
 			french:  "contexte compacté",
 			english: "context compacted",
 		},
 		{
 			name:    "address plaintext refused",
 			notice:  contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", "10.0.0.2:4000")}},
-			emoji:   failEmoji,
+			emoji:   englishHead(headFail),
 			french:  "connexion en clair vers 10.0.0.2:4000 refusée : le TLS est requis hors boucle locale",
 			english: "plaintext connection to 10.0.0.2:4000 refused: TLS is required outside loopback",
 		},
@@ -722,38 +722,32 @@ func TestFrenchAllowListPutsASpaceBeforeTheColon(t *testing.T) {
 	}
 }
 
-func TestNoticeEmojiPerCode(t *testing.T) {
+func TestNoticeHeadPerCode(t *testing.T) {
 	tests := []struct {
 		code  contracts.Code
-		emoji string
+		class headKey
 	}{
-		{contracts.CodeSessionNotFound, failEmoji},
-		{contracts.CodeSessionExists, failEmoji},
-		{contracts.CodeUnknownAgent, failEmoji},
-		{contracts.CodeSessionCreated, successEmoji},
-		{contracts.CodeSessionClosed, closedEmoji},
-		{contracts.CodeUnexpected, failEmoji},
-		{contracts.CodeSettingInvalid, failEmoji},
-		{contracts.CodeSettingMissing, failEmoji},
-		{contracts.CodeNodeMerged, failEmoji},
-		{contracts.CodeCompactUnavailable, failEmoji},
-		{contracts.CodeCompacted, successEmoji},
-		{contracts.CodeAddressPlaintextRefused, failEmoji},
-		{contracts.Code(9999), ""},
+		{contracts.CodeSessionNotFound, headFail},
+		{contracts.CodeSessionExists, headFail},
+		{contracts.CodeUnknownAgent, headFail},
+		{contracts.CodeSessionCreated, headDone},
+		{contracts.CodeSessionClosed, headStop},
+		{contracts.CodeUnexpected, headFail},
+		{contracts.CodeSettingInvalid, headFail},
+		{contracts.CodeSettingMissing, headFail},
+		{contracts.CodeNodeMerged, headFail},
+		{contracts.CodeCompactUnavailable, headFail},
+		{contracts.CodeCompacted, headDone},
+		{contracts.CodeAddressPlaintextRefused, headFail},
 	}
-	decided := make(map[contracts.Code]bool, len(tests))
+	msgs := testMessages()
 	for _, tc := range tests {
-		decided[tc.code] = true
 		t.Run(tc.code.Key(), func(t *testing.T) {
-			if got := noticeEmoji(tc.code); got != tc.emoji {
-				t.Errorf("noticeEmoji(%s) = %q, want %q", tc.code.Key(), got, tc.emoji)
+			got := msgs.headIn(i18n.English, noticeHead(tc.code))
+			if want := msgs.headIn(i18n.English, tc.class); got != want {
+				t.Errorf("head of %s = %q, want the %s head %q", tc.code.Key(), got, tc.class, want)
 			}
 		})
-	}
-	for _, code := range contracts.Codes() {
-		if !decided[code] {
-			t.Errorf("no emoji decided for %s", code.Key())
-		}
 	}
 }
 
@@ -772,7 +766,7 @@ func TestWithEmojiLeavesTextAloneWithoutEmoji(t *testing.T) {
 	if got := withEmoji("", "x"); got != "x" {
 		t.Errorf("withEmoji without emoji = %q, want the text alone", got)
 	}
-	if got := withEmoji(successEmoji, "x"); got != "✅ x" {
+	if got := withEmoji(englishHead(headDone), "x"); got != "✅ x" {
 		t.Errorf("withEmoji with emoji = %q, want the emoji then the text", got)
 	}
 }
@@ -784,7 +778,7 @@ func TestUnknownCodeNoticeIsPostedAsAFailure(t *testing.T) {
 	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) {
 		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted", err)
 	}
-	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, failEmoji+" ") {
-		t.Fatalf("sent %+v, want the fallback under %s", f.sent, failEmoji)
+	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, englishHead(headFail)+" ") {
+		t.Fatalf("sent %+v, want the fallback under %s", f.sent, englishHead(headFail))
 	}
 }

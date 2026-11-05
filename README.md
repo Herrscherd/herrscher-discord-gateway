@@ -42,6 +42,7 @@ interchangeable.
 | `playbook` | `DISCORD_PLAYBOOK` | `pr-job` | the playbook a session opens with |
 | `tidy_pings` | `DISCORD_TIDY_PINGS` | off | delete the ping once its answer is posted, see below |
 | `message_deletes` | `DISCORD_MESSAGE_DELETES` | off | contribute `discord message delete`, see below |
+| `heads_file` | `DISCORD_HEADS_FILE` | built-in heads | JSON file overriding the emoji heads, see below |
 | | `DCTL_STATE_DIR` | `~/.config/dctl` | where the router and allow stores live |
 
 Ports implemented: `Gateway`, `EventSink`, `RoutedEventSink`,
@@ -376,6 +377,53 @@ missing from French falls back to its English text, with one warning in the log.
 Two things stay as they are whatever the language. The detail of an unexpected
 error is the engine's own text, shown verbatim in a code block with mentions
 neutralised, and the output of commands an agent reads stays English.
+
+## Emoji heads
+
+Every line the gateway puts in front of a message carries a head: the ⏳ on a
+ping, the ❌ of a failure, the ✅ of a finished turn, the icon of each tool in the
+progress view, and the icon of each notice code. Each head has a stable key. The
+built-in heads live in `heads/en.json` and `heads/fr.json`, in the go-i18n format
+(`id` is the key, `other` the head), and are loaded at startup. A head missing
+from a language falls back to its English head. A head missing from English is
+empty, and the line is posted with no leading space.
+
+`DISCORD_HEADS_FILE` points to a JSON object from key to head. It applies to every
+language:
+
+```json
+{"ack": "👀", "tool.read": "", "session.closed": "🛑"}
+```
+
+An empty value turns a head off: no reaction is added for it, and its line has no
+prefix. A key the gateway does not know, or a file that cannot be read or parsed,
+stops the gateway at startup. The error carries a `setting.invalid` notice that
+names the setting, for the host to show the operator.
+
+| Key | Shown on |
+|---|---|
+| `ack` | the reaction on a ping the agent has taken up, removed when the turn ends |
+| `running` | the header of the live progress message |
+| `fail` | the reaction on a failure, a failure line, a notice that could not be rendered |
+| `done` | a finished turn, the progress summary |
+| `stop` | the confirmation of `/stop` |
+| `thinking` | the assistant's text at the full verbosity level |
+| `tool.read` | Read |
+| `tool.edit` | Edit, Write, MultiEdit, NotebookEdit |
+| `tool.search` | Grep, Glob |
+| `tool.agent` | Task, Agent |
+| `tool.web` | WebFetch, WebSearch |
+| `tool.write` | TodoWrite |
+| `tool.other` | any other tool |
+| `session.not_found`, `session.exists`, `agent.unknown` | the refused session or agent |
+| `session.created` | a session that was created |
+| `session.closed` | a session that was closed |
+| `compaction.done` | a compaction that finished |
+| `compact.unavailable` | a compaction that cannot run |
+| `internal.unexpected` | an unexpected internal error |
+| `setting.invalid`, `setting.missing` | a setting that is wrong or absent |
+| `node.merged` | a node folded into an umbrella |
+| `address.plaintext_refused` | a plaintext address that was refused |
 
 ## When a notice cannot be rendered
 

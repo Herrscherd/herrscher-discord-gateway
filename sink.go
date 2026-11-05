@@ -12,10 +12,6 @@ import (
 
 const gatewayMaxLen = 2000
 
-const ackEmoji = "⏳"
-
-const failEmoji = "❌"
-
 type renderClient interface {
 	UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error)
 	Post(ctx context.Context, channelID, content string) error
@@ -310,7 +306,11 @@ func (s *sink) ack(ctx context.Context, channelID, messageID, author string) {
 }
 
 func (s *sink) addAck(ctx context.Context, ref msgRef) {
-	if err := s.rc.React(ctx, ref.chOr(s.ch), ref.id, ackEmoji); err != nil {
+	ack := s.msgs.head(headAck)
+	if ack == "" {
+		return
+	}
+	if err := s.rc.React(ctx, ref.chOr(s.ch), ref.id, ack); err != nil {
 		s.log.Warn("add ack reaction failed", "err", err)
 		return
 	}
@@ -332,15 +332,17 @@ func (s *sink) applyFail(ctx context.Context, reason string) {
 	if s.acked.id != "" {
 		failed := s.acked
 		s.clearAck(ctx, channel)
-		if err := s.rc.React(ctx, channel, failed.id, failEmoji); err != nil {
-			s.log.Warn("add failure reaction failed", "err", err)
+		if fail := s.msgs.head(headFail); fail != "" {
+			if err := s.rc.React(ctx, channel, failed.id, fail); err != nil {
+				s.log.Warn("add failure reaction failed", "err", err)
+			}
 		}
 		s.acked = msgRef{}
 	}
 	if reason == "" {
 		return
 	}
-	s.postParts(ctx, channel, s.answer(failEmoji+" "+reason))
+	s.postParts(ctx, channel, s.answer(withEmoji(s.msgs.head(headFail), reason)))
 }
 
 func (s *sink) handle(event contracts.Event) {
@@ -455,7 +457,7 @@ func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
 
 func (s *sink) answer(text string) string {
 	if text == "" {
-		text = "✅ " + s.msgs.say("progress.done", nil)
+		text = withEmoji(s.msgs.head(headDone), s.msgs.say("progress.done", nil))
 	}
 	if s.owner == "" {
 		return text
@@ -467,7 +469,7 @@ func (s *sink) clearAck(ctx context.Context, channelID string) {
 	if s.acked.id == "" {
 		return
 	}
-	if err := s.rc.Unreact(ctx, s.acked.chOr(channelID), s.acked.id, ackEmoji); err != nil {
+	if err := s.rc.Unreact(ctx, s.acked.chOr(channelID), s.acked.id, s.msgs.head(headAck)); err != nil {
 		s.log.Warn("remove ack reaction failed", "err", err)
 	}
 	s.acked = msgRef{}

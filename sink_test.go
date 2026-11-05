@@ -139,7 +139,7 @@ func TestSilentLevelClearsTheAckOnAbandon(t *testing.T) {
 	s.handle(contracts.Event{T: "status", Text: "Read x"})
 	s.handle(contracts.Event{T: "abandoned"})
 
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
 		t.Fatalf("unreacted = %v, want the ack cleared", f.unreacted)
 	}
 	if len(f.upserts) != 0 || len(f.posts) != 0 {
@@ -227,8 +227,8 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	s.noteUser(context.Background(), "c1", "u1", "42")
 
 	s.handle(contracts.Event{T: "human", Who: "alice", Text: "hi"})
-	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
-		t.Fatalf("reacted = %v, want one %q", f.reacted, ackEmoji)
+	if len(f.reacted) != 1 || f.reacted[0] != englishHead(headAck) {
+		t.Fatalf("reacted = %v, want one %q", f.reacted, englishHead(headAck))
 	}
 	s.handle(contracts.Event{T: "status", Text: "Read envfile.go"})
 	s.handle(contracts.Event{T: "reply", Text: "done", Done: true, Cost: 0.02})
@@ -236,8 +236,8 @@ func TestSinkAcksHumanAndSummarizesReply(t *testing.T) {
 	if len(f.posts) != 1 || f.posts[0] != "done" {
 		t.Fatalf("posts = %v, want [done]", f.posts)
 	}
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
-		t.Fatalf("unreacted = %v, want one %q", f.unreacted, ackEmoji)
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
+		t.Fatalf("unreacted = %v, want one %q", f.unreacted, englishHead(headAck))
 	}
 	last := f.upserts[len(f.upserts)-1]
 	if !strings.HasPrefix(last, "✅") {
@@ -254,8 +254,8 @@ func TestSinkAbandonedClearsAck(t *testing.T) {
 	s.handle(contracts.Event{T: "status", Text: "Edit y"})
 	s.handle(contracts.Event{T: "abandoned"})
 
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
-		t.Fatalf("unreacted = %v, want one %q on abandon", f.unreacted, ackEmoji)
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
+		t.Fatalf("unreacted = %v, want one %q on abandon", f.unreacted, englishHead(headAck))
 	}
 	if len(f.posts) != 0 {
 		t.Fatalf("posts = %v, want none on abandon", f.posts)
@@ -306,7 +306,7 @@ func TestSinkResetDiscardsAndContinues(t *testing.T) {
 	if strings.Contains(last, "2 action") {
 		t.Fatalf("final status = %q, want only post-reset action counted", last)
 	}
-	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
-		t.Fatalf("unreacted = %v, want one %q at turn end", f.unreacted, ackEmoji)
+	if len(f.unreacted) != 1 || f.unreacted[0] != englishHead(headAck) {
+		t.Fatalf("unreacted = %v, want one %q at turn end", f.unreacted, englishHead(headAck))
 	}
 }

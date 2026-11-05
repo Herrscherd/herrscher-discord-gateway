@@ -56,7 +56,7 @@ func TestThreadRequestOpensAPrivateThreadAndWorksThere(t *testing.T) {
 	if got := r.sinks.at("t1").lastUser; got != (msgRef{ch: "c1", id: "m1", author: "owner1"}) {
 		t.Fatalf("lastUser = %+v, want the ping in its own channel", got)
 	}
-	if len(f.reacted) != 1 || f.reacted[0] != ackEmoji {
+	if len(f.reacted) != 1 || f.reacted[0] != englishHead(headAck) {
 		t.Fatalf("reacted = %v, want the ping acked", f.reacted)
 	}
 }

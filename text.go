@@ -28,16 +28,12 @@ const (
 	unknownChannelKey    = "channel.unknown"
 )
 
-const (
-	successEmoji = "✅"
-	closedEmoji  = "⏹️"
-)
-
 var errUndeclaredKey = errors.New("undeclared message key")
 
 type messages struct {
 	catalog  *i18n.Catalog
 	renderer *contracts.Renderer
+	heads    heads
 	lang     i18n.Language
 	log      *slog.Logger
 }
@@ -51,7 +47,22 @@ func newMessages(lang i18n.Language, log *slog.Logger) (messages, error) {
 	if err != nil {
 		return messages{}, fmt.Errorf("discord gateway: message catalog: %w", err)
 	}
-	return messages{catalog: catalog, renderer: contracts.NewRenderer(), lang: lang, log: log}, nil
+	tables, err := embeddedHeads()
+	if err != nil {
+		return messages{}, err
+	}
+	return messages{catalog: catalog, renderer: contracts.NewRenderer(), heads: tables, lang: lang, log: log}, nil
+}
+
+func (m messages) head(key headKey) string {
+	return m.headIn(m.lang, key)
+}
+
+func (m messages) headIn(lang i18n.Language, key headKey) string {
+	if head, ok := m.heads[lang][string(key)]; ok {
+		return head
+	}
+	return m.heads[i18n.English][string(key)]
 }
 
 func (m messages) say(key string, params map[string]any) string {
@@ -181,20 +192,6 @@ func (m messages) resolve(lang i18n.Language) i18n.Language {
 		return m.lang
 	}
 	return lang
-}
-
-func noticeEmoji(code contracts.Code) string {
-	switch code {
-	case contracts.CodeSessionCreated, contracts.CodeCompacted:
-		return successEmoji
-	case contracts.CodeSessionClosed:
-		return closedEmoji
-	case contracts.CodeSessionNotFound, contracts.CodeSessionExists, contracts.CodeUnknownAgent,
-		contracts.CodeUnexpected, contracts.CodeSettingInvalid, contracts.CodeSettingMissing,
-		contracts.CodeNodeMerged, contracts.CodeCompactUnavailable, contracts.CodeAddressPlaintextRefused:
-		return failEmoji
-	}
-	return ""
 }
 
 func withEmoji(emoji, text string) string {

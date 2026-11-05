@@ -1,0 +1,127 @@
+[
+  {
+    "id": "ack",
+    "description": "Reaction added to the message a turn starts from, removed when the turn ends",
+    "other": "⏳"
+  },
+  {
+    "id": "running",
+    "description": "Header of the live progress message while a turn runs",
+    "other": "⏳"
+  },
+  {
+    "id": "fail",
+    "description": "Reaction and prefix of a failure, and of a notice that could not be rendered",
+    "other": "❌"
+  },
+  {
+    "id": "done",
+    "description": "Prefix of a finished turn or of its progress summary",
+    "other": "✅"
+  },
+  {
+    "id": "stop",
+    "description": "Prefix of the confirmation that a turn was stopped",
+    "other": "⏹️"
+  },
+  {
+    "id": "thinking",
+    "description": "Prefix of the assistant's text shown at the full verbosity level",
+    "other": "💭"
+  },
+  {
+    "id": "tool.read",
+    "description": "Head of a Read tool line in the progress view",
+    "other": "📖"
+  },
+  {
+    "id": "tool.edit",
+    "description": "Head of an Edit, Write, MultiEdit or NotebookEdit tool line",
+    "other": "✏️"
+  },
+  {
+    "id": "tool.search",
+    "description": "Head of a Grep or Glob tool line",
+    "other": "🔎"
+  },
+  {
+    "id": "tool.agent",
+    "description": "Head of a Task or Agent tool line",
+    "other": "🤖"
+  },
+  {
+    "id": "tool.web",
+    "description": "Head of a WebFetch or WebSearch tool line",
+    "other": "🌐"
+  },
+  {
+    "id": "tool.write",
+    "description": "Head of a TodoWrite tool line",
+    "other": "📝"
+  },
+  {
+    "id": "tool.other",
+    "description": "Head of any other tool line",
+    "other": "🔧"
+  },
+  {
+    "id": "session.not_found",
+    "description": "Head of the notice that the session does not exist",
+    "other": "❌"
+  },
+  {
+    "id": "session.exists",
+    "description": "Head of the notice that the session already exists",
+    "other": "❌"
+  },
+  {
+    "id": "agent.unknown",
+    "description": "Head of the notice that the agent is unknown",
+    "other": "❌"
+  },
+  {
+    "id": "session.created",
+    "description": "Head of the notice that a session was created",
+    "other": "✅"
+  },
+  {
+    "id": "session.closed",
+    "description": "Head of the notice that a session was closed",
+    "other": "⏹️"
+  },
+  {
+    "id": "internal.unexpected",
+    "description": "Head of the notice of an unexpected internal error",
+    "other": "❌"
+  },
+  {
+    "id": "setting.invalid",
+    "description": "Head of the notice of a setting with a value it does not accept",
+    "other": "❌"
+  },
+  {
+    "id": "setting.missing",
+    "description": "Head of the notice of a setting that must be set",
+    "other": "❌"
+  },
+  {
+    "id": "node.merged",
+    "description": "Head of the notice that a node is folded into an umbrella",
+    "other": "❌"
+  },
+  {
+    "id": "compact.unavailable",
+    "description": "Head of the notice that compaction cannot run",
+    "other": "❌"
+  },
+  {
+    "id": "compaction.done",
+    "description": "Head of the notice that the context was compacted",
+    "other": "✅"
+  },
+  {
+    "id": "address.plaintext_refused",
+    "description": "Head of the notice that a plaintext address was refused",
+    "other": "❌"
+  }
+]
