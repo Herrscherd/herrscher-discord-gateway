@@ -2,12 +2,14 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
 const gatewayKind = "discord"
@@ -35,6 +37,7 @@ var (
 	_ contracts.EventSink              = (*Gateway)(nil)
 	_ contracts.RoutedEventSink        = (*Gateway)(nil)
 	_ contracts.MessageEditor          = (*Gateway)(nil)
+	_ contracts.NoticeSink             = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
@@ -47,6 +50,7 @@ type Gateway struct {
 	log   *slog.Logger
 	slash *slash
 	sinks *sinks
+	msgs  messages
 
 	deletes bool
 	selfID  string
@@ -57,10 +61,10 @@ type Gateway struct {
 }
 
 // NewGateway returns a Gateway that sends through c, runs its slash surface on the
-// lifetime run and logs to log. It starts no work: that begins when the host calls
+// lifetime run, renders its notices with msgs and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
-func NewGateway(c client, run lifetime, log *slog.Logger) *Gateway {
-	return &Gateway{c: c, run: run, log: log}
+func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gateway {
+	return &Gateway{c: c, run: run, msgs: msgs, log: log}
 }
 
 // BindSessionControl receives the daemon's runtime session controller and starts
@@ -140,6 +144,27 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 		return msgID(sent), fmt.Errorf("discord reply: %w", err)
 	}
 	return msgID(sent), nil
+}
+
+// ErrFallbackPosted reports that Notify posted the fallback text instead of the notice.
+var ErrFallbackPosted = errors.New("notice posted as a fallback text")
+
+// Notify renders notice in lang and posts it into conv. A zero lang renders in the
+// operator's default language. It satisfies contracts.NoticeSink.
+func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang i18n.Language, notice contracts.Notice) (contracts.MessageID, error) {
+	resolved := g.msgs.resolve(lang)
+	text, renderErr := g.msgs.notice(resolved, notice)
+	if renderErr != nil {
+		text = g.msgs.renderFailed(resolved, notice, renderErr)
+	}
+	sent, err := g.Post(ctx, conv, noticeEmoji(notice.Code)+" "+text)
+	if err != nil {
+		return sent, err
+	}
+	if renderErr != nil {
+		return sent, fmt.Errorf("discord notify: %w: %w", ErrFallbackPosted, renderErr)
+	}
+	return sent, nil
 }
 
 // React adds emoji to msg in conv. It returns an error that wraps the Discord

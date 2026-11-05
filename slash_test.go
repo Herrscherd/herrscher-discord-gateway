@@ -77,10 +77,10 @@ func TestValStr(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
-	if got := listUsers("allowlist", nil); got != "allowlist : vide (tout le monde est autorisé)" {
+	if got := listUsers(testMessages(), "allowlist", nil); got != "allowlist: empty (everyone is allowed)" {
 		t.Fatalf("empty list = %q", got)
 	}
-	if got := listUsers("allowlist", []string{"a", "b"}); got != "allowlist: <@a>, <@b>" {
+	if got := listUsers(testMessages(), "allowlist", []string{"a", "b"}); got != "allowlist: <@a>, <@b>" {
 		t.Fatalf("list = %q", got)
 	}
 }
@@ -101,7 +101,7 @@ func TestComponentInteractionRoutesToPickNotTheRegistry(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.live["ch-c1"] = true
 	ack := &fakeAcker{}
-	s := &slash{log: testLog(), router: r, comp: ack, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, comp: ack, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -121,7 +121,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
 	ctrl.repos = []contracts.RepoRef{{Name: "herrscher", Local: true}}
 	r.onMessage(context.Background(), ownerPing("fix it"))
-	s := &slash{log: testLog(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, comp: &fakeAcker{}, allow: testAllowStore(t)}
 
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type:      dctl.InteractionComponent,
@@ -137,7 +137,7 @@ func TestBindComponentInteractionCreatesTheSession(t *testing.T) {
 func TestUnknownComponentIsDropped(t *testing.T) {
 	r, _, _ := newTestRouter(t)
 	ack := &fakeAcker{}
-	s := &slash{log: testLog(), router: r, comp: ack, allow: testAllowStore(t)}
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, comp: ack, allow: testAllowStore(t)}
 	s.onInteraction(context.Background(), dctl.Interaction{
 		Type: dctl.InteractionComponent,
 		Data: dctl.InteractionData{CustomID: "someone-elses-menu", Values: []string{"x"}},
@@ -152,7 +152,7 @@ func TestAllowGateReadsTheCallerInDMsToo(t *testing.T) {
 	if err := allow.AddGlobal("owner1"); err != nil {
 		t.Fatal(err)
 	}
-	s := &slash{log: testLog(), allow: allow}
+	s := &slash{log: testLog(), msgs: testMessages(), allow: allow}
 	if !s.gate(context.Background(), dctl.Interaction{User: dctl.Author{ID: "owner1"}}) {
 		t.Fatal("the owner was denied in a DM")
 	}
@@ -167,9 +167,9 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctrl.live["ch-c1"] = true
-	s := &slash{log: testLog(), router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
 
-	if got := s.stop("c1", "", true); !strings.Contains(got, "interrompu") {
+	if got := s.stop("c1", "", true); !strings.Contains(got, "interrupted") {
 		t.Fatalf("stop = %q, want the turn reported as interrupted", got)
 	}
 	if !slices.Equal(ctrl.interrupted, []string{"ch-c1"}) {
@@ -179,15 +179,15 @@ func TestStopInterruptsTheSessionThisConversationIsBoundTo(t *testing.T) {
 
 func TestStopReportsWhenNothingIsRunning(t *testing.T) {
 	r, ctrl, _ := newTestRouter(t)
-	s := &slash{log: testLog(), router: r, ctrl: ctrl}
-	if got := s.stop("c1", "", true); !strings.Contains(got, "aucun tour") {
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
+	if got := s.stop("c1", "", true); !strings.Contains(got, "no turn is running") {
 		t.Fatalf("stop = %q, want it to report no live turn", got)
 	}
 }
 
 func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
 	if got := s.setVerbosity("c1", levelFull); !strings.Contains(got, levelFull) {
 		t.Fatalf("setVerbosity = %q, want the new level confirmed", got)
@@ -202,9 +202,9 @@ func TestVerbosityRetunesOneConversationOnly(t *testing.T) {
 
 func TestVerbosityRefusesAnUnknownLevel(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
-	if got := s.setVerbosity("c1", "loud"); !strings.Contains(got, "inconnu") {
+	if got := s.setVerbosity("c1", "loud"); !strings.Contains(got, "unknown") {
 		t.Fatalf("setVerbosity = %q, want it refused", got)
 	}
 	if got := binds.Level("c1"); got != "" {
@@ -229,7 +229,7 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 
 func TestSupportModeUnbindsTheChannel(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 	if err := binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
@@ -250,7 +250,7 @@ func TestSupportModeUnbindsTheChannel(t *testing.T) {
 
 func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 	if got := s.setMode("c1", supportMode); got == "" {
 		t.Fatal("setMode said nothing")
 	}
@@ -265,9 +265,9 @@ func TestNormalModeTakesTheChannelBackOut(t *testing.T) {
 
 func TestAnUnknownModeIsRefused(t *testing.T) {
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 
-	if got := s.setMode("c1", "helpdesk"); !strings.Contains(got, "inconnu") {
+	if got := s.setMode("c1", "helpdesk"); !strings.Contains(got, "unknown") {
 		t.Fatalf("setMode = %q, want it refused", got)
 	}
 	if got := binds.Mode("c1"); got != "" {
@@ -351,7 +351,7 @@ func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
 				t.Fatal(err)
 			}
 			ack := &fakeAcker{}
-			s := &slash{log: testLog(), router: r, comp: ack, allow: allow}
+			s := &slash{log: testLog(), msgs: testMessages(), router: r, comp: ack, allow: allow}
 
 			s.onInteraction(context.Background(), dctl.Interaction{
 				Type:      dctl.InteractionComponent,
@@ -371,17 +371,42 @@ func TestComponentClicksAreGatedByTheAllowList(t *testing.T) {
 }
 
 func TestSaveNoteSaysAnUnreadableFileRefusesChanges(t *testing.T) {
-	s := &slash{log: testLog()}
+	s := &slash{log: testLog(), msgs: testMessages()}
 	got := s.saveNote(fmt.Errorf("%w: corrupt", errStoreLocked), "allow", "ok")
-	if !strings.Contains(got, "illisible") || strings.Contains(got, "prochain lancement") {
+	if !strings.Contains(got, "unreadable") || strings.Contains(got, "next restart") {
 		t.Fatalf("saveNote = %q, want the unreadable-file refusal", got)
 	}
 }
 
 func TestSaveNoteSaysAFailedWriteIsLost(t *testing.T) {
-	s := &slash{log: testLog()}
+	s := &slash{log: testLog(), msgs: testMessages()}
 	got := s.saveNote(errors.New("disk full"), "allow", "ok")
-	if !strings.Contains(got, "perdu au prochain lancement") || strings.Contains(got, "illisible") {
+	if !strings.Contains(got, "lost at the next restart") || strings.Contains(got, "unreadable") {
 		t.Fatalf("saveNote = %q, want the lost-on-restart warning", got)
+	}
+}
+
+func TestRunShowsWhatTheDispatchReturned(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	s := &slash{log: testLog(), msgs: testMessages(), router: r, ctrl: ctrl}
+	tests := []struct {
+		name   string
+		result contracts.Result
+		want   string
+	}{
+		{"data is the reply", contracts.DataResult("the reply"), "the reply"},
+		{"nil data is done", contracts.DataResult(nil), "done"},
+		{"empty data is done", contracts.DataResult(""), "done"},
+		{"a notice is rendered", contracts.NoticeResult(contracts.Notice{
+			Code: contracts.CodeSessionClosed, Args: []contracts.Arg{contracts.Text("Name", "alpha")},
+		}), "session alpha closed"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl.dispatched = tc.result
+			if got := s.run(context.Background(), []string{"x"}); got != tc.want {
+				t.Fatalf("run = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

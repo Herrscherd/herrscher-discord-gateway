@@ -32,7 +32,7 @@ func clientOn(rt http.RoundTripper) *dctl.Client {
 
 func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	f := &fakeRender{}
-	set := newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
 	p := &Platform{sinks: set, c: clientOn(jsonReply(`[
 		{"id":"9","channel_id":"c2","content":"d","author":{"id":"u2"}},
 		{"id":"3","channel_id":"c1","content":"c","author":{"id":"u1"}},

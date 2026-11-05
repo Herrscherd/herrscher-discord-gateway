@@ -46,7 +46,7 @@ interchangeable.
 
 Ports implemented: `Gateway`, `EventSink`, `RoutedEventSink`,
 `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`,
-`Prober`, `CommandSource`, `MessageEditor`.
+`Prober`, `CommandSource`, `MessageEditor`, `NoticeSink`.
 
 ## Rendering happens here, not in the core
 
@@ -353,6 +353,39 @@ herrscher role grant discord:1234 operator --label leo
 
 The id is Discord's own, the same one `/allow add` takes. A refusal spells the
 principal out, so you can copy it back rather than look it up.
+
+## Languages
+
+The gateway writes its own texts in the language of the conversation they concern:
+`Notify` renders a notice in the language the host passes with it. Texts that no
+notice carries (the slash replies, the repo menus, the prompts of a ping) use the
+operator's language, read from `HERRSCHER_LANG` when the gateway starts: `fr` for
+French, `en` for English. When `HERRSCHER_LANG` is absent the texts are in English.
+A value the gateway does not support, such as `de`, is logged once as a warning and
+the texts stay in English. Nothing is repaired silently.
+
+The gateway reads the variable itself because contracts v0.18.0 has no way for the
+host to pass a language to a plugin, apart from the language of a notice. The
+variable is therefore set in the environment of the daemon that loads the gateway.
+
+The texts live in two catalogs, `locales/en.json` and `locales/fr.json`, in the
+go-i18n format. A test checks that the French catalog has every English key with
+the same placeholders, and that the code uses no key the catalog lacks. A key
+missing from French falls back to its English text, with one warning in the log.
+
+Two things stay as they are whatever the language. The detail of an unexpected
+error is the engine's own text, shown verbatim in a code block with mentions
+neutralised, and the output of commands an agent reads stays English.
+
+## When a notice cannot be rendered
+
+When a notice cannot be rendered, `Notify` posts a fallback text that names the
+failure, then returns the render error. That error satisfies
+`errors.Is(err, ErrFallbackPosted)`, which says the fallback is already in the channel.
+The host must not call `Notify` again for that notice, nor post `Degrade` behind it, or
+the operator receives the message twice. If the fallback itself cannot be posted,
+`Notify` returns the error of the post, which does not satisfy `ErrFallbackPosted`:
+the gateway posted nothing for that notice, so the host decides whether to retry.
 
 ## Reconnection
 

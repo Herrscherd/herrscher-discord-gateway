@@ -26,7 +26,7 @@ func newGuildRouter(t *testing.T, tune func(*routerConfig)) (*router, *fakeCtrl)
 		tune(&cfg)
 	}
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(testRun(), &fakeRender{}, staticLevels("silent"), "", false, testLog()), testLog(), cfg)
+		newSinks(testRun(), &fakeRender{}, staticLevels("silent"), "", false, testMessages(), testLog()), testMessages(), testLog(), cfg)
 	return r, ctrl
 }
 
@@ -221,7 +221,7 @@ func TestSwitchingModeUnbindsEveryoneInTheRoom(t *testing.T) {
 		t.Fatalf("SessionsIn = %v, want one per participant", got)
 	}
 
-	s := &slash{log: testLog(), binds: r.binds, router: r, ctrl: ctrl}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: r.binds, router: r, ctrl: ctrl}
 	s.setMode("c1", supportMode)
 
 	if got := r.binds.SessionsIn("c1"); len(got) != 0 {

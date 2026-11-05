@@ -18,7 +18,7 @@ func TestUndeliverableBufferedMessageIsReported(t *testing.T) {
 
 	r.onBindPick(context.Background(), "c1", "", "local:herrscher")
 
-	if len(f.posts) != 1 || !strings.Contains(f.posts[0], undeliveredMessage) {
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "I could not pass your message to the session, send it again") {
 		t.Fatalf("the operator was not told the message was lost: posts=%q", f.posts)
 	}
 }
@@ -30,13 +30,13 @@ func TestBindSaveFailureReportsInTheChannel(t *testing.T) {
 	}{
 		"locked store": {
 			breakStore: func(b *bindStore) { b.locked = fmt.Errorf("%w: corrupt", errStoreLocked) },
-			wantMsg:    "illisible",
+			wantMsg:    "unreadable",
 		},
 		"write error": {
 			breakStore: func(b *bindStore) {
 				b.write = func(string, []byte) error { return errors.New("disk full") }
 			},
-			wantMsg: "pas pu être écrit",
+			wantMsg: "could not be written",
 		},
 	}
 	for name, tc := range cases {

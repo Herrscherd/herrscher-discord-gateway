@@ -29,6 +29,7 @@ func rendersProgress(level string) bool { return level != levelSilent }
 
 type progressView struct {
 	post      func(msgID, content string) (string, error)
+	msgs      messages
 	level     string
 	start     time.Time
 	now       func() time.Time
@@ -46,8 +47,8 @@ type progressView struct {
 	dirty     bool
 }
 
-func newProgressView(post func(string, string) (string, error), level string, start time.Time, log *slog.Logger) *progressView {
-	return &progressView{post: post, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int)}
+func newProgressView(post func(string, string) (string, error), level string, start time.Time, msgs messages, log *slog.Logger) *progressView {
+	return &progressView{post: post, msgs: msgs, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int)}
 }
 
 func (p *progressView) add(event contracts.BackendEvent) {
@@ -136,7 +137,7 @@ func (p *progressView) reset() {
 func (p *progressView) render() string {
 	lines, elided := p.lines, p.elided
 	for {
-		out := progressFrame(lines, elided)
+		out := p.frame(lines, elided)
 		if len(lines) <= 1 || utf8.RuneCountInString(out) <= gatewayMaxLen {
 			return out
 		}
@@ -144,8 +145,8 @@ func (p *progressView) render() string {
 	}
 }
 
-func progressFrame(lines []string, elided bool) string {
-	header := "⏳ en cours…\n"
+func (p *progressView) frame(lines []string, elided bool) string {
+	header := "⏳ " + p.msgs.say("progress.running", nil) + "\n"
 	if elided {
 		header += "…\n"
 	}
@@ -153,7 +154,6 @@ func progressFrame(lines []string, elided bool) string {
 }
 
 func (p *progressView) summary() string {
-	icon := "✅"
 	parts := make([]string, 0, len(p.order))
 	for _, name := range p.order {
 		if n := p.counts[name]; n > 1 {
@@ -164,9 +164,9 @@ func (p *progressView) summary() string {
 	}
 	var summary string
 	if p.actions == 0 {
-		summary = icon + " terminé"
+		summary = "✅ " + p.msgs.say("progress.done", nil)
 	} else {
-		summary = fmt.Sprintf("%s %d action%s", icon, p.actions, plural(p.actions))
+		summary = "✅ " + p.msgs.say("progress.actions", map[string]any{countArg: p.actions})
 		if len(parts) > 0 {
 			summary += " (" + strings.Join(parts, ", ") + ")"
 		}
@@ -176,13 +176,6 @@ func (p *progressView) summary() string {
 		summary += " · " + formatCost(p.cost)
 	}
 	return summary
-}
-
-func plural(n int) string {
-	if n == 1 {
-		return ""
-	}
-	return "s"
 }
 
 const costPrecisionThreshold = 0.01

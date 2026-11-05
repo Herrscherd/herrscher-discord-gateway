@@ -56,7 +56,7 @@ func gatewayOver(rt http.RoundTripper) *Gateway {
 	)
 	return &Gateway{
 		run:   lifetimeFrom(context.Background()),
-		slash: newSlash(client.Interactions(), nil, noGatewaySocket, "t", nil, nil, testLog()),
+		slash: newSlash(client.Interactions(), nil, noGatewaySocket, "t", nil, nil, testMessages(), testLog()),
 	}
 }
 

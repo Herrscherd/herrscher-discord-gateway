@@ -9,7 +9,7 @@ import (
 )
 
 func tidySink(f *fakeRender, ch string) *sink {
-	return newSink(testRun(), f, ch, staticLevel(levelSilent), "42", true, testLog())
+	return newSink(testRun(), f, ch, staticLevel(levelSilent), "42", true, testMessages(), testLog())
 }
 
 func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
@@ -31,7 +31,7 @@ func TestTidyDeletesThePingOnceAnswered(t *testing.T) {
 
 func TestTidyOffKeepsThePing(t *testing.T) {
 	f := &fakeRender{}
-	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testLog())
+	s := newSink(testRun(), f, "c1", staticLevel(levelSilent), "42", false, testMessages(), testLog())
 	s.ack(context.Background(), "c1", "m1", "42")
 	s.handle(contracts.Event{T: "reply", Done: true, Text: "voilà"})
 

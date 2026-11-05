@@ -11,9 +11,9 @@ import (
 func modeSlash(t *testing.T, agent string) (*slash, *bindStore) {
 	t.Helper()
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
-	s := &slash{log: testLog(), binds: binds}
+	s := &slash{log: testLog(), msgs: testMessages(), binds: binds}
 	if agent != "" {
-		s.router = newRouter(func() contracts.SessionControl { return nil }, &fakeClient{}, binds, nil, testLog(),
+		s.router = newRouter(func() contracts.SessionControl { return nil }, &fakeClient{}, binds, nil, testMessages(), testLog(),
 			routerConfig{appID: "app1", agent: agent})
 	}
 	return s, binds

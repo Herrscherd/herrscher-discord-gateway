@@ -13,6 +13,7 @@ import (
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
 //go:embed skills
@@ -39,25 +40,25 @@ func init() {
 			Status:       contracts.StatusLive,
 			Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 			Config: []contracts.Setting{
-				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "jeton du bot Discord", Required: true},
-				{Key: "owner", Env: "DISCORD_USER_ID", Help: "identifiant Discord de l'utilisateur toujours autorisé, quelles que soient les listes d'autorisation"},
-				{Key: "allowed_users", Env: "DISCORD_ALLOWED_USERS", Help: "identifiants Discord des utilisateurs autorisés à faire agir le bot, séparés par des virgules (`*` pour tout le monde)"},
-				{Key: "allowed_roles", Env: "DISCORD_ALLOWED_ROLES", Help: "identifiants de rôles Discord autorisés à faire agir le bot, séparés par des virgules (messages de serveur seulement ; un MP ne porte aucun rôle)"},
-				{Key: "allowed_channels", Env: "DISCORD_ALLOWED_CHANNELS", Help: "identifiants de salons où le bot répond, séparés par des virgules, il ignore tous les autres (vide = tous les salons qu'il peut lire)"},
-				{Key: "ignored_channels", Env: "DISCORD_IGNORED_CHANNELS", Help: "identifiants de salons où le bot ne répond jamais, séparés par des virgules, quelles que soient les autres règles"},
-				{Key: "allow_all_users", Env: "DISCORD_ALLOW_ALL_USERS", Help: "laisser quiconque peut atteindre le bot le faire agir (désactivé par défaut ; les listes d'autorisation sont normalement ce qui borne un déploiement)"},
-				{Key: "allow_bots", Env: "DISCORD_ALLOW_BOTS", Help: "si d'autres bots peuvent faire agir celui-ci : none (défaut) | mentions (seulement quand ils le mentionnent) | all"},
-				{Key: "require_mention", Env: "DISCORD_REQUIRE_MENTION", Help: "exiger une mention @ dans un salon (vrai par défaut ; un MP et un fil ouvert par la passerelle n'en exigent jamais)"},
-				{Key: "thread_require_mention", Env: "DISCORD_THREAD_REQUIRE_MENTION", Help: "exiger aussi une mention @ dans un fil ouvert par la passerelle (faux par défaut)"},
-				{Key: "free_response_channels", Env: "DISCORD_FREE_RESPONSE_CHANNELS", Help: "identifiants de salons où le bot répond sans être mentionné, séparés par des virgules (`*` pour tous les salons ; qui peut alors le faire agir reste régi par les listes d'autorisation)"},
-				{Key: "sessions_per_user", Env: "DISCORD_SESSIONS_PER_USER", Help: "donner à chaque participant d'un salon sa propre session (vrai par défaut ; faux met tout le salon dans une seule session partagée)"},
-				{Key: "thread_sessions_per_user", Env: "DISCORD_THREAD_SESSIONS_PER_USER", Help: "donner à chaque participant d'un fil sa propre session (faux par défaut ; un fil est un seul travail que tous ceux qui y sont partagent)"},
-				{Key: "agent", Env: "DISCORD_AGENT", Help: "persona sous laquelle tourne chaque session ouverte par cette passerelle, ce qui conditionne ses outils (requis par /mode ambiant)"},
-				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "valeur par défaut de ce qui s'affiche d'un tour dans le salon, modifiable par conversation avec /verbosity. silencieux (défaut) n'affiche que la réponse. discret affiche aussi la liste en direct des noms d'outils. actions affiche aussi le détail de chaque outil. complet affiche aussi le texte de l'assistant."},
-				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "combien de messages précédents du salon porter comme contexte (30 par défaut)"},
-				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "nom de la skill que suit une nouvelle session (pr-job par défaut)"},
-				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "supprimer le message qui a ouvert un tour une fois sa réponse publiée, pour que le salon garde le travail et non les messages qui l'ont lancé (désactivé par défaut ; ne s'applique jamais quand la réponse vit dans un fil ouvert à partir du ping)"},
-				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "ajouter le verbe `message delete`, pour qu'un agent puisse supprimer des messages envoyés par ce bot (désactivé par défaut ; le verbe est absent tant que ce n'est pas activé, et même alors il refuse tout message écrit par un autre auteur)"},
+				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "Discord bot token", Required: true},
+				{Key: "owner", Env: "DISCORD_USER_ID", Help: "Discord user id of the person always allowed, whatever the allow lists"},
+				{Key: "allowed_users", Env: "DISCORD_ALLOWED_USERS", Help: "Discord user ids allowed to make the bot act, comma separated (`*` for everyone)"},
+				{Key: "allowed_roles", Env: "DISCORD_ALLOWED_ROLES", Help: "Discord role ids allowed to make the bot act, comma separated (server messages only, a DM carries no role)"},
+				{Key: "allowed_channels", Env: "DISCORD_ALLOWED_CHANNELS", Help: "channel ids where the bot answers, comma separated, it ignores all others (empty means every channel it can read)"},
+				{Key: "ignored_channels", Env: "DISCORD_IGNORED_CHANNELS", Help: "channel ids where the bot never answers, comma separated, whatever the other rules"},
+				{Key: "allow_all_users", Env: "DISCORD_ALLOW_ALL_USERS", Help: "let anyone who can reach the bot make it act (off by default, the allow lists are normally what bounds a deployment)"},
+				{Key: "allow_bots", Env: "DISCORD_ALLOW_BOTS", Help: "whether other bots can make this one act: none (default), mentions (only when they mention it) or all"},
+				{Key: "require_mention", Env: "DISCORD_REQUIRE_MENTION", Help: "require an @ mention in a channel (true by default, a DM and a thread opened by the gateway never require one)"},
+				{Key: "thread_require_mention", Env: "DISCORD_THREAD_REQUIRE_MENTION", Help: "also require an @ mention in a thread opened by the gateway (false by default)"},
+				{Key: "free_response_channels", Env: "DISCORD_FREE_RESPONSE_CHANNELS", Help: "channel ids where the bot answers without being mentioned, comma separated (`*` for every channel, who may make it act there stays bound by the allow lists)"},
+				{Key: "sessions_per_user", Env: "DISCORD_SESSIONS_PER_USER", Help: "give each participant of a channel their own session (true by default, false puts the whole channel in one shared session)"},
+				{Key: "thread_sessions_per_user", Env: "DISCORD_THREAD_SESSIONS_PER_USER", Help: "give each participant of a thread their own session (false by default, a thread is one job that everyone in it shares)"},
+				{Key: "agent", Env: "DISCORD_AGENT", Help: "persona each session opened by this gateway runs under, which sets its tools (required by /mode ambient)"},
+				{Key: "verbosity", Env: "DISCORD_VERBOSITY", Help: "default of what a turn shows in the channel, changeable per conversation with /verbosity. silent (default) shows only the answer. quiet also shows the live list of tool names. actions also shows the detail of each tool. full also shows the assistant's text."},
+				{Key: "context_messages", Env: "DISCORD_CONTEXT_MESSAGES", Help: "how many earlier channel messages to carry as context (30 by default)"},
+				{Key: "playbook", Env: "DISCORD_PLAYBOOK", Help: "name of the skill a new session follows (pr-job by default)"},
+				{Key: "tidy_pings", Env: "DISCORD_TIDY_PINGS", Help: "delete the message that opened a turn once its answer is posted, so the channel keeps the work and not the messages that started it (off by default, never applies when the answer lives in a thread opened from the ping)"},
+				{Key: "message_deletes", Env: "DISCORD_MESSAGE_DELETES", Help: "add the `message delete` verb, so an agent can delete messages this bot sent (off by default, the verb is absent until this is on, and even then it refuses any message written by another author)"},
 			},
 		},
 		Gateway: func(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
@@ -69,15 +70,41 @@ func init() {
 
 func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return embeddedSkills() }
 
+const operatorLanguageEnv = "HERRSCHER_LANG"
+
+func messagesFromEnv(log *slog.Logger) (messages, error) {
+	return operatorMessages(os.Getenv(operatorLanguageEnv), log)
+}
+
+func operatorMessages(raw string, log *slog.Logger) (messages, error) {
+	return newMessages(operatorLanguage(raw, log), log)
+}
+
+func operatorLanguage(raw string, log *slog.Logger) i18n.Language {
+	if raw == "" {
+		return i18n.English
+	}
+	lang, err := i18n.ParseLanguage(raw)
+	if err != nil {
+		log.Warn("HERRSCHER_LANG is not a supported language, the gateway's texts stay in English", "value", raw, "err", err)
+		return i18n.English
+	}
+	return lang
+}
+
 // NewGatewaySet builds the Discord channel from config: it wires the outbound
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
 	log = log.With("gateway", gatewayKind)
+	msgs, err := messagesFromEnv(log)
+	if err != nil {
+		return contracts.GatewaySet{}, err
+	}
 	run := lifetimeFrom(ctx)
 	token := cfg.Get("token")
 	owner := cfg.Get("owner")
 	bot := dctl.New(token, "", dctl.WithGlobalCommands())
-	gateway := NewGateway(discordClient{bot}, run, log)
+	gateway := NewGateway(discordClient{bot}, run, msgs, log)
 	plat := NewPlatform(bot)
 	bindPath, err := bindStorePath()
 	if err != nil {
@@ -92,7 +119,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 			return v
 		}
 		return level
-	}, owner, switchSetting(cfg.Get("tidy_pings"), false), log)
+	}, owner, switchSetting(cfg.Get("tidy_pings"), false), msgs, log)
 	gateway.sinks = sinks
 	plat.sinks = sinks
 
@@ -108,7 +135,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}
-	gateway.slash = newSlash(bot.Interactions(), bot.Components(), gatewayURL, token, newAllowStore(allowPath, log), binds, log)
+	gateway.slash = newSlash(bot.Interactions(), bot.Components(), gatewayURL, token, newAllowStore(allowPath, log), binds, msgs, log)
 	address := defaultAddress(appID)
 	address.requireMention = switchSetting(cfg.Get("require_mention"), address.requireMention)
 	address.threadRequireMention = switchSetting(cfg.Get("thread_require_mention"), address.threadRequireMention)
@@ -125,7 +152,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 
 	gateway.slash.router = newRouter(
 		func() contracts.SessionControl { return gateway.slash.ctrl },
-		discordClient{bot}, binds, sinks, log,
+		discordClient{bot}, binds, sinks, msgs, log,
 		routerConfig{
 			owner:           owner,
 			appID:           appID,

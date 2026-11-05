@@ -25,6 +25,7 @@ type fakeClient struct {
 	reacted    []outReact
 	menus      []outMenu
 	menuErr    error
+	sendErr    error
 	read       []dctl.Message
 	readLimit  int
 	readErr    error
@@ -52,6 +53,9 @@ type fakeClient struct {
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
+	if f.sendErr != nil {
+		return nil, f.sendErr
+	}
 	f.sent = append(f.sent, outMsg{ch, content})
 	return &dctl.Message{ID: "m1"}, nil
 }
@@ -147,7 +151,7 @@ func (f *fakeClient) DeleteChannel(_ context.Context, id string) error {
 var _ contracts.Gateway = (*Gateway)(nil)
 
 func TestGatewayManifest(t *testing.T) {
-	g := NewGateway(&fakeClient{}, testRun(), testLog())
+	g := NewGateway(&fakeClient{}, testRun(), testMessages(), testLog())
 	m := g.Manifest()
 	if m.Kind != "discord" || m.Category != contracts.CategoryGateway {
 		t.Fatalf("bad manifest %+v", m)
@@ -166,7 +170,7 @@ func TestGatewayManifest(t *testing.T) {
 
 func TestGatewayTranslatesActions(t *testing.T) {
 	fc := &fakeClient{}
-	g := NewGateway(fc, testRun(), testLog())
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
 	ctx := context.Background()
 	conv := contracts.Conversation{Gateway: "discord", ID: "chan"}
 
@@ -186,7 +190,7 @@ func TestGatewayEditsAndDeletes(t *testing.T) {
 	var _ contracts.MessageEditor = (*Gateway)(nil)
 
 	f := &fakeClient{}
-	g := NewGateway(f, testRun(), testLog())
+	g := NewGateway(f, testRun(), testMessages(), testLog())
 	if err := g.Edit(context.Background(), "c1", "m1", "fixed"); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -203,8 +207,8 @@ func TestGatewayEditsAndDeletes(t *testing.T) {
 
 func TestGatewayEmitToForwardsToTheConversationSink(t *testing.T) {
 	f := &fakeRender{}
-	g := NewGateway(&fakeClient{}, testRun(), testLog())
-	g.sinks = newSinks(testRun(), f, staticLevels("full"), "", false, testLog())
+	g := NewGateway(&fakeClient{}, testRun(), testMessages(), testLog())
+	g.sinks = newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
 	conv := contracts.Conversation{ID: "c1"}
 	g.EmitTo(conv, contracts.Event{T: "human"})
 	g.EmitTo(conv, contracts.Event{T: "reply", Text: "ok", Done: true})

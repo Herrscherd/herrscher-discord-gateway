@@ -23,14 +23,15 @@ type slash struct {
 	comp   acker
 	router *router
 	socket *ws
+	msgs   messages
 }
 
 type acker interface {
 	Ack(ctx context.Context, id, token, content string) error
 }
 
-func newSlash(ix *dctl.Interactions, comp acker, gatewayURL, token string, allow *allowStore, binds *bindStore, log *slog.Logger) *slash {
-	handler := &slash{log: log, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds}
+func newSlash(ix *dctl.Interactions, comp acker, gatewayURL, token string, allow *allowStore, binds *bindStore, msgs messages, log *slog.Logger) *slash {
+	handler := &slash{log: log, ix: ix, comp: comp, reg: ix.Registry(), allow: allow, binds: binds, msgs: msgs}
 	handler.socket = newWS(gatewayURL, token, log, handler.onInteraction, handler.onMessage, handler.onGone)
 	handler.reg.
 		Add(commandSet(), handler.handleSet).
@@ -96,7 +97,7 @@ func (s *slash) onComponent(ctx context.Context, interaction dctl.Interaction) {
 		return
 	}
 	if !s.allow.Allowed(interaction.UserID()) {
-		s.ackComponent(ctx, interaction, "tu n'es pas autorisé à utiliser ce menu")
+		s.ackComponent(ctx, interaction, s.msgs.say("menu.not_allowed", nil))
 		return
 	}
 	msg, ok := s.componentReply(ctx, interaction, firstValue(interaction.Data.Values))
@@ -117,7 +118,7 @@ func (s *slash) componentReply(ctx context.Context, interaction dctl.Interaction
 	if msg := s.router.onChoicePick(ctx, session, interaction.UserID(), interaction.GuildID == "", value); msg != "" {
 		return msg, true
 	}
-	return "choix enregistré : " + value, true
+	return s.msgs.say("choice.saved", map[string]any{"Value": neutralise(value)}), true
 }
 
 func (s *slash) ackComponent(ctx context.Context, interaction dctl.Interaction, msg string) {
@@ -195,11 +196,11 @@ func (s *slash) handleSession(ctx context.Context, interaction dctl.Interaction)
 		user, _ := interaction.Data.Opt("user")
 		switch path[2] {
 		case "add":
-			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", fmt.Sprintf("ajouté <@%s> à la session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.AddSession(name, user), "allow store", s.msgs.say("allow.session_added", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "remove":
-			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", fmt.Sprintf("retiré <@%s> de la session %q", user, name)))
+			s.respond(ctx, interaction, s.saveNote(s.allow.RemoveSession(name, user), "allow store", s.msgs.say("allow.session_removed", map[string]any{mentionArg: mention(user), nameArg: neutralise(name)})))
 		case "list":
-			s.respond(ctx, interaction, listUsers(fmt.Sprintf("session %q", name), s.allow.ListSession(name)))
+			s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_session", map[string]any{nameArg: neutralise(name)}), s.allow.ListSession(name)))
 		}
 		return dctl.Response{}, nil
 	}
@@ -215,11 +216,11 @@ func (s *slash) handleAllow(ctx context.Context, interaction dctl.Interaction) (
 	user, _ := interaction.Data.Opt("user")
 	switch lastOf(path) {
 	case "add":
-		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", fmt.Sprintf("<@%s> est autorisé à utiliser le bot", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.AddGlobal(user), "allow store", s.msgs.say("allow.global_added", map[string]any{mentionArg: mention(user)})))
 	case "remove":
-		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", fmt.Sprintf("<@%s> retiré de la liste", user)))
+		s.respond(ctx, interaction, s.saveNote(s.allow.RemoveGlobal(user), "allow store", s.msgs.say("allow.global_removed", map[string]any{mentionArg: mention(user)})))
 	case "list":
-		s.respond(ctx, interaction, listUsers("liste d'autorisation globale", s.allow.ListGlobal()))
+		s.respond(ctx, interaction, listUsers(s.msgs, s.msgs.say("allow.label_global", nil), s.allow.ListGlobal()))
 	}
 	return dctl.Response{}, nil
 }
@@ -234,12 +235,12 @@ func (s *slash) handleStop(ctx context.Context, interaction dctl.Interaction) (d
 
 func (s *slash) stop(channel, user string, direct bool) string {
 	if s.ctrl == nil || s.router == nil {
-		return "le contrôle des sessions n'est pas encore disponible"
+		return s.msgs.say("control.unavailable", nil)
 	}
 	if !s.ctrl.Interrupt(s.router.sessionOf(s.ctrl, channel, user, direct)) {
-		return "aucun tour en cours ici"
+		return s.msgs.say("stop.none", nil)
 	}
-	return "⏹️ tour interrompu, la conversation est gardée, dis-moi la suite"
+	return "⏹️ " + s.msgs.say("stop.done", nil)
 }
 
 func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
@@ -253,12 +254,12 @@ func (s *slash) handleVerbosity(ctx context.Context, interaction dctl.Interactio
 
 func (s *slash) setVerbosity(channel, level string) string {
 	if !knownLevel(level) {
-		return "niveau inconnu : " + level
+		return s.msgs.say("verbosity.unknown", map[string]any{"Level": neutralise(level)})
 	}
 	if s.binds == nil {
-		return "le store de conversations n'est pas disponible"
+		return s.msgs.say("store.unavailable", nil)
 	}
-	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", "verbosité de ce salon : "+level)
+	return s.saveNote(s.binds.SetLevel(channel, level), "bind store", s.msgs.say("verbosity.set", map[string]any{"Level": neutralise(level)}))
 }
 
 func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (dctl.Response, error) {
@@ -272,13 +273,13 @@ func (s *slash) handleMode(ctx context.Context, interaction dctl.Interaction) (d
 
 func (s *slash) setMode(channel, mode string) string {
 	if s.binds == nil {
-		return "le store de conversations n'est pas disponible"
+		return s.msgs.say("store.unavailable", nil)
 	}
 	if !knownMode(mode) {
-		return "mode inconnu : " + mode
+		return s.msgs.say("mode.unknown", map[string]any{"Mode": neutralise(mode)})
 	}
 	if mode == ambientMode && s.agent() == "" {
-		return "mode ambient refusé : il fait répondre le bot à tout le monde sans qu'on l'appelle, et rien ne borne ce qu'il peut faire tant qu'aucune persona n'est configurée. Renseigne DISCORD_AGENT puis réessaie."
+		return s.msgs.say("mode.ambient_refused", nil)
 	}
 	if mode != normalMode {
 		if err := s.binds.UnbindAll(channel); err != nil {
@@ -287,16 +288,13 @@ func (s *slash) setMode(channel, mode string) string {
 	}
 	switch mode {
 	case supportMode:
-		return s.saveNote(s.binds.SetMode(channel, supportMode), "bind store",
-			"mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
+		return s.saveNote(s.binds.SetMode(channel, supportMode), "bind store", s.msgs.say("mode.support", nil))
 	case ambientMode:
-		return s.saveNote(s.binds.SetMode(channel, ambientMode), "bind store",
-			"mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
+		return s.saveNote(s.binds.SetMode(channel, ambientMode), "bind store", s.msgs.say("mode.ambient", nil))
 	case offMode:
-		return s.saveNote(s.binds.SetMode(channel, offMode), "bind store",
-			"mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus.")
+		return s.saveNote(s.binds.SetMode(channel, offMode), "bind store", s.msgs.say("mode.off", nil))
 	}
-	return s.saveNote(s.binds.SetMode(channel, ""), "bind store", "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session")
+	return s.saveNote(s.binds.SetMode(channel, ""), "bind store", s.msgs.say("mode.normal", nil))
 }
 
 func (s *slash) agent() string {
@@ -324,7 +322,7 @@ func (s *slash) gate(ctx context.Context, interaction dctl.Interaction) bool {
 	if s.allow.Allowed(interaction.UserID()) {
 		return true
 	}
-	s.respond(ctx, interaction, "tu n'es pas autorisé à utiliser le bot ici")
+	s.respond(ctx, interaction, s.msgs.say("gate.denied", nil))
 	return false
 }
 
@@ -354,16 +352,27 @@ func (s *slash) dispatch(ctx context.Context, interaction dctl.Interaction, args
 
 func (s *slash) run(ctx context.Context, args []string) string {
 	if s.ctrl == nil {
-		return "le contrôle des sessions n'est pas encore disponible"
+		return s.msgs.say("control.unavailable", nil)
 	}
-	out, err := s.ctrl.Dispatch(ctx, args)
+	result, err := s.ctrl.Dispatch(ctx, args)
 	if err != nil {
-		return "erreur : " + err.Error()
+		return s.msgs.noticeText(s.msgs.lang, contracts.NoticeOf(err))
 	}
-	if out == "" {
-		return "fait"
+	if notice, ok := result.Notice(); ok {
+		return s.msgs.noticeText(s.msgs.lang, notice)
 	}
-	return out
+	return s.dataText(result.Data())
+}
+
+func (s *slash) dataText(data any) string {
+	if data == nil {
+		return s.msgs.say("run.done", nil)
+	}
+	text := fmt.Sprint(data)
+	if text == "" {
+		return s.msgs.say("run.done", nil)
+	}
+	return text
 }
 
 func (s *slash) respond(ctx context.Context, ix dctl.Interaction, content string) {
@@ -384,9 +393,9 @@ func (s *slash) saveNote(err error, store, ok string) string {
 	}
 	s.log.Warn("store save failed", "store", store, "err", err)
 	if errors.Is(err, errStoreLocked) {
-		return ok + " (attention : non sauvegardé, le fichier est illisible, aucun changement ne sera retenu tant qu'il n'est pas réparé)"
+		return ok + " " + s.msgs.say("save.unreadable", nil)
 	}
-	return ok + " (attention : non sauvegardé, perdu au prochain lancement)"
+	return ok + " " + s.msgs.say("save.lost", nil)
 }
 
 func route(data dctl.InteractionData) ([]string, []dctl.InteractionOption) {
@@ -436,15 +445,19 @@ func valStr(v any) string {
 	}
 }
 
-func listUsers(label string, users []string) string {
+func listUsers(texts messages, label string, users []string) string {
 	if len(users) == 0 {
-		return label + " : vide (tout le monde est autorisé)"
+		return texts.say("allow.empty", map[string]any{"Label": label})
 	}
 	mentions := make([]string, 0, len(users))
 	for _, u := range users {
-		mentions = append(mentions, "<@"+u+">")
+		mentions = append(mentions, mention(u))
 	}
-	return label + ": " + strings.Join(mentions, ", ")
+	return texts.say("allow.list", map[string]any{"Label": label, "Mentions": strings.Join(mentions, ", ")})
+}
+
+func mention(userID string) string {
+	return "<@" + userID + ">"
 }
 
 func lastOf(path []string) string {

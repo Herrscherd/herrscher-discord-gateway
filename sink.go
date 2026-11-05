@@ -31,6 +31,7 @@ type sink struct {
 	level func() string
 	owner string
 	tidy  bool
+	msgs  messages
 	log   *slog.Logger
 
 	mu       sync.Mutex
@@ -56,11 +57,11 @@ type sinkJob struct {
 
 type msgRef struct{ ch, id, author string }
 
-func newSink(run lifetime, renderer renderClient, channel string, level func() string, owner string, tidy bool, log *slog.Logger) *sink {
+func newSink(run lifetime, renderer renderClient, channel string, level func() string, owner string, tidy bool, msgs messages, log *slog.Logger) *sink {
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, log: log}
+	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, msgs: msgs, log: log}
 }
 
 func staticLevel(level string) func() string {
@@ -79,17 +80,18 @@ type sinks struct {
 	level func(conv string) string
 	owner string
 	tidy  bool
+	msgs  messages
 	log   *slog.Logger
 
 	mu sync.Mutex
 	m  map[string]*sink
 }
 
-func newSinks(run lifetime, renderer renderClient, level func(conv string) string, owner string, tidy bool, log *slog.Logger) *sinks {
+func newSinks(run lifetime, renderer renderClient, level func(conv string) string, owner string, tidy bool, msgs messages, log *slog.Logger) *sinks {
 	if level == nil {
 		level = staticLevels("")
 	}
-	return &sinks{run: run, rc: renderer, level: level, owner: owner, tidy: tidy, log: log, m: make(map[string]*sink)}
+	return &sinks{run: run, rc: renderer, level: level, owner: owner, tidy: tidy, msgs: msgs, log: log, m: make(map[string]*sink)}
 }
 
 func (s *sinks) at(convID string) *sink {
@@ -98,7 +100,7 @@ func (s *sinks) at(convID string) *sink {
 	if v := s.m[convID]; v != nil {
 		return v
 	}
-	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.log)
+	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.msgs, s.log)
 	s.m[convID] = created
 	return created
 }
@@ -367,7 +369,7 @@ func (s *sink) apply(ctx context.Context, event contracts.Event) {
 
 func (s *sink) onHuman(ctx context.Context) {
 	if level := s.level(); rendersProgress(level) {
-		s.pv = newProgressView(s.upsertStatus, level, time.Now(), s.log)
+		s.pv = newProgressView(s.upsertStatus, level, time.Now(), s.msgs, s.log)
 	}
 	if s.lastUser.id != "" && s.acked != s.lastUser {
 		s.addAck(ctx, s.lastUser)
@@ -453,7 +455,7 @@ func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
 
 func (s *sink) answer(text string) string {
 	if text == "" {
-		text = "✅ terminé"
+		text = "✅ " + s.msgs.say("progress.done", nil)
 	}
 	if s.owner == "" {
 		return text
