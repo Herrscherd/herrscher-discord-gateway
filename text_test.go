@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/constant"
+	"go/importer"
 	"go/parser"
 	"go/token"
+	"go/types"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -119,28 +122,44 @@ type keyCall struct {
 	misuse  bool
 }
 
+const (
+	gatewayPkg   = "github.com/Herrscherd/herrscher-discord-gateway"
+	contractsPkg = "github.com/Herrscherd/herrscher-contracts"
+	catalogPkg   = contractsPkg + "/i18n"
+)
+
 func TestEveryKeyTheCodeUsesIsDeclared(t *testing.T) {
 	fset := token.NewFileSet()
 	files := productionFiles(t, fset)
+	info := productionTypes(t, fset, files)
 	used := make(map[string]bool)
-	for _, call := range keyCalls(fset, files, stringConstants(files)) {
-		if call.misuse {
-			t.Errorf("%s: the key parameter is used in a form the analysis cannot follow", call.where)
-			continue
-		}
-		if !call.literal {
-			t.Errorf("%s: the key of %s is neither a string literal nor a string constant", call.where, call.name)
-			continue
-		}
-		used[call.key] = true
-		if _, declared := declaredMessages()[call.key]; !declared {
-			t.Errorf("%s: key %q is used by the code but not declared", call.where, call.key)
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			for _, call := range keyFindings(fset, info, decl) {
+				checkKeyCall(t, call, used)
+			}
 		}
 	}
 	for key := range declaredMessages() {
 		if !used[key] {
 			t.Errorf("key %q is declared but no code uses it", key)
 		}
+	}
+}
+
+func checkKeyCall(t *testing.T, call keyCall, used map[string]bool) {
+	t.Helper()
+	if call.misuse {
+		t.Errorf("%s: the key parameter is used in a form the analysis cannot follow", call.where)
+		return
+	}
+	if !call.literal {
+		t.Errorf("%s: the key of %s is neither a string literal nor a package constant", call.where, call.name)
+		return
+	}
+	used[call.key] = true
+	if _, declared := declaredMessages()[call.key]; !declared {
+		t.Errorf("%s: key %q is used by the code but not declared", call.where, call.key)
 	}
 }
 
@@ -165,50 +184,70 @@ func productionFiles(t *testing.T, fset *token.FileSet) []*ast.File {
 	return files
 }
 
-func keyCalls(fset *token.FileSet, files []*ast.File, consts map[string]string) []keyCall {
-	var calls []keyCall
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			calls = append(calls, callsIn(fset, decl, consts)...)
-		}
+func productionTypes(t *testing.T, fset *token.FileSet, files []*ast.File) *types.Info {
+	t.Helper()
+	info := &types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object)}
+	conf := types.Config{
+		Importer: importer.ForCompiler(fset, "source", nil),
+		Error:    func(err error) { t.Error(err) },
 	}
-	return calls
+	if _, err := conf.Check(gatewayPkg, fset, files, info); err != nil {
+		t.Fatal(err)
+	}
+	return info
 }
 
-func callsIn(fset *token.FileSet, decl ast.Decl, consts map[string]string) []keyCall {
-	argIndex := map[string]int{"say": 0, "sayIn": 1, "Help": 0, "Param": 1, "ValueParam": 1, "catalogText": 1, "Has": 0, "Message": 1, "failed": 1}
-	funnel := isKeyFunnel(decl)
-	var calls []keyCall
-	if funnel {
-		calls = append(calls, unexplainedKeyUses(fset, decl, argIndex)...)
-	}
-	ast.Inspect(decl, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok && (!funnel || keyArgument(call, argIndex) == nil) {
-			if found, isKeyCall := keyCallOf(fset, call, argIndex, consts); isKeyCall {
-				calls = append(calls, found)
-			}
-		}
-		return true
-	})
-	return calls
-}
-
-func unexplainedKeyUses(fset *token.FileSet, decl ast.Decl, argIndex map[string]int) []keyCall {
+func keyFindings(fset *token.FileSet, info *types.Info, decl ast.Decl) []keyCall {
+	param := funnelKeyParam(decl, info)
 	allowed := make(map[*ast.Ident]bool)
-	for _, ident := range keyParamIdents(decl) {
-		allowed[ident] = true
-	}
+	var findings []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
-		if call, ok := node.(*ast.CallExpr); ok {
-			if ident := keyArgument(call, argIndex); ident != nil {
-				allowed[ident] = true
-			}
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
 		}
+		index, isKeyCall := relayKeyIndex(call, info)
+		if !isKeyCall || len(call.Args) <= index {
+			return true
+		}
+		arg := call.Args[index]
+		if ident, isIdent := arg.(*ast.Ident); isIdent && param != nil && info.Uses[ident] == param {
+			allowed[ident] = true
+			return true
+		}
+		findings = append(findings, keyCallOfArg(fset, call, arg, info))
 		return true
 	})
+	if param != nil {
+		findings = append(findings, unexplainedKeyUses(fset, decl, info, param, allowed)...)
+	}
+	return findings
+}
+
+func funnelKeyParam(decl ast.Decl, info *types.Info) types.Object {
+	fn, ok := decl.(*ast.FuncDecl)
+	if !ok {
+		return nil
+	}
+	method, ok := info.Defs[fn.Name].(*types.Func)
+	if !ok || !isFunnel(method) {
+		return nil
+	}
+	for _, field := range fn.Type.Params.List {
+		for _, name := range field.Names {
+			if name.Name == keyVar {
+				return info.Defs[name]
+			}
+		}
+	}
+	return nil
+}
+
+func unexplainedKeyUses(fset *token.FileSet, decl ast.Decl, info *types.Info, param types.Object, allowed map[*ast.Ident]bool) []keyCall {
 	var misuses []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
-		if ident, ok := node.(*ast.Ident); ok && ident.Name == keyVar && !allowed[ident] {
+		ident, ok := node.(*ast.Ident)
+		if ok && ident.Name == keyVar && !allowed[ident] && info.Defs[ident] != param {
 			misuses = append(misuses, keyCall{where: fset.Position(ident.Pos()), name: keyVar, misuse: true})
 		}
 		return true
@@ -216,102 +255,64 @@ func unexplainedKeyUses(fset *token.FileSet, decl ast.Decl, argIndex map[string]
 	return misuses
 }
 
-func keyParamIdents(decl ast.Decl) []*ast.Ident {
-	fn, ok := decl.(*ast.FuncDecl)
+func relayKeyIndex(call *ast.CallExpr, info *types.Info) (int, bool) {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return nil
+		return 0, false
 	}
-	var idents []*ast.Ident
-	for _, field := range fn.Type.Params.List {
-		for _, ident := range field.Names {
-			if ident.Name == keyVar {
-				idents = append(idents, ident)
-			}
-		}
+	method, ok := info.Uses[selector.Sel].(*types.Func)
+	if !ok {
+		return 0, false
 	}
-	return idents
+	switch qualifiedMethod(method) {
+	case gatewayPkg + ".messages.say", contractsPkg + ".Builder.Help", catalogPkg + ".Catalog.Has":
+		return 0, true
+	case gatewayPkg + ".messages.sayIn", gatewayPkg + ".messages.catalogText", gatewayPkg + ".messages.failed",
+		contractsPkg + ".Builder.Param", contractsPkg + ".Builder.ValueParam", catalogPkg + ".Catalog.Message":
+		return 1, true
+	}
+	return 0, false
 }
 
-func keyArgument(call *ast.CallExpr, argIndex map[string]int) *ast.Ident {
-	index, isKeyCall := argIndex[calleeName(call)]
-	if !isKeyCall || len(call.Args) <= index {
-		return nil
+func isFunnel(method *types.Func) bool {
+	switch qualifiedMethod(method) {
+	case gatewayPkg + ".messages.say", gatewayPkg + ".messages.sayIn", gatewayPkg + ".messages.catalogText":
+		return true
 	}
-	ident, ok := call.Args[index].(*ast.Ident)
-	if !ok || ident.Name != keyVar {
-		return nil
-	}
-	return ident
+	return false
 }
 
-func isKeyFunnel(decl ast.Decl) bool {
-	fn, ok := decl.(*ast.FuncDecl)
-	if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
-		return false
+func qualifiedMethod(method *types.Func) string {
+	sig, ok := method.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return ""
 	}
-	switch fn.Name.Name {
-	case "say", "sayIn", "catalogText":
-	default:
-		return false
+	recv := sig.Recv().Type()
+	if ptr, isPtr := recv.(*types.Pointer); isPtr {
+		recv = ptr.Elem()
 	}
-	return receiverName(fn.Recv.List[0].Type) == "messages"
+	named, ok := recv.(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return ""
+	}
+	return named.Obj().Pkg().Path() + "." + named.Obj().Name() + "." + method.Name()
 }
 
-func receiverName(expr ast.Expr) string {
-	if star, ok := expr.(*ast.StarExpr); ok {
-		expr = star.X
-	}
-	if ident, ok := expr.(*ast.Ident); ok {
-		return ident.Name
-	}
-	return ""
+func keyCallOfArg(fset *token.FileSet, call *ast.CallExpr, arg ast.Expr, info *types.Info) keyCall {
+	key, literal := constantKey(arg, info)
+	return keyCall{where: fset.Position(call.Pos()), name: calleeName(call), key: key, literal: literal}
 }
 
-func keyCallOf(fset *token.FileSet, call *ast.CallExpr, argIndex map[string]int, consts map[string]string) (keyCall, bool) {
-	name := calleeName(call)
-	index, isKeyCall := argIndex[name]
-	if !isKeyCall || len(call.Args) <= index {
-		return keyCall{}, false
+func constantKey(expr ast.Expr, info *types.Info) (string, bool) {
+	ident, isIdent := expr.(*ast.Ident)
+	if !isIdent {
+		return stringLiteral(expr)
 	}
-	key, literal := literalKey(call.Args[index], consts)
-	return keyCall{where: fset.Position(call.Pos()), name: name, key: key, literal: literal}, true
-}
-
-func stringConstants(files []*ast.File) map[string]string {
-	consts := make(map[string]string)
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			for _, spec := range constSpecs(decl) {
-				addStringConstants(consts, spec)
-			}
-		}
+	c, ok := info.Uses[ident].(*types.Const)
+	if !ok || c.Pkg() == nil || c.Parent() != c.Pkg().Scope() || c.Val().Kind() != constant.String {
+		return "", false
 	}
-	return consts
-}
-
-func constSpecs(decl ast.Decl) []*ast.ValueSpec {
-	gen, ok := decl.(*ast.GenDecl)
-	if !ok || gen.Tok != token.CONST {
-		return nil
-	}
-	var specs []*ast.ValueSpec
-	for _, spec := range gen.Specs {
-		if value, ok := spec.(*ast.ValueSpec); ok {
-			specs = append(specs, value)
-		}
-	}
-	return specs
-}
-
-func addStringConstants(consts map[string]string, spec *ast.ValueSpec) {
-	for i, name := range spec.Names {
-		if i >= len(spec.Values) {
-			return
-		}
-		if key, ok := stringLiteral(spec.Values[i]); ok {
-			consts[name.Name] = key
-		}
-	}
+	return constant.StringVal(c.Val()), true
 }
 
 func calleeName(call *ast.CallExpr) string {
@@ -322,14 +323,6 @@ func calleeName(call *ast.CallExpr) string {
 		return fn.Name
 	}
 	return ""
-}
-
-func literalKey(expr ast.Expr, consts map[string]string) (string, bool) {
-	if ident, ok := expr.(*ast.Ident); ok {
-		key, found := consts[ident.Name]
-		return key, found
-	}
-	return stringLiteral(expr)
 }
 
 func stringLiteral(expr ast.Expr) (string, bool) {
