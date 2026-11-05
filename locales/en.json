@@ -1,0 +1,329 @@
+[
+  {
+    "id": "help.channel_read",
+    "description": "Help of the channel read verb",
+    "other": "read a conversation: the recent messages of a channel, oldest first"
+  },
+  {
+    "id": "help.channel_post",
+    "description": "Help of the channel post verb",
+    "other": "post a message to a channel"
+  },
+  {
+    "id": "help.message_reply",
+    "description": "Help of the message reply verb",
+    "other": "reply to a specific message"
+  },
+  {
+    "id": "help.message_react",
+    "description": "Help of the message react verb",
+    "other": "add a reaction to a message"
+  },
+  {
+    "id": "help.message_unreact",
+    "description": "Help of the message unreact verb",
+    "other": "remove a reaction this bot added to a message"
+  },
+  {
+    "id": "help.message_edit",
+    "description": "Help of the message edit verb",
+    "other": "rewrite a message this bot sent"
+  },
+  {
+    "id": "help.message_delete",
+    "description": "Help of the message delete verb",
+    "other": "delete a message this bot sent"
+  },
+  {
+    "id": "param.channel_id",
+    "description": "Parameter: the channel a verb acts on",
+    "other": "channel id"
+  },
+  {
+    "id": "param.limit",
+    "description": "Parameter: how many messages a read returns",
+    "other": "how many messages, capped at 100"
+  },
+  {
+    "id": "param.after",
+    "description": "Parameter: the message a paged read starts after",
+    "other": "message id to read forward from, for paging"
+  },
+  {
+    "id": "param.text",
+    "description": "Parameter: the body of a message",
+    "other": "message body"
+  },
+  {
+    "id": "param.reply_to",
+    "description": "Parameter: the message a reply answers",
+    "other": "message id being replied to"
+  },
+  {
+    "id": "param.message_id",
+    "description": "Parameter: the message a verb acts on",
+    "other": "message id"
+  },
+  {
+    "id": "param.emoji_add",
+    "description": "Parameter: the emoji a reaction adds",
+    "other": "emoji to add"
+  },
+  {
+    "id": "param.emoji_remove",
+    "description": "Parameter: the emoji a reaction removes",
+    "other": "emoji to remove"
+  },
+  {
+    "id": "param.new_body",
+    "description": "Parameter: the new body of an edited message",
+    "other": "new body"
+  },
+  {
+    "id": "command.no_messages",
+    "description": "Output of a read that finds no message",
+    "other": "(no messages)"
+  },
+  {
+    "id": "command.attachments",
+    "description": "Stands for a message whose body is only attachments",
+    "one": "({{.Count}} attachment: {{.Name}})",
+    "other": "({{.Count}} attachments: {{.Name}})"
+  },
+  {
+    "id": "undelivered",
+    "description": "A message could not be handed to the session it was bound to",
+    "other": "I could not pass your message to the session, send it again"
+  },
+  {
+    "id": "repo.none",
+    "description": "No repo is known to work on",
+    "other": "I cannot find any repo to work on, check the workspace or the forge authentication"
+  },
+  {
+    "id": "repo.reused",
+    "description": "The last repo the channel was bound to is reused",
+    "other": "I am carrying on in **{{.Repo}}**, the last repo you set me on, `/session close` here to start elsewhere"
+  },
+  {
+    "id": "repo.ask",
+    "description": "Question asking which repo to work on",
+    "other": "which repo should I work on? (I will only ask once)"
+  },
+  {
+    "id": "repo.ask_capped",
+    "description": "Question asking which repo to work on when there are more repos than the menu shows",
+    "other": "{{.Question}}, {{.Count}} repos, the first {{.Shown}} are listed"
+  },
+  {
+    "id": "repo.menu_failed",
+    "description": "The repo menu could not be posted",
+    "other": "I could not post the repo menu here, name the repo in your message, or check my permissions in this channel"
+  },
+  {
+    "id": "repo.started",
+    "description": "A session was started on the chosen repo",
+    "other": "started on {{.Repo}}"
+  },
+  {
+    "id": "bindings.write_failed",
+    "description": "The bindings file could not be written",
+    "other": "the bindings file could not be written, this binding will be lost at the next restart"
+  },
+  {
+    "id": "bindings.unreadable",
+    "description": "The bindings file cannot be read",
+    "other": "the bindings file is unreadable, no binding will be kept until it is repaired"
+  },
+  {
+    "id": "bind.bad_choice",
+    "description": "A repo choice that the router cannot read",
+    "other": "unreadable choice"
+  },
+  {
+    "id": "bind.create_failed",
+    "description": "A session could not be created for a binding",
+    "other": "session creation failed: {{.Detail}}"
+  },
+  {
+    "id": "control.unavailable",
+    "description": "The session controller is not available yet",
+    "other": "session control is not available yet"
+  },
+  {
+    "id": "menu.owned_by",
+    "description": "A menu answers a question asked to someone else",
+    "other": "this menu answers the question of {{.Mention}}"
+  },
+  {
+    "id": "menu.denied",
+    "description": "A user who is not allowed answers a repo menu",
+    "other": "you are not allowed to answer this menu"
+  },
+  {
+    "id": "menu.not_allowed",
+    "description": "A user who is not allowed presses a component",
+    "other": "you are not allowed to use this menu"
+  },
+  {
+    "id": "choice.gone",
+    "description": "A choice was made on a session that no longer exists",
+    "other": "this session is no longer active"
+  },
+  {
+    "id": "choice.saved",
+    "description": "A choice was recorded",
+    "other": "choice saved: {{.Value}}"
+  },
+  {
+    "id": "thread.public_denied",
+    "description": "A public thread could not be opened for a support channel",
+    "other": "I could not open a thread here, the Create Public Threads permission is missing in this channel. I am answering here, and this channel will only carry one conversation at a time."
+  },
+  {
+    "id": "thread.private_opened",
+    "description": "A private thread was opened for the requester",
+    "other": "I am carrying on privately in {{.Channel}}"
+  },
+  {
+    "id": "thread.private_denied",
+    "description": "A private thread could not be opened",
+    "other": "I could not open a private thread here, the Create Private Threads permission is missing in this channel (a channel permission overrides the role one). I am answering here."
+  },
+  {
+    "id": "stop.none",
+    "description": "A stop was asked where no turn runs",
+    "other": "no turn is running here"
+  },
+  {
+    "id": "stop.done",
+    "description": "A running turn was interrupted",
+    "other": "turn interrupted, the conversation is kept, tell me what comes next"
+  },
+  {
+    "id": "store.unavailable",
+    "description": "The conversation store is not configured",
+    "other": "the conversation store is not available"
+  },
+  {
+    "id": "verbosity.unknown",
+    "description": "A verbosity level that the gateway does not know",
+    "other": "unknown level: {{.Level}}"
+  },
+  {
+    "id": "verbosity.set",
+    "description": "The verbosity of a channel was changed",
+    "other": "verbosity of this channel: {{.Level}}"
+  },
+  {
+    "id": "mode.unknown",
+    "description": "A channel mode that the gateway does not know",
+    "other": "unknown mode: {{.Mode}}"
+  },
+  {
+    "id": "mode.ambient_refused",
+    "description": "The ambient mode is refused without a persona",
+    "other": "ambient mode refused: it makes the bot answer everyone without being called, and nothing bounds what it can do as long as no persona is configured. Set DISCORD_AGENT, then try again."
+  },
+  {
+    "id": "mode.support",
+    "description": "The support mode was set on a channel",
+    "other": "support mode: each ping opens its own thread here. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
+  },
+  {
+    "id": "mode.ambient",
+    "description": "The ambient mode was set on a channel",
+    "other": "ambient mode: I answer here without being called, to whoever is allowed to make me act. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
+  },
+  {
+    "id": "mode.off",
+    "description": "The off mode was set on a channel",
+    "other": "off mode: I no longer answer anything here, even when called. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
+  },
+  {
+    "id": "mode.normal",
+    "description": "The normal mode was set on a channel",
+    "other": "normal mode: you have to call me here, and everyone goes back to their own session"
+  },
+  {
+    "id": "gate.denied",
+    "description": "A user who is not allowed runs a slash command",
+    "other": "you are not allowed to use the bot here"
+  },
+  {
+    "id": "run.done",
+    "description": "A command ran and returned nothing to show",
+    "other": "done"
+  },
+  {
+    "id": "save.lost",
+    "description": "A setting was changed but the store could not save it",
+    "other": "(warning: not saved, lost at the next restart)"
+  },
+  {
+    "id": "save.unreadable",
+    "description": "A setting was changed but the store file is unreadable",
+    "other": "(warning: not saved, the file is unreadable, no change will be kept until it is repaired)"
+  },
+  {
+    "id": "allow.session_added",
+    "description": "A user was added to the allow list of a session",
+    "other": "added {{.Mention}} to session \"{{.Name}}\""
+  },
+  {
+    "id": "allow.session_removed",
+    "description": "A user was removed from the allow list of a session",
+    "other": "removed {{.Mention}} from session \"{{.Name}}\""
+  },
+  {
+    "id": "allow.global_added",
+    "description": "A user was added to the global allow list",
+    "other": "{{.Mention}} is allowed to use the bot"
+  },
+  {
+    "id": "allow.global_removed",
+    "description": "A user was removed from the global allow list",
+    "other": "{{.Mention}} removed from the list"
+  },
+  {
+    "id": "allow.label_session",
+    "description": "Names an allow list of one session",
+    "other": "session \"{{.Name}}\""
+  },
+  {
+    "id": "allow.label_global",
+    "description": "Names the global allow list",
+    "other": "global allow list"
+  },
+  {
+    "id": "allow.empty",
+    "description": "An allow list that is empty, so everyone is allowed",
+    "other": "{{.Label}}: empty (everyone is allowed)"
+  },
+  {
+    "id": "allow.list",
+    "description": "An allow list with its users",
+    "other": "{{.Label}}: {{.Mentions}}"
+  },
+  {
+    "id": "progress.running",
+    "description": "Header of the live progress message of a turn",
+    "other": "in progress…"
+  },
+  {
+    "id": "progress.done",
+    "description": "A turn finished without action to summarise",
+    "other": "done"
+  },
+  {
+    "id": "progress.actions",
+    "description": "Summary of the actions a turn took",
+    "one": "{{.Count}} action",
+    "other": "{{.Count}} actions"
+  },
+  {
+    "id": "notice.unexpected",
+    "description": "Introduces the technical detail of an unexpected failure shown in a code block",
+    "other": "something went wrong inside the gateway, here is the technical detail:"
+  }
+]

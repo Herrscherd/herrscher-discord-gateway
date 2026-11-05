@@ -42,11 +42,12 @@ interchangeable.
 | `playbook` | `DISCORD_PLAYBOOK` | `pr-job` | the playbook a session opens with |
 | `tidy_pings` | `DISCORD_TIDY_PINGS` | off | delete the ping once its answer is posted, see below |
 | `message_deletes` | `DISCORD_MESSAGE_DELETES` | off | contribute `discord message delete`, see below |
+| `language` | `DISCORD_LANGUAGE` | `en` | language of the gateway's own texts when the host does not set one, `en` or `fr`, see below |
 | | `DCTL_STATE_DIR` | `~/.config/dctl` | where the router and allow stores live |
 
 Ports implemented: `Gateway`, `EventSink`, `RoutedEventSink`,
 `SessionControlReceiver`, `ChannelReader`, `MenuRouter`, `ChannelAdmin`,
-`Prober`, `CommandSource`, `MessageEditor`.
+`Prober`, `CommandSource`, `MessageEditor`, `NoticeSink`.
 
 ## Rendering happens here, not in the core
 
@@ -353,6 +354,22 @@ herrscher role grant discord:1234 operator --label leo
 
 The id is Discord's own, the same one `/allow add` takes. A refusal spells the
 principal out, so you can copy it back rather than look it up.
+
+## Languages
+
+The gateway writes its own texts in the language of the conversation they concern:
+`Notify` renders a notice in the language the host passes with it. Texts that no
+notice carries (the slash replies, the repo menus, the prompts of a ping) use
+`DISCORD_LANGUAGE`, the operator default, which is `en` unless set to `fr`.
+
+The texts live in two catalogs, `locales/en.json` and `locales/fr.json`, in the
+go-i18n format. A test checks that the French catalog has every English key with
+the same placeholders, and that the code uses no key the catalog lacks. A key
+missing from French falls back to its English text, with one warning in the log.
+
+Two things stay as they are whatever the language. The detail of an unexpected
+error is the engine's own text, shown verbatim in a code block with mentions
+neutralised, and the output of commands an agent reads stays English.
 
 ## Reconnection
 

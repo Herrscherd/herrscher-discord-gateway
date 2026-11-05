@@ -12,8 +12,6 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-const undeliveredMessage = "je n'ai pas pu transmettre ton message à la session, renvoie-le"
-
 type routerConfig struct {
 	owner           string
 	appID           string
@@ -47,6 +45,7 @@ type router struct {
 	c     client
 	binds *bindStore
 	sinks *sinks
+	msgs  messages
 	log   *slog.Logger
 	cfg   routerConfig
 	acl   *accessPolicy
@@ -64,7 +63,7 @@ type job struct {
 	shared bool
 }
 
-func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStore, sinks *sinks, log *slog.Logger, cfg routerConfig) *router {
+func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStore, sinks *sinks, msgs messages, log *slog.Logger, cfg routerConfig) *router {
 	if cfg.address.appID == "" {
 		cfg.address.appID = cfg.appID
 	}
@@ -73,6 +72,7 @@ func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStor
 		c:     api,
 		binds: binds,
 		sinks: sinks,
+		msgs:  msgs,
 		log:   log,
 		cfg:   cfg,
 		acl: &accessPolicy{
@@ -172,7 +172,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg mes
 		r.log.Warn("list repos failed", "err", err)
 	}
 	if len(repos) == 0 {
-		r.post(ctx, msg.ChannelID, "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge")
+		r.post(ctx, msg.ChannelID, r.msgs.say("repo.none", nil))
 		return
 	}
 	task := r.place(ctx, msg)
@@ -200,9 +200,7 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 		r.sinks.at(task.conv).fail(ctx, failure)
 		return true
 	}
-	r.post(ctx, task.conv, fmt.Sprintf(
-		"je repars sur **%s**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs",
-		repoLabel(last)))
+	r.post(ctx, task.conv, r.msgs.say("repo.reused", map[string]any{"Repo": repoLabel(last)}))
 	return true
 }
 
@@ -219,9 +217,9 @@ func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos
 	r.jobs[conv] = task
 	r.mu.Unlock()
 
-	prompt := "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
+	prompt := r.msgs.say("repo.ask", nil)
 	if len(repos) > selectMenuMax {
-		prompt = fmt.Sprintf("%s, %d repos, les %d premiers sont listés", prompt, len(repos), selectMenuMax)
+		prompt = r.msgs.say("repo.ask_capped", map[string]any{"Question": prompt, countArg: len(repos), "Shown": selectMenuMax})
 	}
 	replyTo := msg.ID
 	if conv != msg.ChannelID {
@@ -233,7 +231,7 @@ func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos
 		delete(r.pending, conv)
 		delete(r.jobs, conv)
 		r.mu.Unlock()
-		r.sinks.at(conv).fail(ctx, "je n'ai pas pu poster le menu des repos ici, reformule en nommant le repo, ou vérifie mes permissions dans ce salon")
+		r.sinks.at(conv).fail(ctx, r.msgs.say("repo.menu_failed", nil))
 	}
 }
 
@@ -250,9 +248,9 @@ func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
 
 func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 	r.log.Warn("bind store save failed", "conv", conv, "err", err)
-	reason := "le fichier des rattachements n'a pas pu être écrit, ce rattachement sera perdu à la prochaine relance"
+	reason := r.msgs.say("bindings.write_failed", nil)
 	if errors.Is(err, errStoreLocked) {
-		reason = "le fichier des rattachements est illisible, aucun rattachement ne sera retenu tant qu'il n'est pas réparé"
+		reason = r.msgs.say("bindings.unreadable", nil)
 	}
 	r.sinks.at(conv).fail(ctx, reason)
 }
@@ -287,10 +285,10 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	} else if target, ok := strings.CutPrefix(value, "remote:"); ok {
 		spec.Clone = target
 	} else {
-		return "choix illisible"
+		return r.msgs.say("bind.bad_choice", nil)
 	}
 	if _, err := ctrl.Create(ctx, spec); err != nil {
-		return "création de session impossible : " + err.Error()
+		return r.msgs.say("bind.create_failed", map[string]any{"Detail": err.Error()})
 	}
 	save := func(slot, session string) error { return r.binds.Bind(slot, session) }
 	if task.thread {
@@ -309,7 +307,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	}
 	if buffered && !r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared) {
 		r.log.Warn("buffered message not delivered to the new session", "session", spec.Name, "conv", task.conv)
-		r.sinks.at(task.conv).fail(ctx, undeliveredMessage)
+		r.sinks.at(task.conv).fail(ctx, r.msgs.say("undelivered", nil))
 	}
 	return ""
 }
@@ -340,7 +338,7 @@ func repoValue(repo contracts.RepoRef) string {
 func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil {
-		return "le contrôleur de sessions n'est pas encore prêt"
+		return r.msgs.say("control.unavailable", nil)
 	}
 	r.mu.Lock()
 	pending, buffered := r.pending[channel]
@@ -350,11 +348,11 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 	}
 	if owner != "" && user != "" && owner != user {
 		r.mu.Unlock()
-		return "ce menu répond à la question de <@" + owner + ">"
+		return r.msgs.say("menu.owned_by", map[string]any{mentionArg: mention(owner)})
 	}
 	if owner == "" && !r.acl.authorizes(messageCreate{Author: dctl.Author{ID: user}}) {
 		r.mu.Unlock()
-		return "tu n'es pas autorisé à répondre à ce menu"
+		return r.msgs.say("menu.denied", nil)
 	}
 	task, known := r.jobs[channel]
 	delete(r.pending, channel)
@@ -368,7 +366,7 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		r.sinks.at(task.conv).fail(ctx, "")
 		return failure
 	}
-	return "c'est parti sur " + strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")
+	return r.msgs.say("repo.started", map[string]any{"Repo": strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:")})
 }
 
 func (r *router) replaceLostJob(channel, user string) job {
@@ -393,7 +391,7 @@ func (r *router) replaceLostJob(channel, user string) job {
 func (r *router) onChoicePick(_ context.Context, conv, user string, direct bool, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, conv, user, direct), value) {
-		return "cette session n'est plus active"
+		return r.msgs.say("choice.gone", nil)
 	}
 	return ""
 }

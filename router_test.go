@@ -24,6 +24,8 @@ type fakeCtrl struct {
 	closeErr     error
 	createErr    error
 	refuseSubmit bool
+	dispatched   contracts.Result
+	dispatchErr  error
 }
 
 type closeCall struct {
@@ -39,24 +41,27 @@ func newFakeCtrl() *fakeCtrl {
 	}
 }
 
-func (f *fakeCtrl) Dispatch(context.Context, []string) (string, error) { return "", nil }
-func (f *fakeCtrl) Create(ctx context.Context, s contracts.CreateSession) (string, error) {
+func (f *fakeCtrl) Dispatch(context.Context, []string) (contracts.Result, error) {
+	return f.dispatched, f.dispatchErr
+}
+
+func (f *fakeCtrl) Create(ctx context.Context, s contracts.CreateSession) (contracts.Result, error) {
 	f.principals = append(f.principals, contracts.PrincipalFrom(ctx))
 	if f.createErr != nil {
-		return "", f.createErr
+		return contracts.Result{}, f.createErr
 	}
 	f.created = append(f.created, s)
 	f.live[s.Name] = true
-	return "created", nil
+	return contracts.Result{}, nil
 }
 
-func (f *fakeCtrl) Close(_ context.Context, name string, force bool) (string, error) {
+func (f *fakeCtrl) Close(_ context.Context, name string, force bool) (contracts.Result, error) {
 	f.closed = append(f.closed, closeCall{name: name, force: force})
 	if f.closeErr != nil && !force {
-		return "", f.closeErr
+		return contracts.Result{}, f.closeErr
 	}
 	delete(f.live, name)
-	return "", nil
+	return contracts.Result{}, nil
 }
 func (f *fakeCtrl) Sessions() []contracts.SessionInfo            { return f.sessions }
 func (f *fakeCtrl) Scrollback(string) []contracts.ScrollbackLine { return nil }
@@ -94,8 +99,8 @@ func newTestRouterRendering(t *testing.T) (*router, *fakeCtrl, *fakeClient, *fak
 	ctrl, c, f := newFakeCtrl(), &fakeClient{}, &fakeRender{}
 	binds := newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog())
 	r := newRouter(func() contracts.SessionControl { return ctrl }, c, binds,
-		newSinks(testRun(), f, staticLevels("full"), "", false, testLog()),
-		testLog(),
+		newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog()),
+		testMessages(), testLog(),
 		routerConfig{owner: "owner1", appID: "app1", contextMessages: 5, playbook: "pr-job"})
 	return r, ctrl, c, f
 }
@@ -156,7 +161,7 @@ func TestAckResolvesToAFailureWhenTheMenuCannotBePosted(t *testing.T) {
 	if len(f.unreacted) != 1 || f.unreacted[0] != ackEmoji {
 		t.Fatalf("unreacted = %v, want the pending mark cleared", f.unreacted)
 	}
-	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "menu des repos") {
+	if len(f.posts) != 1 || !strings.Contains(f.posts[0], "repo menu") {
 		t.Fatalf("posts = %v, want the reason said in the channel", f.posts)
 	}
 	r.mu.Lock()

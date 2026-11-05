@@ -20,110 +20,111 @@ const readCap = 100
 // so what an operator types is `discord channel read`. Spelling "discord" here
 // would produce `discord discord channel read`.
 //
-// It satisfies contracts.CommandSource.
+// Help and parameter texts are catalog keys, so a host resolves them in its own
+// language. It satisfies contracts.CommandSource.
 func (g *Gateway) Commands() []contracts.Cmd {
 	cmds := []contracts.Cmd{
 		contracts.New("channel", "read").
-			Help("read a conversation: the recent messages of a channel, oldest first").
-			Param("id", "channel id", true).
-			ValueParam("limit", fmt.Sprintf("how many messages, capped at %d", readCap), false).
-			ValueParam("after", "message id to read forward from, for paging", false).
+			Help("help.channel_read").
+			Param("id", "param.channel_id", true).
+			ValueParam("limit", "param.limit", false).
+			ValueParam("after", "param.after", false).
 			Do(g.readChannel),
 		contracts.New("channel", "post").
-			Help("post a message to a channel").
-			Param("id", "channel id", true).
-			Param("text", "message body", true).
+			Help("help.channel_post").
+			Param("id", "param.channel_id", true).
+			Param("text", "param.text", true).
 			Do(g.postChannel),
 		contracts.New("message", "reply").
-			Help("reply to a specific message").
-			Param("id", "channel id", true).
-			Param("to", "message id being replied to", true).
-			Param("text", "message body", true).
+			Help("help.message_reply").
+			Param("id", "param.channel_id", true).
+			Param("to", "param.reply_to", true).
+			Param("text", "param.text", true).
 			Do(g.replyMessage),
 		contracts.New("message", "react").
-			Help("add a reaction to a message").
-			Param("id", "channel id", true).
-			Param("msg", "message id", true).
-			Param("emoji", "emoji to add", true).
+			Help("help.message_react").
+			Param("id", "param.channel_id", true).
+			Param("msg", "param.message_id", true).
+			Param("emoji", "param.emoji_add", true).
 			Do(g.reactMessage),
 		contracts.New("message", "unreact").
-			Help("remove a reaction this bot added to a message").
-			Param("id", "channel id", true).
-			Param("msg", "message id", true).
-			Param("emoji", "emoji to remove", true).
+			Help("help.message_unreact").
+			Param("id", "param.channel_id", true).
+			Param("msg", "param.message_id", true).
+			Param("emoji", "param.emoji_remove", true).
 			Do(g.unreactMessage),
 		contracts.New("message", "edit").
-			Help("rewrite a message this bot sent").
-			Param("id", "channel id", true).
-			Param("msg", "message id", true).
-			Param("text", "new body", true).
+			Help("help.message_edit").
+			Param("id", "param.channel_id", true).
+			Param("msg", "param.message_id", true).
+			Param("text", "param.new_body", true).
 			Do(g.editMessage),
 	}
 	if g.deletes {
 		cmds = append(cmds, contracts.New("message", "delete").
-			Help("delete a message this bot sent").
-			Param("id", "channel id", true).
-			Param("msg", "message id", true).
+			Help("help.message_delete").
+			Param("id", "param.channel_id", true).
+			Param("msg", "param.message_id", true).
 			Do(g.deleteMessage))
 	}
 	return cmds
 }
 
-func (g *Gateway) readChannel(ctx context.Context, input contracts.Input) (string, error) {
+func (g *Gateway) readChannel(ctx context.Context, input contracts.Input) (contracts.Result, error) {
 	limit, _ := input.Lookup("limit")
 	after, _ := input.Lookup("after")
 	msgs, err := g.c.ReadMessages(ctx, input.Args["id"], capLimit(limit), after)
 	if err != nil {
-		return "", fmt.Errorf("discord channel read: %w", err)
+		return contracts.Result{}, fmt.Errorf("discord channel read: %w", err)
 	}
-	return renderMessages(msgs), nil
+	return contracts.DataResult(renderMessages(g.msgs, msgs)), nil
 }
 
-func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (string, error) {
+func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	sent, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
 	if err != nil {
-		return "", fmt.Errorf("discord channel post: %w", err)
+		return contracts.Result{}, fmt.Errorf("discord channel post: %w", err)
 	}
-	return "posted " + string(msgID(sent)), nil
+	return contracts.DataResult("posted " + string(msgID(sent))), nil
 }
 
-func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (string, error) {
+func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	sent, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
 	if err != nil {
-		return "", fmt.Errorf("discord message reply: %w", err)
+		return contracts.Result{}, fmt.Errorf("discord message reply: %w", err)
 	}
-	return "replied " + string(msgID(sent)), nil
+	return contracts.DataResult("replied " + string(msgID(sent))), nil
 }
 
-func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (string, error) {
+func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.c.React(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
-		return "", fmt.Errorf("discord message react: %w", err)
+		return contracts.Result{}, fmt.Errorf("discord message react: %w", err)
 	}
-	return "reacted", nil
+	return contracts.DataResult("reacted"), nil
 }
 
-func (g *Gateway) unreactMessage(ctx context.Context, in contracts.Input) (string, error) {
+func (g *Gateway) unreactMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.c.Unreact(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
-		return "", fmt.Errorf("discord message unreact: %w", err)
+		return contracts.Result{}, fmt.Errorf("discord message unreact: %w", err)
 	}
-	return "unreacted", nil
+	return contracts.DataResult("unreacted"), nil
 }
 
-func (g *Gateway) editMessage(ctx context.Context, in contracts.Input) (string, error) {
+func (g *Gateway) editMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.Edit(ctx, in.Args["id"], in.Args["msg"], in.Args["text"]); err != nil {
-		return "", err
+		return contracts.Result{}, err
 	}
-	return "edited", nil
+	return contracts.DataResult("edited"), nil
 }
 
-func (g *Gateway) deleteMessage(ctx context.Context, input contracts.Input) (string, error) {
+func (g *Gateway) deleteMessage(ctx context.Context, input contracts.Input) (contracts.Result, error) {
 	if err := g.ownMessage(ctx, input.Args["id"], input.Args["msg"]); err != nil {
-		return "", err
+		return contracts.Result{}, err
 	}
 	if err := g.Delete(ctx, input.Args["id"], input.Args["msg"]); err != nil {
-		return "", err
+		return contracts.Result{}, err
 	}
-	return "deleted", nil
+	return contracts.DataResult("deleted"), nil
 }
 
 var (
@@ -157,26 +158,26 @@ func capLimit(v string) int {
 	return number
 }
 
-func renderMessages(msgs []dctl.Message) string {
+func renderMessages(texts messages, msgs []dctl.Message) string {
 	if len(msgs) == 0 {
-		return "(no messages)"
+		return texts.say("command.no_messages", nil)
 	}
 	var builder strings.Builder
 	for i := range msgs {
 		msg := msgs[i]
 		fmt.Fprintf(&builder, "%s %s: %s  [%s]\n",
-			authorOf(msg), msg.Timestamp, bodyOf(msg), msg.ID)
+			authorOf(msg), msg.Timestamp, bodyOf(texts, msg), msg.ID)
 	}
 	return builder.String()
 }
 
-func bodyOf(msg dctl.Message) string {
+func bodyOf(texts messages, msg dctl.Message) string {
 	body := flattenLines(strings.TrimSpace(msg.Content))
 	if body != "" {
 		return body
 	}
 	if n := len(msg.Attachments); n > 0 {
-		return fmt.Sprintf("(%d attachment(s): %s)", n, msg.Attachments[0].Filename)
+		return texts.say("command.attachments", map[string]any{countArg: n, nameArg: msg.Attachments[0].Filename})
 	}
 	if len(msg.Embeds) > 0 {
 		return "(embed)"

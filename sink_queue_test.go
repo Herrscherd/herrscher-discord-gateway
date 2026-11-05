@@ -79,7 +79,7 @@ func TestSinkRunsEventsInSubmissionOrder(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		g := newGatedRender()
-		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		var wg sync.WaitGroup
 
 		s.noteUser(context.Background(), "c1", "m1", "42")
@@ -115,7 +115,7 @@ func TestSinkRunsEventsInSubmissionOrder(t *testing.T) {
 type stamp struct{ producer, seq int }
 
 func TestSinkKeepsEachProducersOrderUnderConcurrentSubmits(t *testing.T) {
-	s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+	s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 	const producers, perProducer = 4, 50
 	var order []stamp
 	var wg sync.WaitGroup
@@ -148,7 +148,7 @@ func TestSinkWaiterLeavesWhenItsContextEndsDuringARenderCall(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		g := newGatedRender()
-		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		var wg sync.WaitGroup
 		wg.Go(func() { s.fail(context.Background(), "a") })
 		synctest.Wait()
@@ -181,7 +181,7 @@ func TestSinkCancelledNoteDoesNotHideTheNextHumanAck(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		g := newGatedRender()
-		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		var wg sync.WaitGroup
 
 		wg.Go(func() { s.fail(context.Background(), "a") })
@@ -208,7 +208,7 @@ func TestSinkCancelledAckStillReactsOnItsMessage(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		g := newGatedRender()
-		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		var wg sync.WaitGroup
 
 		wg.Go(func() { s.fail(context.Background(), "a") })
@@ -232,7 +232,7 @@ func TestSinkCancelledFailStillClosesTheOpenAck(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
 		g := newGatedRender()
-		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), g, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		var wg sync.WaitGroup
 
 		wg.Go(func() { s.ack(context.Background(), "c1", "m1", "42") })
@@ -263,7 +263,7 @@ func TestSinkCancelledFailStillClosesTheOpenAck(t *testing.T) {
 func TestSinkHandsOverWhenItsContextEndsBetweenSteps(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		release := make(chan struct{})
 		var order []int
 		var leaderErr error
@@ -309,7 +309,7 @@ func TestSinkDropsQueuedWorkOnceTheLifetimeEnds(t *testing.T) {
 		g := newGatedRender()
 		var logs bytes.Buffer
 		log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		s := newSink(lifetimeFrom(ctx), g, "c1", staticLevel(levelSilent), "", false, log)
+		s := newSink(lifetimeFrom(ctx), g, "c1", staticLevel(levelSilent), "", false, testMessages(), log)
 		var wg sync.WaitGroup
 
 		wg.Go(func() { s.fail(context.Background(), "a") })
@@ -347,7 +347,7 @@ func budgetStep(i int, release, hold <-chan struct{}, order *[]int) func() {
 func TestSinkHandsTheDrainOverAfterItsBudget(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		release := make(chan struct{})
 		hold := make(chan struct{})
 		const jobs = sinkDrainBudget + 4
@@ -385,7 +385,7 @@ func TestSinkRecoversFromAPanickingStep(t *testing.T) {
 		t.Helper()
 		var logs bytes.Buffer
 		log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, log)
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), log)
 		release := make(chan struct{})
 		var recovered any
 		var queuedRan, afterRan bool
@@ -429,7 +429,7 @@ func TestSinkRecoversFromAPanickingStep(t *testing.T) {
 func TestSinkHandOverRunsTheStepOfAWaiterThatGaveUp(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		release := make(chan struct{})
 		var order []int
 		var leaderErr, gaveUpErr, lateErr error
@@ -472,7 +472,7 @@ func TestSinkPromotedWaiterThatGivesUpStillHandsOver(t *testing.T) {
 	for range 20 {
 		runSinkBubble(t, func(t *testing.T) {
 			t.Helper()
-			s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+			s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 			release := make(chan struct{})
 			var order []int
 			var wg sync.WaitGroup
@@ -510,7 +510,7 @@ func TestSinkPromotedWaiterThatGivesUpStillHandsOver(t *testing.T) {
 func TestSinkOrphanedStepsRunWithoutANextSubmit(t *testing.T) {
 	runSinkBubble(t, func(t *testing.T) {
 		t.Helper()
-		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testLog())
+		s := newSink(testRun(), &fakeRender{}, "c1", staticLevel(levelSilent), "", false, testMessages(), testLog())
 		release := make(chan struct{})
 		var order []int
 		var wg sync.WaitGroup

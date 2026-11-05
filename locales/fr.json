@@ -1,0 +1,329 @@
+[
+  {
+    "id": "help.channel_read",
+    "description": "Aide du verbe de lecture d'un salon",
+    "other": "lire une conversation : les messages récents d'un salon, du plus ancien au plus récent"
+  },
+  {
+    "id": "help.channel_post",
+    "description": "Aide du verbe d'envoi dans un salon",
+    "other": "poster un message dans un salon"
+  },
+  {
+    "id": "help.message_reply",
+    "description": "Aide du verbe de réponse à un message",
+    "other": "répondre à un message précis"
+  },
+  {
+    "id": "help.message_react",
+    "description": "Aide du verbe d'ajout de réaction",
+    "other": "ajouter une réaction à un message"
+  },
+  {
+    "id": "help.message_unreact",
+    "description": "Aide du verbe de retrait de réaction",
+    "other": "retirer une réaction que ce bot a ajoutée à un message"
+  },
+  {
+    "id": "help.message_edit",
+    "description": "Aide du verbe de réécriture d'un message",
+    "other": "réécrire un message envoyé par ce bot"
+  },
+  {
+    "id": "help.message_delete",
+    "description": "Aide du verbe de suppression d'un message",
+    "other": "supprimer un message envoyé par ce bot"
+  },
+  {
+    "id": "param.channel_id",
+    "description": "Paramètre : le salon sur lequel agit un verbe",
+    "other": "identifiant du salon"
+  },
+  {
+    "id": "param.limit",
+    "description": "Paramètre : combien de messages une lecture renvoie",
+    "other": "combien de messages, plafonné à 100"
+  },
+  {
+    "id": "param.after",
+    "description": "Paramètre : le message après lequel une lecture paginée commence",
+    "other": "identifiant du message à partir duquel lire, pour paginer"
+  },
+  {
+    "id": "param.text",
+    "description": "Paramètre : le contenu d'un message",
+    "other": "contenu du message"
+  },
+  {
+    "id": "param.reply_to",
+    "description": "Paramètre : le message auquel une réponse répond",
+    "other": "identifiant du message auquel répondre"
+  },
+  {
+    "id": "param.message_id",
+    "description": "Paramètre : le message sur lequel agit un verbe",
+    "other": "identifiant du message"
+  },
+  {
+    "id": "param.emoji_add",
+    "description": "Paramètre : l'emoji qu'une réaction ajoute",
+    "other": "emoji à ajouter"
+  },
+  {
+    "id": "param.emoji_remove",
+    "description": "Paramètre : l'emoji qu'un retrait supprime",
+    "other": "emoji à retirer"
+  },
+  {
+    "id": "param.new_body",
+    "description": "Paramètre : le nouveau contenu d'un message réécrit",
+    "other": "nouveau contenu"
+  },
+  {
+    "id": "command.no_messages",
+    "description": "Sortie d'une lecture qui ne trouve aucun message",
+    "other": "(aucun message)"
+  },
+  {
+    "id": "command.attachments",
+    "description": "Tient lieu du contenu d'un message qui ne porte que des pièces jointes",
+    "one": "({{.Count}} pièce jointe : {{.Name}})",
+    "other": "({{.Count}} pièces jointes : {{.Name}})"
+  },
+  {
+    "id": "undelivered",
+    "description": "Un message n'a pas pu être transmis à la session à laquelle il était rattaché",
+    "other": "je n'ai pas pu transmettre ton message à la session, renvoie-le"
+  },
+  {
+    "id": "repo.none",
+    "description": "Aucun repo connu sur lequel travailler",
+    "other": "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge"
+  },
+  {
+    "id": "repo.reused",
+    "description": "Le dernier repo auquel le salon était rattaché est repris",
+    "other": "je repars sur **{{.Repo}}**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs"
+  },
+  {
+    "id": "repo.ask",
+    "description": "Question demandant sur quel repo travailler",
+    "other": "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
+  },
+  {
+    "id": "repo.ask_capped",
+    "description": "Question sur le repo quand il y a plus de repos que le menu n'en montre",
+    "other": "{{.Question}}, {{.Count}} repos, les {{.Shown}} premiers sont listés"
+  },
+  {
+    "id": "repo.menu_failed",
+    "description": "Le menu des repos n'a pas pu être posté",
+    "other": "je n'ai pas pu poster le menu des repos ici, reformule en nommant le repo, ou vérifie mes permissions dans ce salon"
+  },
+  {
+    "id": "repo.started",
+    "description": "Une session a démarré sur le repo choisi",
+    "other": "c'est parti sur {{.Repo}}"
+  },
+  {
+    "id": "bindings.write_failed",
+    "description": "Le fichier des rattachements n'a pas pu être écrit",
+    "other": "le fichier des rattachements n'a pas pu être écrit, ce rattachement sera perdu à la prochaine relance"
+  },
+  {
+    "id": "bindings.unreadable",
+    "description": "Le fichier des rattachements ne peut pas être lu",
+    "other": "le fichier des rattachements est illisible, aucun rattachement ne sera retenu tant qu'il n'est pas réparé"
+  },
+  {
+    "id": "bind.bad_choice",
+    "description": "Un choix de repo que le routeur ne sait pas lire",
+    "other": "choix illisible"
+  },
+  {
+    "id": "bind.create_failed",
+    "description": "Une session n'a pas pu être créée pour un rattachement",
+    "other": "création de session impossible : {{.Detail}}"
+  },
+  {
+    "id": "control.unavailable",
+    "description": "Le contrôleur de sessions n'est pas encore disponible",
+    "other": "le contrôle des sessions n'est pas encore disponible"
+  },
+  {
+    "id": "menu.owned_by",
+    "description": "Un menu répond à une question posée à quelqu'un d'autre",
+    "other": "ce menu répond à la question de {{.Mention}}"
+  },
+  {
+    "id": "menu.denied",
+    "description": "Une personne non autorisée répond à un menu de repos",
+    "other": "tu n'es pas autorisé à répondre à ce menu"
+  },
+  {
+    "id": "menu.not_allowed",
+    "description": "Une personne non autorisée actionne un composant",
+    "other": "tu n'es pas autorisé à utiliser ce menu"
+  },
+  {
+    "id": "choice.gone",
+    "description": "Un choix a été fait sur une session qui n'existe plus",
+    "other": "cette session n'est plus active"
+  },
+  {
+    "id": "choice.saved",
+    "description": "Un choix a été enregistré",
+    "other": "choix enregistré : {{.Value}}"
+  },
+  {
+    "id": "thread.public_denied",
+    "description": "Un fil public n'a pas pu être ouvert pour un salon de support",
+    "other": "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois."
+  },
+  {
+    "id": "thread.private_opened",
+    "description": "Un fil privé a été ouvert pour la personne qui écrit",
+    "other": "je continue en privé dans {{.Channel}}"
+  },
+  {
+    "id": "thread.private_denied",
+    "description": "Un fil privé n'a pas pu être ouvert",
+    "other": "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici."
+  },
+  {
+    "id": "stop.none",
+    "description": "Un arrêt demandé là où aucun tour ne tourne",
+    "other": "aucun tour en cours ici"
+  },
+  {
+    "id": "stop.done",
+    "description": "Un tour en cours a été interrompu",
+    "other": "tour interrompu, la conversation est gardée, dis-moi la suite"
+  },
+  {
+    "id": "store.unavailable",
+    "description": "Le store des conversations n'est pas configuré",
+    "other": "le store de conversations n'est pas disponible"
+  },
+  {
+    "id": "verbosity.unknown",
+    "description": "Un niveau de verbosité que la passerelle ne connaît pas",
+    "other": "niveau inconnu : {{.Level}}"
+  },
+  {
+    "id": "verbosity.set",
+    "description": "La verbosité d'un salon a changé",
+    "other": "verbosité de ce salon : {{.Level}}"
+  },
+  {
+    "id": "mode.unknown",
+    "description": "Un mode de salon que la passerelle ne connaît pas",
+    "other": "mode inconnu : {{.Mode}}"
+  },
+  {
+    "id": "mode.ambient_refused",
+    "description": "Le mode ambient est refusé sans persona",
+    "other": "mode ambient refusé : il fait répondre le bot à tout le monde sans qu'on l'appelle, et rien ne borne ce qu'il peut faire tant qu'aucune persona n'est configurée. Renseigne DISCORD_AGENT puis réessaie."
+  },
+  {
+    "id": "mode.support",
+    "description": "Le mode support a été posé sur un salon",
+    "other": "mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
+  },
+  {
+    "id": "mode.ambient",
+    "description": "Le mode ambient a été posé sur un salon",
+    "other": "mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
+  },
+  {
+    "id": "mode.off",
+    "description": "Le mode off a été posé sur un salon",
+    "other": "mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
+  },
+  {
+    "id": "mode.normal",
+    "description": "Le mode normal a été posé sur un salon",
+    "other": "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session"
+  },
+  {
+    "id": "gate.denied",
+    "description": "Une personne non autorisée lance une commande slash",
+    "other": "tu n'es pas autorisé à utiliser le bot ici"
+  },
+  {
+    "id": "run.done",
+    "description": "Une commande s'est exécutée sans rien à montrer",
+    "other": "fait"
+  },
+  {
+    "id": "save.lost",
+    "description": "Un réglage a changé mais le store n'a pas pu le sauvegarder",
+    "other": "(attention : non sauvegardé, perdu au prochain lancement)"
+  },
+  {
+    "id": "save.unreadable",
+    "description": "Un réglage a changé mais le fichier du store est illisible",
+    "other": "(attention : non sauvegardé, le fichier est illisible, aucun changement ne sera retenu tant qu'il n'est pas réparé)"
+  },
+  {
+    "id": "allow.session_added",
+    "description": "Une personne a été ajoutée à la liste d'autorisation d'une session",
+    "other": "ajouté {{.Mention}} à la session « {{.Name}} »"
+  },
+  {
+    "id": "allow.session_removed",
+    "description": "Une personne a été retirée de la liste d'autorisation d'une session",
+    "other": "retiré {{.Mention}} de la session « {{.Name}} »"
+  },
+  {
+    "id": "allow.global_added",
+    "description": "Une personne a été ajoutée à la liste d'autorisation globale",
+    "other": "{{.Mention}} est autorisé à utiliser le bot"
+  },
+  {
+    "id": "allow.global_removed",
+    "description": "Une personne a été retirée de la liste d'autorisation globale",
+    "other": "{{.Mention}} retiré de la liste"
+  },
+  {
+    "id": "allow.label_session",
+    "description": "Nomme la liste d'autorisation d'une session",
+    "other": "session « {{.Name}} »"
+  },
+  {
+    "id": "allow.label_global",
+    "description": "Nomme la liste d'autorisation globale",
+    "other": "liste d'autorisation globale"
+  },
+  {
+    "id": "allow.empty",
+    "description": "Une liste d'autorisation vide, donc tout le monde est autorisé",
+    "other": "{{.Label}} : vide (tout le monde est autorisé)"
+  },
+  {
+    "id": "allow.list",
+    "description": "Une liste d'autorisation avec ses personnes",
+    "other": "{{.Label}}: {{.Mentions}}"
+  },
+  {
+    "id": "progress.running",
+    "description": "En-tête du message de progression en direct d'un tour",
+    "other": "en cours…"
+  },
+  {
+    "id": "progress.done",
+    "description": "Un tour s'est terminé sans action à résumer",
+    "other": "terminé"
+  },
+  {
+    "id": "progress.actions",
+    "description": "Résumé des actions d'un tour",
+    "one": "{{.Count}} action",
+    "other": "{{.Count}} actions"
+  },
+  {
+    "id": "notice.unexpected",
+    "description": "Introduit le détail technique d'un échec inattendu affiché dans un bloc de code",
+    "other": "une erreur interne s'est produite, voici le détail technique :"
+  }
+]

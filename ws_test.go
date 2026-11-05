@@ -205,7 +205,7 @@ func TestStartReturnsOnlyAfterCommandSyncFinishes(t *testing.T) {
 			dctl.WithHTTPClient(&http.Client{Transport: blockingTransport{entered: entered, finished: finished}}),
 			dctl.WithGlobalCommands(),
 		)
-		s := newSlash(client.Interactions(), nil, fakeGateway(t, serveOneInteraction), "t", nil, nil, testLog())
+		s := newSlash(client.Interactions(), nil, fakeGateway(t, serveOneInteraction), "t", nil, nil, testMessages(), testLog())
 		ctx, cancel := context.WithCancel(context.Background())
 		startDone := make(chan struct{})
 		go func() {

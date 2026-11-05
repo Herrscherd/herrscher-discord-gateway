@@ -117,7 +117,7 @@ func TestThreadFailureFallsBackToTheChannelOutLoud(t *testing.T) {
 
 	r.onMessage(context.Background(), ownerPing("en privé stp, herrscher"))
 
-	if len(c.sent) != 1 || c.sent[0].channel != "c1" || !strings.Contains(c.sent[0].content, "fil privé") {
+	if len(c.sent) != 1 || c.sent[0].channel != "c1" || !strings.Contains(c.sent[0].content, "private thread") {
 		t.Fatalf("sent = %+v, want the fallback said out loud in the channel", c.sent)
 	}
 	if spec := ctrl.created[0]; spec.ChannelID != "c1" {
@@ -247,7 +247,7 @@ func TestForkFallsBackToTheBoundSessionWhenTheThreadFails(t *testing.T) {
 	if got := ctrl.submitted["ch-c1"]; len(got) != 1 {
 		t.Fatalf("submitted = %+v, want the ping answered by the bound session", got)
 	}
-	if len(c.sent) != 1 || !strings.Contains(c.sent[0].content, "fil privé") {
+	if len(c.sent) != 1 || !strings.Contains(c.sent[0].content, "private thread") {
 		t.Fatalf("sent = %+v, want the fallback said out loud", c.sent)
 	}
 }
@@ -331,7 +331,7 @@ func TestASupportThreadThatCannotOpenAnswersInTheChannelOutLoud(t *testing.T) {
 	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1" {
 		t.Fatalf("created = %+v, want the job to happen in the channel", ctrl.created)
 	}
-	if len(c.sent) == 0 || !strings.Contains(c.sent[0].content, "fil") {
+	if len(c.sent) == 0 || !strings.Contains(c.sent[0].content, "thread") {
 		t.Fatalf("sent = %+v, want the fallback said out loud", c.sent)
 	}
 }
