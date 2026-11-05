@@ -355,15 +355,31 @@ func TestNoticeRendersInEachLanguage(t *testing.T) {
 	}
 }
 
-func TestRefArgumentRendersAsChannelMention(t *testing.T) {
+func TestRefArgumentIsRefusedForATextParameter(t *testing.T) {
 	msgs := testMessages()
 	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Ref("Name", "123")}}
-	got, err := msgs.notice(i18n.English, notice)
-	if err != nil {
-		t.Fatal(err)
+	if got, err := msgs.notice(i18n.English, notice); !errors.Is(err, contracts.ErrNoticeArgs) {
+		t.Fatalf("notice returned %q, %v, want ErrNoticeArgs: a ref is not a text", got, err)
 	}
-	if got != "session <#123> created" {
-		t.Errorf("got %q", got)
+	f := &fakeClient{}
+	g := NewGateway(f, testRun(), msgs, testLog())
+	_, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, notice)
+	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) || !errors.Is(err, contracts.ErrNoticeArgs) {
+		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted wrapping ErrNoticeArgs", err)
+	}
+	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, failEmoji+" ") {
+		t.Fatalf("sent %+v, want the fallback under the failure emoji", f.sent)
+	}
+}
+
+func TestRefArgumentKeepsItsKindAndIsNeutralised(t *testing.T) {
+	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Ref("Name", "@everyone")}}
+	plain := plainNotice(notice)
+	if len(plain.Args) != 1 || plain.Args[0].Kind() != contracts.ArgRef {
+		t.Fatalf("plainNotice kept %+v, want one ArgRef", plain.Args)
+	}
+	if got := plain.Args[0].Value(); got != "@\u200beveryone" {
+		t.Errorf("ref value %q, want the mention neutralised", got)
 	}
 }
 
@@ -517,8 +533,8 @@ func TestNotifyPostsFallbackAndReturnsRenderError(t *testing.T) {
 	if !errors.Is(err, contracts.ErrUnknownCode) {
 		t.Fatalf("Notify returned %v, want the render error", err)
 	}
-	if !errors.Is(err, ErrFallbackPosted) {
-		t.Fatalf("Notify returned %v, want ErrFallbackPosted so the host never retries", err)
+	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) {
+		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted so the host never retries", err)
 	}
 	if len(f.sent) != 1 || !strings.Contains(f.sent[0].content, "```") {
 		t.Fatalf("sent %+v, want one fallback block", f.sent)
@@ -534,8 +550,87 @@ func TestNotifyReturnsPostErrorWithoutFallbackSentinel(t *testing.T) {
 	if !errors.Is(err, postErr) {
 		t.Fatalf("Notify returned %v, want the Post error", err)
 	}
-	if errors.Is(err, ErrFallbackPosted) {
-		t.Fatalf("Notify returned %v with ErrFallbackPosted, but no fallback reached the channel", err)
+	if errors.Is(err, contracts.ErrNoticeFallbackPosted) {
+		t.Fatalf("Notify returned %v with ErrNoticeFallbackPosted, but no fallback reached the channel", err)
+	}
+}
+
+func TestNewNoticeCodesRenderInFrenchAndEnglish(t *testing.T) {
+	tests := []struct {
+		name    string
+		notice  contracts.Notice
+		french  string
+		english string
+	}{
+		{
+			name:    "setting invalid",
+			notice:  contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", "mode"), contracts.Text("Value", "loud")}},
+			french:  "valeur invalide loud pour le réglage mode",
+			english: "invalid value loud for setting mode",
+		},
+		{
+			name:    "setting missing",
+			notice:  contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", "token, guild")}},
+			french:  "ces réglages doivent être définis : token, guild",
+			english: "these settings must be set: token, guild",
+		},
+		{
+			name:    "node merged",
+			notice:  contracts.Notice{Code: contracts.CodeNodeMerged},
+			french:  "ce nœud est replié dans un umbrella ; restaure-le avec l'option force pour le détacher",
+			english: "this node is folded into an umbrella; restore it with force to detach it",
+		},
+		{
+			name:    "compact unavailable",
+			notice:  contracts.Notice{Code: contracts.CodeCompactUnavailable, Args: []contracts.Arg{contracts.Text("Reason", "no model")}},
+			french:  "compaction du contexte indisponible : no model",
+			english: "context compaction unavailable: no model",
+		},
+		{
+			name:    "compacted",
+			notice:  contracts.Notice{Code: contracts.CodeCompacted},
+			french:  "contexte compacté",
+			english: "context compacted",
+		},
+		{
+			name:    "address plaintext refused",
+			notice:  contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", "10.0.0.2:4000")}},
+			french:  "connexion en clair vers 10.0.0.2:4000 refusée : le TLS est requis hors boucle locale",
+			english: "plaintext connection to 10.0.0.2:4000 refused: TLS is required outside loopback",
+		},
+	}
+	for _, tc := range tests {
+		for _, lang := range []struct {
+			name string
+			id   i18n.Language
+			want string
+		}{
+			{"fr", i18n.French, tc.french},
+			{"en", i18n.English, tc.english},
+		} {
+			t.Run(tc.name+"/"+lang.name, func(t *testing.T) {
+				f := &fakeClient{}
+				g := NewGateway(f, testRun(), testMessages(), testLog())
+				if _, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, lang.id, tc.notice); err != nil {
+					t.Fatal(err)
+				}
+				want := failEmoji + " " + lang.want
+				if len(f.sent) != 1 || f.sent[0].content != want {
+					t.Fatalf("sent %+v, want %q", f.sent, want)
+				}
+			})
+		}
+	}
+}
+
+func TestNewNoticeTextArgumentIsNeutralised(t *testing.T) {
+	notice := contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", "@everyone*x")}}
+	got, err := testMessages().notice(i18n.English, notice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "@everyone") || !strings.Contains(got, `\*x`) {
+		t.Errorf("text argument not neutralised in %q", got)
 	}
 }
 
@@ -595,13 +690,8 @@ func TestUnexpectedWithoutDetailHasExplicitFallback(t *testing.T) {
 	}
 }
 
-func TestEmptyRefRendersAsUnknownChannel(t *testing.T) {
-	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Ref("Name", "")}}
-	got, err := testMessages().notice(i18n.English, notice)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "session an unknown channel created" {
+func TestEmptyChannelRefRendersAsUnknownChannel(t *testing.T) {
+	if got := testMessages().channelRef(i18n.English, ""); got != "an unknown channel" {
 		t.Errorf("got %q", got)
 	}
 }

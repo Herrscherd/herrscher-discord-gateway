@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -146,9 +145,6 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 	return msgID(sent), nil
 }
 
-// ErrFallbackPosted reports that Notify posted the fallback text instead of the notice.
-var ErrFallbackPosted = errors.New("notice posted as a fallback text")
-
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the
 // operator's default language. It satisfies contracts.NoticeSink.
 func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang i18n.Language, notice contracts.Notice) (contracts.MessageID, error) {
@@ -157,12 +153,16 @@ func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang 
 	if renderErr != nil {
 		text = g.msgs.renderFailed(resolved, notice, renderErr)
 	}
-	sent, err := g.Post(ctx, conv, noticeEmoji(notice.Code)+" "+text)
+	emoji := failEmoji
+	if renderErr == nil {
+		emoji = noticeEmoji(notice.Code)
+	}
+	sent, err := g.Post(ctx, conv, emoji+" "+text)
 	if err != nil {
 		return sent, err
 	}
 	if renderErr != nil {
-		return sent, fmt.Errorf("discord notify: %w: %w", ErrFallbackPosted, renderErr)
+		return sent, fmt.Errorf("discord notify: %w: %w", contracts.ErrNoticeFallbackPosted, renderErr)
 	}
 	return sent, nil
 }
