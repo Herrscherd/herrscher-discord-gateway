@@ -559,42 +559,49 @@ func TestNewNoticeCodesRenderInFrenchAndEnglish(t *testing.T) {
 	tests := []struct {
 		name    string
 		notice  contracts.Notice
+		emoji   string
 		french  string
 		english string
 	}{
 		{
 			name:    "setting invalid",
 			notice:  contracts.Notice{Code: contracts.CodeSettingInvalid, Args: []contracts.Arg{contracts.Text("Setting", "mode"), contracts.Text("Value", "loud")}},
+			emoji:   failEmoji,
 			french:  "valeur invalide loud pour le réglage mode",
 			english: "invalid value loud for setting mode",
 		},
 		{
 			name:    "setting missing",
 			notice:  contracts.Notice{Code: contracts.CodeSettingMissing, Args: []contracts.Arg{contracts.Text("Settings", "token, guild")}},
+			emoji:   failEmoji,
 			french:  "ces réglages doivent être définis : token, guild",
 			english: "these settings must be set: token, guild",
 		},
 		{
 			name:    "node merged",
 			notice:  contracts.Notice{Code: contracts.CodeNodeMerged},
+			emoji:   failEmoji,
 			french:  "ce nœud est replié dans un umbrella ; restaure-le avec l'option force pour le détacher",
 			english: "this node is folded into an umbrella; restore it with force to detach it",
 		},
 		{
 			name:    "compact unavailable",
 			notice:  contracts.Notice{Code: contracts.CodeCompactUnavailable, Args: []contracts.Arg{contracts.Text("Reason", "no model")}},
+			emoji:   failEmoji,
 			french:  "compaction du contexte indisponible : no model",
 			english: "context compaction unavailable: no model",
 		},
 		{
 			name:    "compacted",
 			notice:  contracts.Notice{Code: contracts.CodeCompacted},
+			emoji:   successEmoji,
 			french:  "contexte compacté",
 			english: "context compacted",
 		},
 		{
 			name:    "address plaintext refused",
 			notice:  contracts.Notice{Code: contracts.CodeAddressPlaintextRefused, Args: []contracts.Arg{contracts.Text("Address", "10.0.0.2:4000")}},
+			emoji:   failEmoji,
 			french:  "connexion en clair vers 10.0.0.2:4000 refusée : le TLS est requis hors boucle locale",
 			english: "plaintext connection to 10.0.0.2:4000 refused: TLS is required outside loopback",
 		},
@@ -614,7 +621,7 @@ func TestNewNoticeCodesRenderInFrenchAndEnglish(t *testing.T) {
 				if _, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, lang.id, tc.notice); err != nil {
 					t.Fatal(err)
 				}
-				want := failEmoji + " " + lang.want
+				want := tc.emoji + " " + lang.want
 				if len(f.sent) != 1 || f.sent[0].content != want {
 					t.Fatalf("sent %+v, want %q", f.sent, want)
 				}
@@ -712,5 +719,51 @@ func TestFrenchAllowListPutsASpaceBeforeTheColon(t *testing.T) {
 	got := testMessages().sayIn(i18n.French, "allow.list", map[string]any{"Label": "x", "Mentions": "y"})
 	if got != "x : y" {
 		t.Errorf("got %q, want %q", got, "x : y")
+	}
+}
+
+func TestNoticeEmojiPerCode(t *testing.T) {
+	tests := []struct {
+		code  contracts.Code
+		emoji string
+	}{
+		{contracts.CodeSessionNotFound, failEmoji},
+		{contracts.CodeSessionExists, failEmoji},
+		{contracts.CodeUnknownAgent, failEmoji},
+		{contracts.CodeSessionCreated, successEmoji},
+		{contracts.CodeSessionClosed, closedEmoji},
+		{contracts.CodeUnexpected, failEmoji},
+		{contracts.CodeSettingInvalid, failEmoji},
+		{contracts.CodeSettingMissing, failEmoji},
+		{contracts.CodeNodeMerged, failEmoji},
+		{contracts.CodeCompactUnavailable, failEmoji},
+		{contracts.CodeCompacted, successEmoji},
+		{contracts.CodeAddressPlaintextRefused, failEmoji},
+		{contracts.Code(9999), ""},
+	}
+	decided := make(map[contracts.Code]bool, len(tests))
+	for _, tc := range tests {
+		decided[tc.code] = true
+		t.Run(tc.code.Key(), func(t *testing.T) {
+			if got := noticeEmoji(tc.code); got != tc.emoji {
+				t.Errorf("noticeEmoji(%s) = %q, want %q", tc.code.Key(), got, tc.emoji)
+			}
+		})
+	}
+	for _, code := range contracts.Codes() {
+		if !decided[code] {
+			t.Errorf("no emoji decided for %s", code.Key())
+		}
+	}
+}
+
+func TestCompactedNoticeIsPostedAsASuccess(t *testing.T) {
+	f := &fakeClient{}
+	g := NewGateway(f, testRun(), testMessages(), testLog())
+	if _, err := g.Notify(context.Background(), contracts.Conversation{Gateway: gatewayKind, ID: "c1"}, i18n.English, contracts.Notice{Code: contracts.CodeCompacted}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.sent) != 1 || f.sent[0].content != "✅ context compacted" {
+		t.Fatalf("sent %+v, want the compaction as a success", f.sent)
 	}
 }

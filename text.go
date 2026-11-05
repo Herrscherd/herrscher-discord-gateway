@@ -28,6 +28,11 @@ const (
 	unknownChannelKey    = "channel.unknown"
 )
 
+const (
+	successEmoji = "✅"
+	closedEmoji  = "⏹️"
+)
+
 var errUndeclaredKey = errors.New("undeclared message key")
 
 type messages struct {
@@ -179,11 +184,22 @@ func (m messages) resolve(lang i18n.Language) i18n.Language {
 }
 
 func noticeEmoji(code contracts.Code) string {
-	if code == contracts.CodeSessionCreated {
-		return "✅"
+	switch code {
+	case contracts.CodeSessionCreated, contracts.CodeCompacted:
+		return successEmoji
+	case contracts.CodeSessionClosed:
+		return closedEmoji
+	case contracts.CodeSessionNotFound, contracts.CodeSessionExists, contracts.CodeUnknownAgent,
+		contracts.CodeUnexpected, contracts.CodeSettingInvalid, contracts.CodeSettingMissing,
+		contracts.CodeNodeMerged, contracts.CodeCompactUnavailable, contracts.CodeAddressPlaintextRefused:
+		return failEmoji
 	}
-	if code == contracts.CodeSessionClosed {
-		return "⏹️"
+	return ""
+}
+
+func withEmoji(emoji, text string) string {
+	if emoji == "" {
+		return text
 	}
-	return failEmoji
+	return emoji + " " + text
 }

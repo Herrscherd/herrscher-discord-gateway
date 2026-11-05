@@ -157,7 +157,7 @@ func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang 
 	if renderErr == nil {
 		emoji = noticeEmoji(notice.Code)
 	}
-	sent, err := g.Post(ctx, conv, emoji+" "+text)
+	sent, err := g.Post(ctx, conv, withEmoji(emoji, text))
 	if err != nil {
 		return sent, err
 	}
