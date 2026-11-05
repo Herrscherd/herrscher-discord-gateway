@@ -162,7 +162,9 @@ func plainNotice(notice contracts.Notice) contracts.Notice {
 		switch arg.Kind() {
 		case contracts.ArgText:
 			args = append(args, contracts.Text(arg.Name(), neutralise(fmt.Sprint(arg.Value()))))
-		case contracts.ArgRef, contracts.ArgCount:
+		case contracts.ArgRef:
+			args = append(args, contracts.Ref(arg.Name(), neutralise(fmt.Sprint(arg.Value()))))
+		case contracts.ArgCount:
 			args = append(args, arg)
 		}
 	}

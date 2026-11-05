@@ -367,6 +367,20 @@ func TestRefArgumentIsRefusedForATextParameter(t *testing.T) {
 	if !errors.Is(err, contracts.ErrNoticeFallbackPosted) || !errors.Is(err, contracts.ErrNoticeArgs) {
 		t.Fatalf("Notify returned %v, want ErrNoticeFallbackPosted wrapping ErrNoticeArgs", err)
 	}
+	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, failEmoji+" ") {
+		t.Fatalf("sent %+v, want the fallback under the failure emoji", f.sent)
+	}
+}
+
+func TestRefArgumentKeepsItsKindAndIsNeutralised(t *testing.T) {
+	notice := contracts.Notice{Code: contracts.CodeSessionCreated, Args: []contracts.Arg{contracts.Ref("Name", "@everyone")}}
+	plain := plainNotice(notice)
+	if len(plain.Args) != 1 || plain.Args[0].Kind() != contracts.ArgRef {
+		t.Fatalf("plainNotice kept %+v, want one ArgRef", plain.Args)
+	}
+	if got := plain.Args[0].Value(); got != "@\u200beveryone" {
+		t.Errorf("ref value %q, want the mention neutralised", got)
+	}
 }
 
 func TestUnexpectedDetailIsShownInANeutralisedCodeBlock(t *testing.T) {
