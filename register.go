@@ -73,6 +73,14 @@ func shipSkills(context.Context, contracts.PluginConfig) (fs.FS, error) { return
 
 const operatorLanguageEnv = "HERRSCHER_LANG"
 
+func gatewayMessages(cfg contracts.PluginConfig, log *slog.Logger) (messages, error) {
+	msgs, err := messagesFromEnv(log)
+	if err != nil {
+		return messages{}, err
+	}
+	return msgs.withHeadsFile(cfg.Get(headsSetting))
+}
+
 func messagesFromEnv(log *slog.Logger) (messages, error) {
 	return operatorMessages(os.Getenv(operatorLanguageEnv), log)
 }
@@ -97,11 +105,7 @@ func operatorLanguage(raw string, log *slog.Logger) i18n.Language {
 // gateway, the read/status reader, the channel admin and the reachability prober.
 func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Logger) (contracts.GatewaySet, error) {
 	log = log.With("gateway", gatewayKind)
-	msgs, err := messagesFromEnv(log)
-	if err != nil {
-		return contracts.GatewaySet{}, err
-	}
-	msgs, err = msgs.withHeadsFile(cfg.Get(headsSetting))
+	msgs, err := gatewayMessages(cfg, log)
 	if err != nil {
 		return contracts.GatewaySet{}, err
 	}

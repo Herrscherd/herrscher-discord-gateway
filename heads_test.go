@@ -271,3 +271,40 @@ func TestDisabledAckHeadAddsNoReaction(t *testing.T) {
 		t.Fatalf("posts = %v, want [done]", f.posts)
 	}
 }
+
+func TestGatewayMessagesAppliesTheHeadsSetting(t *testing.T) {
+	path := writeHeadsFile(t, `{"ack":"A"}`)
+	msgs, err := gatewayMessages(contracts.PluginConfig{Settings: map[string]string{headsSetting: path}}, testLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := msgs.headIn(i18n.English, headAck); got != "A" {
+		t.Errorf("ack head = %q, want the override A from the heads setting", got)
+	}
+}
+
+func TestGatewayMessagesWithoutHeadsSettingKeepsTheDefaults(t *testing.T) {
+	msgs, err := gatewayMessages(contracts.PluginConfig{}, testLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := msgs.headIn(i18n.English, headAck); got != englishHead(headAck) {
+		t.Errorf("ack head = %q, want the built-in head", got)
+	}
+}
+
+func TestFrenchHeadsArePinned(t *testing.T) {
+	french := testMessages().heads[i18n.French]
+	pinned := map[headKey]string{
+		headAck:      "⏳",
+		headFail:     "❌",
+		headDone:     "✅",
+		headToolRead: "📖",
+		headToolEdit: "✏️",
+	}
+	for key, want := range pinned {
+		if got := french[string(key)]; got != want {
+			t.Errorf("fr head %s = %q, want %q", key, got, want)
+		}
+	}
+}

@@ -1,127 +1,127 @@
 [
   {
     "id": "ack",
-    "description": "Reaction added to the message a turn starts from, removed when the turn ends",
+    "description": "Réaction posée sur le message dont un tour part, retirée à la fin du tour",
     "other": "⏳"
   },
   {
     "id": "running",
-    "description": "Header of the live progress message while a turn runs",
+    "description": "En-tête du message de progression en direct pendant qu'un tour tourne",
     "other": "⏳"
   },
   {
     "id": "fail",
-    "description": "Reaction and prefix of a failure, and of a notice that could not be rendered",
+    "description": "Réaction et préfixe d'un échec, et d'une notice qui n'a pas pu être rendue",
     "other": "❌"
   },
   {
     "id": "done",
-    "description": "Prefix of a finished turn or of its progress summary",
+    "description": "Préfixe d'un tour terminé, ou de son résumé de progression",
     "other": "✅"
   },
   {
     "id": "stop",
-    "description": "Prefix of the confirmation that a turn was stopped",
+    "description": "Préfixe de la confirmation qu'un tour a été arrêté",
     "other": "⏹️"
   },
   {
     "id": "thinking",
-    "description": "Prefix of the assistant's text shown at the full verbosity level",
+    "description": "Préfixe du texte de l'assistant au niveau de verbosité complet",
     "other": "💭"
   },
   {
     "id": "tool.read",
-    "description": "Head of a Read tool line in the progress view",
+    "description": "Tête d'une ligne d'outil Read dans la vue de progression",
     "other": "📖"
   },
   {
     "id": "tool.edit",
-    "description": "Head of an Edit, Write, MultiEdit or NotebookEdit tool line",
+    "description": "Tête d'une ligne d'outil Edit, Write, MultiEdit ou NotebookEdit",
     "other": "✏️"
   },
   {
     "id": "tool.search",
-    "description": "Head of a Grep or Glob tool line",
+    "description": "Tête d'une ligne d'outil Grep ou Glob",
     "other": "🔎"
   },
   {
     "id": "tool.agent",
-    "description": "Head of a Task or Agent tool line",
+    "description": "Tête d'une ligne d'outil Task ou Agent",
     "other": "🤖"
   },
   {
     "id": "tool.web",
-    "description": "Head of a WebFetch or WebSearch tool line",
+    "description": "Tête d'une ligne d'outil WebFetch ou WebSearch",
     "other": "🌐"
   },
   {
     "id": "tool.write",
-    "description": "Head of a TodoWrite tool line",
+    "description": "Tête d'une ligne d'outil TodoWrite",
     "other": "📝"
   },
   {
     "id": "tool.other",
-    "description": "Head of any other tool line",
+    "description": "Tête de toute autre ligne d'outil",
     "other": "🔧"
   },
   {
     "id": "session.not_found",
-    "description": "Head of the notice that the session does not exist",
+    "description": "Tête de la notice : la session n'existe pas",
     "other": "❌"
   },
   {
     "id": "session.exists",
-    "description": "Head of the notice that the session already exists",
+    "description": "Tête de la notice : la session existe déjà",
     "other": "❌"
   },
   {
     "id": "agent.unknown",
-    "description": "Head of the notice that the agent is unknown",
+    "description": "Tête de la notice : l'agent est inconnu",
     "other": "❌"
   },
   {
     "id": "session.created",
-    "description": "Head of the notice that a session was created",
+    "description": "Tête de la notice : une session a été créée",
     "other": "✅"
   },
   {
     "id": "session.closed",
-    "description": "Head of the notice that a session was closed",
+    "description": "Tête de la notice : une session a été fermée",
     "other": "⏹️"
   },
   {
     "id": "internal.unexpected",
-    "description": "Head of the notice of an unexpected internal error",
+    "description": "Tête de la notice : erreur interne inattendue",
     "other": "❌"
   },
   {
     "id": "setting.invalid",
-    "description": "Head of the notice of a setting with a value it does not accept",
+    "description": "Tête de la notice : un réglage a une valeur refusée",
     "other": "❌"
   },
   {
     "id": "setting.missing",
-    "description": "Head of the notice of a setting that must be set",
+    "description": "Tête de la notice : un réglage obligatoire est absent",
     "other": "❌"
   },
   {
     "id": "node.merged",
-    "description": "Head of the notice that a node is folded into an umbrella",
+    "description": "Tête de la notice : un nœud est replié dans une ombrelle",
     "other": "❌"
   },
   {
     "id": "compact.unavailable",
-    "description": "Head of the notice that compaction cannot run",
+    "description": "Tête de la notice : la compaction ne peut pas tourner",
     "other": "❌"
   },
   {
     "id": "compaction.done",
-    "description": "Head of the notice that the context was compacted",
+    "description": "Tête de la notice : le contexte a été compacté",
     "other": "✅"
   },
   {
     "id": "address.plaintext_refused",
-    "description": "Head of the notice that a plaintext address was refused",
+    "description": "Tête de la notice : une adresse en clair a été refusée",
     "other": "❌"
   }
 ]
