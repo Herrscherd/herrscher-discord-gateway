@@ -190,3 +190,51 @@ func TestSessionLanguageChangedBetweenTurnsProgressFollows(t *testing.T) {
 		t.Fatalf("posts = %q, want the French summary %q then the English one %q", got, wantFrench, wantEnglish)
 	}
 }
+
+func TestSessionLanguageRefreshedWhenANewHumanArrivesBeforeTheEnd(t *testing.T) {
+	f := &fakeRender{}
+	ctrl := newFakeCtrl()
+	sessionLanguageOf(ctrl, "chanA", i18n.French)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
+	set.langs = sessionLanguages{
+		ctrl:  func() contracts.SessionControl { return ctrl },
+		binds: newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog()),
+	}
+	sink := set.at("chanA")
+
+	sink.handle(contracts.Event{T: "human"})
+	sink.handle(contracts.Event{T: "chunk", Text: "x"})
+	sessionLanguageOf(ctrl, "chanA", i18n.English)
+	sink.handle(contracts.Event{T: "human"})
+	sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
+
+	english := testMessages().in(i18n.English)
+	want := withEmoji(english.head(headDone), english.say("progress.done", nil))
+	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != want {
+		t.Fatalf("posts = %q, want the English summary %q after a new human before the end", got, want)
+	}
+}
+
+func TestSessionLanguageCountStaysOnePerTurnAcrossTurns(t *testing.T) {
+	f := &fakeRender{}
+	ctrl := &countingCtrl{fakeCtrl: newFakeCtrl()}
+	sessionLanguageOf(ctrl.fakeCtrl, "chanA", i18n.French)
+	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
+	set.langs = sessionLanguages{
+		ctrl:  func() contracts.SessionControl { return ctrl },
+		binds: newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog()),
+	}
+	sink := set.at("chanA")
+
+	for range 3 {
+		sink.handle(contracts.Event{T: "human"})
+		for range 10 {
+			sink.handle(contracts.Event{T: "status", Text: "Read"})
+		}
+		sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
+	}
+
+	if ctrl.calls != 3 {
+		t.Fatalf("Sessions() called %d times over three turns, want exactly 1 per turn (3)", ctrl.calls)
+	}
+}

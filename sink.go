@@ -290,6 +290,9 @@ func (s *sink) execute(job *sinkJob) {
 		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
 		return
 	}
+	if job.kind == humanKind {
+		s.endTurn()
+	}
 	s.localize()
 	job.step()
 }
@@ -365,6 +368,8 @@ func (s *sink) applyFail(ctx context.Context, reason string) {
 	}
 	s.postParts(ctx, channel, s.answer(withEmoji(s.msgs.head(headFail), reason)))
 }
+
+const humanKind = "event:human"
 
 func (s *sink) handle(event contracts.Event) {
 	ctx := s.run()
