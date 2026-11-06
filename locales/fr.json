@@ -620,5 +620,105 @@
     "id": "discord.command.embed",
     "description": "Stand-in for a message that has only an embed and no text in the channel read output",
     "other": "(contenu enrichi)"
+  },
+  {
+    "id": "discord.setting.token",
+    "description": "Help of the token setting",
+    "other": "jeton du bot Discord"
+  },
+  {
+    "id": "discord.setting.owner",
+    "description": "Help of the owner setting",
+    "other": "identifiant Discord de la personne toujours autorisée, quelles que soient les listes d'autorisation"
+  },
+  {
+    "id": "discord.setting.allowed_users",
+    "description": "Help of the allowed_users setting",
+    "other": "identifiants Discord autorisés à faire agir le bot, séparés par des virgules (`*` pour tout le monde)"
+  },
+  {
+    "id": "discord.setting.allowed_roles",
+    "description": "Help of the allowed_roles setting",
+    "other": "identifiants des rôles Discord autorisés à faire agir le bot, séparés par des virgules (messages de serveur seulement, un MP ne porte aucun rôle)"
+  },
+  {
+    "id": "discord.setting.allowed_channels",
+    "description": "Help of the allowed_channels setting",
+    "other": "identifiants des salons où le bot répond, séparés par des virgules, il ignore tous les autres (vide signifie tous les salons qu'il peut lire)"
+  },
+  {
+    "id": "discord.setting.ignored_channels",
+    "description": "Help of the ignored_channels setting",
+    "other": "identifiants des salons où le bot ne répond jamais, séparés par des virgules, quelles que soient les autres règles"
+  },
+  {
+    "id": "discord.setting.allow_all_users",
+    "description": "Help of the allow_all_users setting",
+    "other": "laisser n'importe qui pouvant joindre le bot le faire agir (désactivé par défaut, ce sont normalement les listes d'autorisation qui bornent un déploiement)"
+  },
+  {
+    "id": "discord.setting.allow_bots",
+    "description": "Help of the allow_bots setting",
+    "other": "si d'autres bots peuvent faire agir celui-ci : none (par défaut), mentions (seulement quand ils le mentionnent) ou all"
+  },
+  {
+    "id": "discord.setting.require_mention",
+    "description": "Help of the require_mention setting",
+    "other": "exiger une mention @ dans un salon (vrai par défaut, un MP et un fil ouvert par la passerelle n'en exigent jamais)"
+  },
+  {
+    "id": "discord.setting.thread_require_mention",
+    "description": "Help of the thread_require_mention setting",
+    "other": "exiger aussi une mention @ dans un fil ouvert par la passerelle (faux par défaut)"
+  },
+  {
+    "id": "discord.setting.free_response_channels",
+    "description": "Help of the free_response_channels setting",
+    "other": "identifiants des salons où le bot répond sans être mentionné, séparés par des virgules (`*` pour tous les salons ; qui peut le faire agir y reste borné par les listes d'autorisation)"
+  },
+  {
+    "id": "discord.setting.sessions_per_user",
+    "description": "Help of the sessions_per_user setting",
+    "other": "donner à chaque participant d'un salon sa propre session (vrai par défaut, faux met tout le salon dans une seule session partagée)"
+  },
+  {
+    "id": "discord.setting.thread_sessions_per_user",
+    "description": "Help of the thread_sessions_per_user setting",
+    "other": "donner à chaque participant d'un fil sa propre session (faux par défaut, un fil est une tâche unique que tous ceux qui s'y trouvent partagent)"
+  },
+  {
+    "id": "discord.setting.agent",
+    "description": "Help of the agent setting",
+    "other": "persona sous laquelle tourne chaque session ouverte par cette passerelle, ce qui fixe ses outils (requis par /mode ambient)"
+  },
+  {
+    "id": "discord.setting.verbosity",
+    "description": "Help of the verbosity setting",
+    "other": "valeur par défaut de ce qu'un tour affiche dans le salon, modifiable par conversation avec /verbosity. silent (par défaut) n'affiche que la réponse. quiet affiche aussi la liste en direct des noms d'outils. actions affiche aussi le détail de chaque outil. full affiche aussi le texte de l'assistant."
+  },
+  {
+    "id": "discord.setting.context_messages",
+    "description": "Help of the context_messages setting",
+    "other": "combien de messages antérieurs du salon porter comme contexte (30 par défaut)"
+  },
+  {
+    "id": "discord.setting.playbook",
+    "description": "Help of the playbook setting",
+    "other": "nom de la compétence qu'une nouvelle session suit (pr-job par défaut)"
+  },
+  {
+    "id": "discord.setting.tidy_pings",
+    "description": "Help of the tidy_pings setting",
+    "other": "supprimer le message qui a ouvert un tour une fois sa réponse publiée, pour que le salon garde le travail et non les messages qui l'ont lancé (désactivé par défaut, ne s'applique jamais quand la réponse vit dans un fil ouvert depuis le ping)"
+  },
+  {
+    "id": "discord.setting.heads_file",
+    "description": "Help of the heads_file setting",
+    "other": "fichier JSON des emoji que la passerelle place devant ses messages, un objet de la clé de tête vers l'emoji, une valeur vide désactive une tête (têtes intégrées par défaut, les clés sont listées dans le README)"
+  },
+  {
+    "id": "discord.setting.message_deletes",
+    "description": "Help of the message_deletes setting",
+    "other": "ajouter le verbe `message delete`, pour qu'un agent puisse supprimer les messages envoyés par ce bot (désactivé par défaut, le verbe est absent tant que ce n'est pas activé, et même alors il refuse tout message écrit par un autre auteur)"
   }
 ]
