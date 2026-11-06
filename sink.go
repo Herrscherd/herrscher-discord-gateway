@@ -487,7 +487,7 @@ func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
 
 func (s *sink) answer(text string) string {
 	if text == "" {
-		text = withEmoji(s.msgs.head(headDone), s.msgs.say("progress.done", nil))
+		text = withEmoji(s.msgs.head(headDone), s.msgs.say("discord.progress.done", nil))
 	}
 	if s.owner == "" {
 		return text

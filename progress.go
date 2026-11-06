@@ -146,7 +146,7 @@ func (p *progressView) render() string {
 }
 
 func (p *progressView) frame(lines []string, elided bool) string {
-	header := withEmoji(p.msgs.head(headRunning), p.msgs.say("progress.running", nil)) + "\n"
+	header := withEmoji(p.msgs.head(headRunning), p.msgs.say("discord.progress.running", nil)) + "\n"
 	if elided {
 		header += "…\n"
 	}
@@ -164,9 +164,9 @@ func (p *progressView) summary() string {
 	}
 	var summary string
 	if p.actions == 0 {
-		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("progress.done", nil))
+		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("discord.progress.done", nil))
 	} else {
-		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("progress.actions", map[string]any{countArg: p.actions}))
+		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("discord.progress.actions", map[string]any{countArg: p.actions}))
 		if len(parts) > 0 {
 			summary += " (" + strings.Join(parts, ", ") + ")"
 		}

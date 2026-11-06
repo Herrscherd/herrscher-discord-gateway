@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"path"
 	"strings"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -17,15 +18,16 @@ var localeFS embed.FS
 
 const (
 	countArg             = "Count"
+	idArg                = "ID"
 	detailArg            = "Detail"
 	mentionArg           = "Mention"
 	nameArg              = "Name"
 	detailMaxRunes       = 1500
 	zeroWidthSpace       = "\u200b"
 	channelMentionFormat = "<#%s>"
-	unexpectedKey        = "notice.unexpected"
-	noDetailKey          = "notice.no_detail"
-	unknownChannelKey    = "channel.unknown"
+	unexpectedKey        = "discord.notice.unexpected"
+	noDetailKey          = "discord.notice.no_detail"
+	unknownChannelKey    = "discord.channel.unknown"
 )
 
 var errUndeclaredKey = errors.New("undeclared message key")
@@ -38,12 +40,17 @@ type messages struct {
 	log      *slog.Logger
 }
 
-func newMessages(lang i18n.Language, log *slog.Logger) (messages, error) {
-	sources, err := fs.Sub(localeFS, "locales")
-	if err != nil {
-		return messages{}, fmt.Errorf("discord gateway: embedded locales: %w", err)
+type localeRoot struct{}
+
+func (localeRoot) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
-	catalog, err := i18n.NewCatalog(log, sources)
+	return localeFS.Open(path.Join("locales", name))
+}
+
+func newMessages(lang i18n.Language, log *slog.Logger) (messages, error) {
+	catalog, err := i18n.NewCatalog(log, localeRoot{})
 	if err != nil {
 		return messages{}, fmt.Errorf("discord gateway: message catalog: %w", err)
 	}

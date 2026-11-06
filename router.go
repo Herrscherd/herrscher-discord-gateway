@@ -176,7 +176,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg mes
 		r.log.Warn("list repos failed", "err", err)
 	}
 	if len(repos) == 0 {
-		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("repo.none", nil))
+		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("discord.repo.none", nil))
 		return
 	}
 	task := r.place(ctx, msg)
@@ -204,7 +204,7 @@ func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionContro
 		r.sinks.at(task.conv).fail(ctx, failure)
 		return true
 	}
-	r.post(ctx, task.conv, r.textsIn(task.conv).say("repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
+	r.post(ctx, task.conv, r.textsIn(task.conv).say("discord.repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
 	return true
 }
 
@@ -221,9 +221,9 @@ func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos
 	r.jobs[conv] = task
 	r.mu.Unlock()
 
-	prompt := r.msgs.say("repo.ask", nil)
+	prompt := r.msgs.say("discord.repo.ask", nil)
 	if len(repos) > selectMenuMax {
-		prompt = r.msgs.say("repo.ask_capped", map[string]any{"Question": prompt, countArg: len(repos), "Shown": selectMenuMax})
+		prompt = r.msgs.say("discord.repo.ask_capped", map[string]any{"Question": prompt, countArg: len(repos), "Shown": selectMenuMax})
 	}
 	replyTo := msg.ID
 	if conv != msg.ChannelID {
@@ -235,7 +235,7 @@ func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos
 		delete(r.pending, conv)
 		delete(r.jobs, conv)
 		r.mu.Unlock()
-		r.sinks.at(conv).fail(ctx, r.msgs.say("repo.menu_failed", nil))
+		r.sinks.at(conv).fail(ctx, r.msgs.say("discord.repo.menu_failed", nil))
 	}
 }
 
@@ -253,9 +253,9 @@ func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
 func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 	r.log.Warn("bind store save failed", "conv", conv, "err", err)
 	texts := r.textsIn(conv)
-	reason := texts.say("bindings.write_failed", nil)
+	reason := texts.say("discord.bindings.write_failed", nil)
 	if errors.Is(err, errStoreLocked) {
-		reason = texts.say("bindings.unreadable", nil)
+		reason = texts.say("discord.bindings.unreadable", nil)
 	}
 	r.sinks.at(conv).fail(ctx, reason)
 }
@@ -290,7 +290,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	} else if target, ok := strings.CutPrefix(value, "remote:"); ok {
 		spec.Clone = target
 	} else {
-		return r.msgs.say("bind.bad_choice", nil)
+		return r.msgs.say("discord.bind.bad_choice", nil)
 	}
 	if _, err := ctrl.Create(ctx, spec); err != nil {
 		return r.msgs.noticeText(r.msgs.lang, contracts.NoticeOf(err))
@@ -312,7 +312,7 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	}
 	if buffered && !r.submit(ctx, ctrl, spec.Name, task.conv, msg, true, task.shared) {
 		r.log.Warn("buffered message not delivered to the new session", "session", spec.Name, "conv", task.conv)
-		r.sinks.at(task.conv).fail(ctx, r.textsIn(task.conv).say("undelivered", nil))
+		r.sinks.at(task.conv).fail(ctx, r.textsIn(task.conv).say("discord.undelivered", nil))
 	}
 	return ""
 }
@@ -343,7 +343,7 @@ func repoValue(repo contracts.RepoRef) string {
 func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil {
-		return r.msgs.say("control.unavailable", nil)
+		return r.msgs.say("discord.control.unavailable", nil)
 	}
 	r.mu.Lock()
 	pending, buffered := r.pending[channel]
@@ -353,11 +353,11 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 	}
 	if owner != "" && user != "" && owner != user {
 		r.mu.Unlock()
-		return r.msgs.say("menu.owned_by", map[string]any{mentionArg: mention(owner)})
+		return r.msgs.say("discord.menu.owned_by", map[string]any{mentionArg: mention(owner)})
 	}
 	if owner == "" && !r.acl.authorizes(messageCreate{Author: dctl.Author{ID: user}}) {
 		r.mu.Unlock()
-		return r.msgs.say("menu.denied", nil)
+		return r.msgs.say("discord.menu.denied", nil)
 	}
 	task, known := r.jobs[channel]
 	delete(r.pending, channel)
@@ -371,7 +371,7 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 		r.sinks.at(task.conv).fail(ctx, "")
 		return failure
 	}
-	return r.msgs.say("repo.started", map[string]any{"Repo": neutralise(strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:"))})
+	return r.msgs.say("discord.repo.started", map[string]any{"Repo": neutralise(strings.TrimPrefix(strings.TrimPrefix(value, "local:"), "remote:"))})
 }
 
 func (r *router) replaceLostJob(channel, user string) job {
@@ -396,7 +396,7 @@ func (r *router) replaceLostJob(channel, user string) job {
 func (r *router) onChoicePick(_ context.Context, conv, user string, direct bool, value string) string {
 	ctrl := r.ctrl()
 	if ctrl == nil || !ctrl.Pick(r.sessionOf(ctrl, conv, user, direct), value) {
-		return r.msgs.say("choice.gone", nil)
+		return r.msgs.say("discord.choice.gone", nil)
 	}
 	return ""
 }

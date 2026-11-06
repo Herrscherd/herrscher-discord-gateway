@@ -1,589 +1,724 @@
 [
   {
-    "id": "help.channel_read",
+    "id": "discord.help.channel_read",
     "description": "Help of the channel read verb",
     "other": "read a conversation: the recent messages of a channel, oldest first"
   },
   {
-    "id": "help.channel_post",
+    "id": "discord.help.channel_post",
     "description": "Help of the channel post verb",
     "other": "post a message to a channel"
   },
   {
-    "id": "help.message_reply",
+    "id": "discord.help.message_reply",
     "description": "Help of the message reply verb",
     "other": "reply to a specific message"
   },
   {
-    "id": "help.message_react",
+    "id": "discord.help.message_react",
     "description": "Help of the message react verb",
     "other": "add a reaction to a message"
   },
   {
-    "id": "help.message_unreact",
+    "id": "discord.help.message_unreact",
     "description": "Help of the message unreact verb",
     "other": "remove a reaction this bot added to a message"
   },
   {
-    "id": "help.message_edit",
+    "id": "discord.help.message_edit",
     "description": "Help of the message edit verb",
     "other": "rewrite a message this bot sent"
   },
   {
-    "id": "help.message_delete",
+    "id": "discord.help.message_delete",
     "description": "Help of the message delete verb",
     "other": "delete a message this bot sent"
   },
   {
-    "id": "param.channel_id",
+    "id": "discord.param.channel_id",
     "description": "Parameter: the channel a verb acts on",
     "other": "channel id"
   },
   {
-    "id": "param.limit",
+    "id": "discord.param.limit",
     "description": "Parameter: how many messages a read returns",
     "other": "how many messages, up to the read limit"
   },
   {
-    "id": "param.after",
+    "id": "discord.param.after",
     "description": "Parameter: the message a paged read starts after",
     "other": "message id to read forward from, for paging"
   },
   {
-    "id": "param.text",
+    "id": "discord.param.text",
     "description": "Parameter: the body of a message",
     "other": "message body"
   },
   {
-    "id": "param.reply_to",
+    "id": "discord.param.reply_to",
     "description": "Parameter: the message a reply answers",
     "other": "message id being replied to"
   },
   {
-    "id": "param.message_id",
+    "id": "discord.param.message_id",
     "description": "Parameter: the message a verb acts on",
     "other": "message id"
   },
   {
-    "id": "param.emoji_add",
+    "id": "discord.param.emoji_add",
     "description": "Parameter: the emoji a reaction adds",
     "other": "emoji to add"
   },
   {
-    "id": "param.emoji_remove",
+    "id": "discord.param.emoji_remove",
     "description": "Parameter: the emoji a reaction removes",
     "other": "emoji to remove"
   },
   {
-    "id": "param.new_body",
+    "id": "discord.param.new_body",
     "description": "Parameter: the new body of an edited message",
     "other": "new body"
   },
   {
-    "id": "command.no_messages",
+    "id": "discord.command.no_messages",
     "description": "Output of a read that finds no message",
     "other": "(no messages)"
   },
   {
-    "id": "command.attachments",
+    "id": "discord.command.attachments",
     "description": "Stands for a message whose body is only attachments",
     "one": "({{.Count}} attachment: {{.Name}})",
     "other": "({{.Count}} attachments: {{.Name}})"
   },
   {
-    "id": "undelivered",
+    "id": "discord.undelivered",
     "description": "A message could not be handed to the session it was bound to",
     "other": "I could not pass your message to the session, send it again"
   },
   {
-    "id": "repo.none",
+    "id": "discord.repo.none",
     "description": "No repo is known to work on",
     "other": "I cannot find any repo to work on, check the workspace or the forge authentication"
   },
   {
-    "id": "repo.reused",
+    "id": "discord.repo.reused",
     "description": "The last repo the channel was bound to is reused",
     "other": "I am carrying on in **{{.Repo}}**, the last repo you set me on, `/session close` here to start elsewhere"
   },
   {
-    "id": "repo.ask",
+    "id": "discord.repo.ask",
     "description": "Question asking which repo to work on",
     "other": "which repo should I work on? (I will only ask once)"
   },
   {
-    "id": "repo.ask_capped",
+    "id": "discord.repo.ask_capped",
     "description": "Question asking which repo to work on when there are more repos than the menu shows",
     "other": "{{.Question}} ({{.Count}} repos, showing the first {{.Shown}})"
   },
   {
-    "id": "repo.menu_failed",
+    "id": "discord.repo.menu_failed",
     "description": "The repo menu could not be posted",
     "other": "I could not post the repo menu here, name the repo in your message, or check my permissions in this channel"
   },
   {
-    "id": "repo.started",
+    "id": "discord.repo.started",
     "description": "A session was started on the chosen repo",
     "other": "started on {{.Repo}}"
   },
   {
-    "id": "bindings.write_failed",
+    "id": "discord.bindings.write_failed",
     "description": "The bindings file could not be written",
     "other": "the bindings file could not be written, this binding will be lost at the next restart"
   },
   {
-    "id": "bindings.unreadable",
+    "id": "discord.bindings.unreadable",
     "description": "The bindings file cannot be read",
     "other": "the bindings file is unreadable, no binding will be kept until it is repaired"
   },
   {
-    "id": "bind.bad_choice",
+    "id": "discord.bind.bad_choice",
     "description": "A repo choice that the router cannot read",
     "other": "unreadable choice"
   },
   {
-    "id": "control.unavailable",
+    "id": "discord.control.unavailable",
     "description": "The session controller is not available yet",
     "other": "session control is not available yet"
   },
   {
-    "id": "menu.owned_by",
+    "id": "discord.menu.owned_by",
     "description": "A menu answers a question asked to someone else",
     "other": "this menu answers the question of {{.Mention}}"
   },
   {
-    "id": "menu.denied",
+    "id": "discord.menu.denied",
     "description": "A user who is not allowed answers a repo menu",
     "other": "you are not allowed to answer this menu"
   },
   {
-    "id": "menu.not_allowed",
+    "id": "discord.menu.not_allowed",
     "description": "A user who is not allowed presses a component",
     "other": "you are not allowed to use this menu"
   },
   {
-    "id": "choice.gone",
+    "id": "discord.choice.gone",
     "description": "A choice was made on a session that no longer exists",
     "other": "this session is no longer active"
   },
   {
-    "id": "choice.saved",
+    "id": "discord.choice.saved",
     "description": "A choice was recorded",
     "other": "choice saved: {{.Value}}"
   },
   {
-    "id": "thread.public_denied",
+    "id": "discord.thread.public_denied",
     "description": "A public thread could not be opened for a support channel",
     "other": "I could not open a thread here, the Create Public Threads permission is missing in this channel. I am answering here, and this channel will only carry one conversation at a time."
   },
   {
-    "id": "thread.private_opened",
+    "id": "discord.thread.private_opened",
     "description": "A private thread was opened for the requester",
     "other": "I am carrying on privately in {{.Channel}}"
   },
   {
-    "id": "thread.private_denied",
+    "id": "discord.thread.private_denied",
     "description": "A private thread could not be opened",
     "other": "I could not open a private thread here, the Create Private Threads permission is missing in this channel (a channel permission overrides the role one). I am answering here."
   },
   {
-    "id": "stop.none",
+    "id": "discord.stop.none",
     "description": "A stop was asked where no turn runs",
     "other": "no turn is running here"
   },
   {
-    "id": "stop.done",
+    "id": "discord.stop.done",
     "description": "A running turn was interrupted",
     "other": "turn interrupted, the conversation is kept, tell me what comes next"
   },
   {
-    "id": "store.unavailable",
+    "id": "discord.store.unavailable",
     "description": "The conversation store is not configured",
     "other": "the conversation store is not available"
   },
   {
-    "id": "verbosity.unknown",
+    "id": "discord.verbosity.unknown",
     "description": "A verbosity level that the gateway does not know",
     "other": "unknown level: {{.Level}}"
   },
   {
-    "id": "verbosity.set",
+    "id": "discord.verbosity.set",
     "description": "The verbosity of a channel was changed",
     "other": "verbosity of this channel: {{.Level}}"
   },
   {
-    "id": "mode.unknown",
+    "id": "discord.mode.unknown",
     "description": "A channel mode that the gateway does not know",
     "other": "unknown mode: {{.Mode}}"
   },
   {
-    "id": "mode.ambient_refused",
+    "id": "discord.mode.ambient_refused",
     "description": "The ambient mode is refused without a persona",
     "other": "ambient mode refused: it makes the bot answer everyone without being called, and nothing bounds what it can do as long as no persona is configured. Set DISCORD_AGENT, then try again."
   },
   {
-    "id": "mode.support",
+    "id": "discord.mode.support",
     "description": "The support mode was set on a channel",
     "other": "support mode: each ping opens its own thread here. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
   },
   {
-    "id": "mode.ambient",
+    "id": "discord.mode.ambient",
     "description": "The ambient mode was set on a channel",
     "other": "ambient mode: I answer here without being called, to whoever is allowed to make me act. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
   },
   {
-    "id": "mode.off",
+    "id": "discord.mode.off",
     "description": "The off mode was set on a channel",
     "other": "off mode: I no longer answer anything here, even when called. Sessions already bound to this channel keep running, `/session close` if you no longer want them."
   },
   {
-    "id": "mode.normal",
+    "id": "discord.mode.normal",
     "description": "The normal mode was set on a channel",
     "other": "normal mode: you have to call me here, and everyone goes back to their own session"
   },
   {
-    "id": "gate.denied",
+    "id": "discord.gate.denied",
     "description": "A user who is not allowed runs a slash command",
     "other": "you are not allowed to use the bot here"
   },
   {
-    "id": "run.done",
+    "id": "discord.run.done",
     "description": "A command ran and returned nothing to show",
     "other": "done"
   },
   {
-    "id": "save.lost",
+    "id": "discord.save.lost",
     "description": "A setting was changed but the store could not save it",
     "other": "(warning: not saved, lost at the next restart)"
   },
   {
-    "id": "save.unreadable",
+    "id": "discord.save.unreadable",
     "description": "A setting was changed but the store file is unreadable",
     "other": "(warning: not saved, the file is unreadable, no change will be kept until it is repaired)"
   },
   {
-    "id": "allow.session_added",
+    "id": "discord.allow.session_added",
     "description": "A user was added to the allow list of a session",
     "other": "added {{.Mention}} to session \"{{.Name}}\""
   },
   {
-    "id": "allow.session_removed",
+    "id": "discord.allow.session_removed",
     "description": "A user was removed from the allow list of a session",
     "other": "removed {{.Mention}} from session \"{{.Name}}\""
   },
   {
-    "id": "allow.global_added",
+    "id": "discord.allow.global_added",
     "description": "A user was added to the global allow list",
     "other": "{{.Mention}} is allowed to use the bot"
   },
   {
-    "id": "allow.global_removed",
+    "id": "discord.allow.global_removed",
     "description": "A user was removed from the global allow list",
     "other": "{{.Mention}} removed from the list"
   },
   {
-    "id": "allow.label_session",
+    "id": "discord.allow.label_session",
     "description": "Names an allow list of one session",
     "other": "session \"{{.Name}}\""
   },
   {
-    "id": "allow.label_global",
+    "id": "discord.allow.label_global",
     "description": "Names the global allow list",
     "other": "global allow list"
   },
   {
-    "id": "allow.empty",
+    "id": "discord.allow.empty",
     "description": "An allow list that is empty, so everyone is allowed",
     "other": "{{.Label}}: empty (everyone is allowed)"
   },
   {
-    "id": "allow.list",
+    "id": "discord.allow.list",
     "description": "An allow list with its users",
     "other": "{{.Label}}: {{.Mentions}}"
   },
   {
-    "id": "progress.running",
+    "id": "discord.progress.running",
     "description": "Header of the live progress message of a turn",
     "other": "in progress…"
   },
   {
-    "id": "progress.done",
+    "id": "discord.progress.done",
     "description": "A turn finished without action to summarise",
     "other": "done"
   },
   {
-    "id": "progress.actions",
+    "id": "discord.progress.actions",
     "description": "Summary of the actions a turn took",
     "one": "{{.Count}} action",
     "other": "{{.Count}} actions"
   },
   {
-    "id": "notice.unexpected",
+    "id": "discord.notice.unexpected",
     "description": "Introduces the technical detail of an unexpected failure shown in a code block",
     "other": "something went wrong inside the gateway, here is the technical detail:"
   },
   {
-    "id": "notice.no_detail",
+    "id": "discord.notice.no_detail",
     "description": "Replaces the code block when an unexpected failure carries no detail",
     "other": "the error carries no detail"
   },
   {
-    "id": "channel.unknown",
+    "id": "discord.channel.unknown",
     "description": "Stands for a channel whose id is empty",
     "other": "an unknown channel"
   },
   {
-    "id": "slash.set",
+    "id": "discord.slash.set",
     "description": "Slash command text, English base",
     "other": "configure the daemon"
   },
   {
-    "id": "slash.set.home",
+    "id": "discord.slash.set.home",
     "description": "Slash command text, English base",
     "other": "set the category or forum that hosts session channels"
   },
   {
-    "id": "slash.set.home.channel",
+    "id": "discord.slash.set.home.channel",
     "description": "Slash command text, English base",
     "other": "category or forum channel"
   },
   {
-    "id": "slash.set.source",
+    "id": "discord.slash.set.source",
     "description": "Slash command text, English base",
     "other": "set the source repository `service update` builds from"
   },
   {
-    "id": "slash.set.source.path",
+    "id": "discord.slash.set.source.path",
     "description": "Slash command text, English base",
     "other": "absolute path of the source repository"
   },
   {
-    "id": "slash.session",
+    "id": "discord.slash.session",
     "description": "Slash command text, English base",
     "other": "manage sessions"
   },
   {
-    "id": "slash.session.create",
+    "id": "discord.slash.session.create",
     "description": "Slash command text, English base",
     "other": "create a session: a linked channel, an isolated worktree and a backend"
   },
   {
-    "id": "slash.session.create.name",
+    "id": "discord.slash.session.create.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.session.create.cmd",
+    "id": "discord.slash.session.create.cmd",
     "description": "Slash command text, English base",
     "other": "linked command (default: the configured command)"
   },
   {
-    "id": "slash.session.create.shared",
+    "id": "discord.slash.session.create.shared",
     "description": "Slash command text, English base",
     "other": "run in the main repository instead of an isolated worktree"
   },
   {
-    "id": "slash.session.create.backend",
+    "id": "discord.slash.session.create.backend",
     "description": "Slash command text, English base",
     "other": "bridge backend"
   },
   {
-    "id": "slash.session.create.project",
+    "id": "discord.slash.session.create.project",
     "description": "Slash command text, English base",
     "other": "subfolder of the workspace where the backend works"
   },
   {
-    "id": "slash.session.create.clone",
+    "id": "discord.slash.session.create.clone",
     "description": "Slash command text, English base",
     "other": "remote repository (owner/name) to clone first into the workspace"
   },
   {
-    "id": "slash.session.close",
+    "id": "discord.slash.session.close",
     "description": "Slash command text, English base",
     "other": "close a session: stop the bridge, delete the worktree, archive the channel"
   },
   {
-    "id": "slash.session.close.name",
+    "id": "discord.slash.session.close.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.session.close.force",
+    "id": "discord.slash.session.close.force",
     "description": "Slash command text, English base",
     "other": "discard uncommitted changes in the worktree"
   },
   {
-    "id": "slash.session.list",
+    "id": "discord.slash.session.list",
     "description": "Slash command text, English base",
     "other": "list active sessions"
   },
   {
-    "id": "slash.session.who",
+    "id": "discord.slash.session.who",
     "description": "Slash command text, English base",
     "other": "list the participants observed in a session"
   },
   {
-    "id": "slash.session.who.name",
+    "id": "discord.slash.session.who.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.session.allow",
+    "id": "discord.slash.session.allow",
     "description": "Slash command text, English base",
     "other": "manage who can take part in a session"
   },
   {
-    "id": "slash.session.allow.add",
+    "id": "discord.slash.session.allow.add",
     "description": "Slash command text, English base",
     "other": "allow a user in a session"
   },
   {
-    "id": "slash.session.allow.add.name",
+    "id": "discord.slash.session.allow.add.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.session.allow.add.user",
+    "id": "discord.slash.session.allow.add.user",
     "description": "Slash command text, English base",
     "other": "user to allow"
   },
   {
-    "id": "slash.session.allow.remove",
+    "id": "discord.slash.session.allow.remove",
     "description": "Slash command text, English base",
     "other": "remove a user's access to a session"
   },
   {
-    "id": "slash.session.allow.remove.name",
+    "id": "discord.slash.session.allow.remove.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.session.allow.remove.user",
+    "id": "discord.slash.session.allow.remove.user",
     "description": "Slash command text, English base",
     "other": "user to remove"
   },
   {
-    "id": "slash.session.allow.list",
+    "id": "discord.slash.session.allow.list",
     "description": "Slash command text, English base",
     "other": "list the users allowed in a session"
   },
   {
-    "id": "slash.session.allow.list.name",
+    "id": "discord.slash.session.allow.list.name",
     "description": "Slash command text, English base",
     "other": "session name"
   },
   {
-    "id": "slash.service",
+    "id": "discord.slash.service",
     "description": "Slash command text, English base",
     "other": "manage the daemon"
   },
   {
-    "id": "slash.service.restart",
+    "id": "discord.slash.service.restart",
     "description": "Slash command text, English base",
     "other": "restart the daemon"
   },
   {
-    "id": "slash.service.update",
+    "id": "discord.slash.service.update",
     "description": "Slash command text, English base",
     "other": "rebuild the daemon from source and restart it"
   },
   {
-    "id": "slash.service.update.no_pull",
+    "id": "discord.slash.service.update.no_pull",
     "description": "Slash command text, English base",
     "other": "skip git pull before building"
   },
   {
-    "id": "slash.stop",
+    "id": "discord.slash.stop",
     "description": "Slash command text, English base",
     "other": "cancel the current turn in this conversation"
   },
   {
-    "id": "slash.verbosity",
+    "id": "discord.slash.verbosity",
     "description": "Slash command text, English base",
     "other": "set what this conversation shows of a turn"
   },
   {
-    "id": "slash.verbosity.level",
+    "id": "discord.slash.verbosity.level",
     "description": "Slash command text, English base",
     "other": "what to show of a turn here"
   },
   {
-    "id": "slash.verbosity.level.silent",
+    "id": "discord.slash.verbosity.level.silent",
     "description": "Slash command text, English base",
     "other": "silent: only the reply"
   },
   {
-    "id": "slash.verbosity.level.quiet",
+    "id": "discord.slash.verbosity.level.quiet",
     "description": "Slash command text, English base",
     "other": "quiet: also the live list of tool names"
   },
   {
-    "id": "slash.verbosity.level.actions",
+    "id": "discord.slash.verbosity.level.actions",
     "description": "Slash command text, English base",
     "other": "actions: also the details of each tool"
   },
   {
-    "id": "slash.verbosity.level.full",
+    "id": "discord.slash.verbosity.level.full",
     "description": "Slash command text, English base",
     "other": "full: also the assistant's text"
   },
   {
-    "id": "slash.mode",
+    "id": "discord.slash.mode",
     "description": "Slash command text, English base",
     "other": "set how this channel handles mentions"
   },
   {
-    "id": "slash.mode.mode",
+    "id": "discord.slash.mode.mode",
     "description": "Slash command text, English base",
     "other": "how mentions are handled here"
   },
   {
-    "id": "slash.mode.mode.normal",
+    "id": "discord.slash.mode.mode.normal",
     "description": "Slash command text, English base",
     "other": "normal: the bot replies when mentioned"
   },
   {
-    "id": "slash.mode.mode.support",
+    "id": "discord.slash.mode.mode.support",
     "description": "Slash command text, English base",
     "other": "support: each mention opens its own thread"
   },
   {
-    "id": "slash.mode.mode.ambient",
+    "id": "discord.slash.mode.mode.ambient",
     "description": "Slash command text, English base",
     "other": "ambient: the bot replies here without a mention"
   },
   {
-    "id": "slash.mode.mode.off",
+    "id": "discord.slash.mode.mode.off",
     "description": "Slash command text, English base",
     "other": "off: the bot ignores this channel entirely"
   },
   {
-    "id": "slash.allow",
+    "id": "discord.slash.allow",
     "description": "Slash command text, English base",
     "other": "manage who can use the bot"
   },
   {
-    "id": "slash.allow.add",
+    "id": "discord.slash.allow.add",
     "description": "Slash command text, English base",
     "other": "allow a user to use the bot"
   },
   {
-    "id": "slash.allow.add.user",
+    "id": "discord.slash.allow.add.user",
     "description": "Slash command text, English base",
     "other": "user to allow"
   },
   {
-    "id": "slash.allow.remove",
+    "id": "discord.slash.allow.remove",
     "description": "Slash command text, English base",
     "other": "remove a user from the allow list"
   },
   {
-    "id": "slash.allow.remove.user",
+    "id": "discord.slash.allow.remove.user",
     "description": "Slash command text, English base",
     "other": "user to remove"
   },
   {
-    "id": "slash.allow.list",
+    "id": "discord.slash.allow.list",
     "description": "Slash command text, English base",
     "other": "list the users allowed to use the bot"
+  },
+  {
+    "id": "discord.result.posted",
+    "description": "Result of channel post, the id of the message sent",
+    "other": "posted {{.ID}}"
+  },
+  {
+    "id": "discord.result.replied",
+    "description": "Result of message reply, the id of the message sent",
+    "other": "replied {{.ID}}"
+  },
+  {
+    "id": "discord.result.reacted",
+    "description": "Result of message react",
+    "other": "reacted"
+  },
+  {
+    "id": "discord.result.unreacted",
+    "description": "Result of message unreact",
+    "other": "unreacted"
+  },
+  {
+    "id": "discord.result.edited",
+    "description": "Result of message edit",
+    "other": "edited"
+  },
+  {
+    "id": "discord.result.deleted",
+    "description": "Result of message delete",
+    "other": "deleted"
+  },
+  {
+    "id": "discord.command.embed",
+    "description": "Stand-in for a message that has only an embed and no text in the channel read output",
+    "other": "(embed)"
+  },
+  {
+    "id": "discord.setting.token",
+    "description": "Help of the token setting",
+    "other": "Discord bot token"
+  },
+  {
+    "id": "discord.setting.owner",
+    "description": "Help of the owner setting",
+    "other": "Discord user id of the person always allowed, whatever the allow lists"
+  },
+  {
+    "id": "discord.setting.allowed_users",
+    "description": "Help of the allowed_users setting",
+    "other": "Discord user ids allowed to make the bot act, comma separated (`*` for everyone)"
+  },
+  {
+    "id": "discord.setting.allowed_roles",
+    "description": "Help of the allowed_roles setting",
+    "other": "Discord role ids allowed to make the bot act, comma separated (server messages only, a DM carries no role)"
+  },
+  {
+    "id": "discord.setting.allowed_channels",
+    "description": "Help of the allowed_channels setting",
+    "other": "channel ids where the bot answers, comma separated, it ignores all others (empty means every channel it can read)"
+  },
+  {
+    "id": "discord.setting.ignored_channels",
+    "description": "Help of the ignored_channels setting",
+    "other": "channel ids where the bot never answers, comma separated, whatever the other rules"
+  },
+  {
+    "id": "discord.setting.allow_all_users",
+    "description": "Help of the allow_all_users setting",
+    "other": "let anyone who can reach the bot make it act (off by default, the allow lists are normally what bounds a deployment)"
+  },
+  {
+    "id": "discord.setting.allow_bots",
+    "description": "Help of the allow_bots setting",
+    "other": "whether other bots can make this one act: none (default), mentions (only when they mention it) or all"
+  },
+  {
+    "id": "discord.setting.require_mention",
+    "description": "Help of the require_mention setting",
+    "other": "require an @ mention in a channel (true by default, a DM and a thread opened by the gateway never require one)"
+  },
+  {
+    "id": "discord.setting.thread_require_mention",
+    "description": "Help of the thread_require_mention setting",
+    "other": "also require an @ mention in a thread opened by the gateway (false by default)"
+  },
+  {
+    "id": "discord.setting.free_response_channels",
+    "description": "Help of the free_response_channels setting",
+    "other": "channel ids where the bot answers without being mentioned, comma separated (`*` for every channel, who may make it act there stays bound by the allow lists)"
+  },
+  {
+    "id": "discord.setting.sessions_per_user",
+    "description": "Help of the sessions_per_user setting",
+    "other": "give each participant of a channel their own session (true by default, false puts the whole channel in one shared session)"
+  },
+  {
+    "id": "discord.setting.thread_sessions_per_user",
+    "description": "Help of the thread_sessions_per_user setting",
+    "other": "give each participant of a thread their own session (false by default, a thread is one job that everyone in it shares)"
+  },
+  {
+    "id": "discord.setting.agent",
+    "description": "Help of the agent setting",
+    "other": "persona each session opened by this gateway runs under, which sets its tools (required by /mode ambient)"
+  },
+  {
+    "id": "discord.setting.verbosity",
+    "description": "Help of the verbosity setting",
+    "other": "default of what a turn shows in the channel, changeable per conversation with /verbosity. silent (default) shows only the answer. quiet also shows the live list of tool names. actions also shows the detail of each tool. full also shows the assistant's text."
+  },
+  {
+    "id": "discord.setting.context_messages",
+    "description": "Help of the context_messages setting",
+    "other": "how many earlier channel messages to carry as context (30 by default)"
+  },
+  {
+    "id": "discord.setting.playbook",
+    "description": "Help of the playbook setting",
+    "other": "name of the skill a new session follows (pr-job by default)"
+  },
+  {
+    "id": "discord.setting.tidy_pings",
+    "description": "Help of the tidy_pings setting",
+    "other": "delete the message that opened a turn once its answer is posted, so the channel keeps the work and not the messages that started it (off by default, never applies when the answer lives in a thread opened from the ping)"
+  },
+  {
+    "id": "discord.setting.heads_file",
+    "description": "Help of the heads_file setting",
+    "other": "JSON file of the emoji heads the gateway puts in front of its messages, an object from head key to emoji, an empty value turns a head off (built-in heads by default, the keys are listed in the README)"
+  },
+  {
+    "id": "discord.setting.message_deletes",
+    "description": "Help of the message_deletes setting",
+    "other": "add the `message delete` verb, so an agent can delete messages this bot sent (off by default, the verb is absent until this is on, and even then it refuses any message written by another author)"
   }
 ]

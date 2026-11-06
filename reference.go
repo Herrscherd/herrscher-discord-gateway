@@ -82,7 +82,7 @@ func describe(msg dctl.Message) []string {
 		}
 	}
 	for _, a := range msg.Attachments {
-		add("[fichier] " + a.Filename)
+		add("[file] " + a.Filename)
 	}
 	for _, embed := range msg.Embeds {
 		if head := embedHead(embed); head != "" {

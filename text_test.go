@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -35,132 +34,155 @@ func testMessages() messages {
 
 func declaredMessages() map[string][]string {
 	return map[string][]string{
-		"help.channel_read":               {},
-		"help.channel_post":               {},
-		"help.message_reply":              {},
-		"help.message_react":              {},
-		"help.message_unreact":            {},
-		"help.message_edit":               {},
-		"help.message_delete":             {},
-		"param.channel_id":                {},
-		"param.limit":                     {},
-		"param.after":                     {},
-		"param.text":                      {},
-		"param.reply_to":                  {},
-		"param.message_id":                {},
-		"param.emoji_add":                 {},
-		"param.emoji_remove":              {},
-		"param.new_body":                  {},
-		"command.no_messages":             {},
-		"command.attachments":             {"Count", "Name"},
-		"undelivered":                     {},
-		"repo.none":                       {},
-		"repo.reused":                     {"Repo"},
-		"repo.ask":                        {},
-		"repo.ask_capped":                 {"Count", "Question", "Shown"},
-		"repo.menu_failed":                {},
-		"repo.started":                    {"Repo"},
-		"bindings.write_failed":           {},
-		"bindings.unreadable":             {},
-		"bind.bad_choice":                 {},
-		"notice.no_detail":                {},
-		"channel.unknown":                 {},
-		"control.unavailable":             {},
-		"menu.owned_by":                   {"Mention"},
-		"menu.denied":                     {},
-		"menu.not_allowed":                {},
-		"choice.gone":                     {},
-		"choice.saved":                    {"Value"},
-		"thread.public_denied":            {},
-		"thread.private_opened":           {"Channel"},
-		"thread.private_denied":           {},
-		"stop.none":                       {},
-		"stop.done":                       {},
-		"store.unavailable":               {},
-		"verbosity.unknown":               {"Level"},
-		"verbosity.set":                   {"Level"},
-		"mode.unknown":                    {"Mode"},
-		"mode.ambient_refused":            {},
-		"mode.support":                    {},
-		"mode.ambient":                    {},
-		"mode.off":                        {},
-		"mode.normal":                     {},
-		"gate.denied":                     {},
-		"run.done":                        {},
-		"save.lost":                       {},
-		"save.unreadable":                 {},
-		"allow.session_added":             {"Mention", "Name"},
-		"allow.session_removed":           {"Mention", "Name"},
-		"allow.global_added":              {"Mention"},
-		"allow.global_removed":            {"Mention"},
-		"allow.label_session":             {"Name"},
-		"allow.label_global":              {},
-		"allow.empty":                     {"Label"},
-		"allow.list":                      {"Label", "Mentions"},
-		"progress.running":                {},
-		"progress.done":                   {},
-		"progress.actions":                {"Count"},
-		"notice.unexpected":               {},
-		"slash.set":                       {},
-		"slash.set.home":                  {},
-		"slash.set.home.channel":          {},
-		"slash.set.source":                {},
-		"slash.set.source.path":           {},
-		"slash.session":                   {},
-		"slash.session.create":            {},
-		"slash.session.create.name":       {},
-		"slash.session.create.cmd":        {},
-		"slash.session.create.shared":     {},
-		"slash.session.create.backend":    {},
-		"slash.session.create.project":    {},
-		"slash.session.create.clone":      {},
-		"slash.session.close":             {},
-		"slash.session.close.name":        {},
-		"slash.session.close.force":       {},
-		"slash.session.list":              {},
-		"slash.session.who":               {},
-		"slash.session.who.name":          {},
-		"slash.session.allow":             {},
-		"slash.session.allow.add":         {},
-		"slash.session.allow.add.name":    {},
-		"slash.session.allow.add.user":    {},
-		"slash.session.allow.remove":      {},
-		"slash.session.allow.remove.name": {},
-		"slash.session.allow.remove.user": {},
-		"slash.session.allow.list":        {},
-		"slash.session.allow.list.name":   {},
-		"slash.service":                   {},
-		"slash.service.restart":           {},
-		"slash.service.update":            {},
-		"slash.service.update.no_pull":    {},
-		"slash.stop":                      {},
-		"slash.verbosity":                 {},
-		"slash.verbosity.level":           {},
-		"slash.verbosity.level.silent":    {},
-		"slash.verbosity.level.quiet":     {},
-		"slash.verbosity.level.actions":   {},
-		"slash.verbosity.level.full":      {},
-		"slash.mode":                      {},
-		"slash.mode.mode":                 {},
-		"slash.mode.mode.normal":          {},
-		"slash.mode.mode.support":         {},
-		"slash.mode.mode.ambient":         {},
-		"slash.mode.mode.off":             {},
-		"slash.allow":                     {},
-		"slash.allow.add":                 {},
-		"slash.allow.add.user":            {},
-		"slash.allow.remove":              {},
-		"slash.allow.remove.user":         {},
-		"slash.allow.list":                {},
+		"discord.setting.token":                    {},
+		"discord.setting.owner":                    {},
+		"discord.setting.allowed_users":            {},
+		"discord.setting.allowed_roles":            {},
+		"discord.setting.allowed_channels":         {},
+		"discord.setting.ignored_channels":         {},
+		"discord.setting.allow_all_users":          {},
+		"discord.setting.allow_bots":               {},
+		"discord.setting.require_mention":          {},
+		"discord.setting.thread_require_mention":   {},
+		"discord.setting.free_response_channels":   {},
+		"discord.setting.sessions_per_user":        {},
+		"discord.setting.thread_sessions_per_user": {},
+		"discord.setting.agent":                    {},
+		"discord.setting.verbosity":                {},
+		"discord.setting.context_messages":         {},
+		"discord.setting.playbook":                 {},
+		"discord.setting.tidy_pings":               {},
+		"discord.setting.heads_file":               {},
+		"discord.setting.message_deletes":          {},
+		"discord.help.channel_read":                {},
+		"discord.help.channel_post":                {},
+		"discord.help.message_reply":               {},
+		"discord.help.message_react":               {},
+		"discord.help.message_unreact":             {},
+		"discord.help.message_edit":                {},
+		"discord.help.message_delete":              {},
+		"discord.param.channel_id":                 {},
+		"discord.param.limit":                      {},
+		"discord.param.after":                      {},
+		"discord.param.text":                       {},
+		"discord.param.reply_to":                   {},
+		"discord.param.message_id":                 {},
+		"discord.param.emoji_add":                  {},
+		"discord.param.emoji_remove":               {},
+		"discord.param.new_body":                   {},
+		"discord.command.no_messages":              {},
+		"discord.command.attachments":              {"Count", "Name"},
+		"discord.result.posted":                    {"ID"},
+		"discord.result.replied":                   {"ID"},
+		"discord.result.reacted":                   {},
+		"discord.result.unreacted":                 {},
+		"discord.result.edited":                    {},
+		"discord.result.deleted":                   {},
+		"discord.command.embed":                    {},
+		"discord.undelivered":                      {},
+		"discord.repo.none":                        {},
+		"discord.repo.reused":                      {"Repo"},
+		"discord.repo.ask":                         {},
+		"discord.repo.ask_capped":                  {"Count", "Question", "Shown"},
+		"discord.repo.menu_failed":                 {},
+		"discord.repo.started":                     {"Repo"},
+		"discord.bindings.write_failed":            {},
+		"discord.bindings.unreadable":              {},
+		"discord.bind.bad_choice":                  {},
+		"discord.notice.no_detail":                 {},
+		"discord.channel.unknown":                  {},
+		"discord.control.unavailable":              {},
+		"discord.menu.owned_by":                    {"Mention"},
+		"discord.menu.denied":                      {},
+		"discord.menu.not_allowed":                 {},
+		"discord.choice.gone":                      {},
+		"discord.choice.saved":                     {"Value"},
+		"discord.thread.public_denied":             {},
+		"discord.thread.private_opened":            {"Channel"},
+		"discord.thread.private_denied":            {},
+		"discord.stop.none":                        {},
+		"discord.stop.done":                        {},
+		"discord.store.unavailable":                {},
+		"discord.verbosity.unknown":                {"Level"},
+		"discord.verbosity.set":                    {"Level"},
+		"discord.mode.unknown":                     {"Mode"},
+		"discord.mode.ambient_refused":             {},
+		"discord.mode.support":                     {},
+		"discord.mode.ambient":                     {},
+		"discord.mode.off":                         {},
+		"discord.mode.normal":                      {},
+		"discord.gate.denied":                      {},
+		"discord.run.done":                         {},
+		"discord.save.lost":                        {},
+		"discord.save.unreadable":                  {},
+		"discord.allow.session_added":              {"Mention", "Name"},
+		"discord.allow.session_removed":            {"Mention", "Name"},
+		"discord.allow.global_added":               {"Mention"},
+		"discord.allow.global_removed":             {"Mention"},
+		"discord.allow.label_session":              {"Name"},
+		"discord.allow.label_global":               {},
+		"discord.allow.empty":                      {"Label"},
+		"discord.allow.list":                       {"Label", "Mentions"},
+		"discord.progress.running":                 {},
+		"discord.progress.done":                    {},
+		"discord.progress.actions":                 {"Count"},
+		"discord.notice.unexpected":                {},
+		"discord.slash.set":                        {},
+		"discord.slash.set.home":                   {},
+		"discord.slash.set.home.channel":           {},
+		"discord.slash.set.source":                 {},
+		"discord.slash.set.source.path":            {},
+		"discord.slash.session":                    {},
+		"discord.slash.session.create":             {},
+		"discord.slash.session.create.name":        {},
+		"discord.slash.session.create.cmd":         {},
+		"discord.slash.session.create.shared":      {},
+		"discord.slash.session.create.backend":     {},
+		"discord.slash.session.create.project":     {},
+		"discord.slash.session.create.clone":       {},
+		"discord.slash.session.close":              {},
+		"discord.slash.session.close.name":         {},
+		"discord.slash.session.close.force":        {},
+		"discord.slash.session.list":               {},
+		"discord.slash.session.who":                {},
+		"discord.slash.session.who.name":           {},
+		"discord.slash.session.allow":              {},
+		"discord.slash.session.allow.add":          {},
+		"discord.slash.session.allow.add.name":     {},
+		"discord.slash.session.allow.add.user":     {},
+		"discord.slash.session.allow.remove":       {},
+		"discord.slash.session.allow.remove.name":  {},
+		"discord.slash.session.allow.remove.user":  {},
+		"discord.slash.session.allow.list":         {},
+		"discord.slash.session.allow.list.name":    {},
+		"discord.slash.service":                    {},
+		"discord.slash.service.restart":            {},
+		"discord.slash.service.update":             {},
+		"discord.slash.service.update.no_pull":     {},
+		"discord.slash.stop":                       {},
+		"discord.slash.verbosity":                  {},
+		"discord.slash.verbosity.level":            {},
+		"discord.slash.verbosity.level.silent":     {},
+		"discord.slash.verbosity.level.quiet":      {},
+		"discord.slash.verbosity.level.actions":    {},
+		"discord.slash.verbosity.level.full":       {},
+		"discord.slash.mode":                       {},
+		"discord.slash.mode.mode":                  {},
+		"discord.slash.mode.mode.normal":           {},
+		"discord.slash.mode.mode.support":          {},
+		"discord.slash.mode.mode.ambient":          {},
+		"discord.slash.mode.mode.off":              {},
+		"discord.slash.allow":                      {},
+		"discord.slash.allow.add":                  {},
+		"discord.slash.allow.add.user":             {},
+		"discord.slash.allow.remove":               {},
+		"discord.slash.allow.remove.user":          {},
+		"discord.slash.allow.list":                 {},
 	}
 }
 
 func TestGatewayCatalogIsComplete(t *testing.T) {
-	sources, err := fs.Sub(localeFS, "locales")
-	if err != nil {
-		t.Fatal(err)
-	}
-	i18ntest.CheckDeclared(t, declaredMessages(), sources)
+	i18ntest.CheckDeclared(t, declaredMessages(), localeRoot{})
 }
 
 const keyVar = "key"
@@ -237,7 +259,11 @@ func productionFiles(t *testing.T, fset *token.FileSet) []*ast.File {
 
 func productionTypes(t *testing.T, fset *token.FileSet, files []*ast.File) *types.Info {
 	t.Helper()
-	info := &types.Info{Defs: make(map[*ast.Ident]types.Object), Uses: make(map[*ast.Ident]types.Object)}
+	info := &types.Info{
+		Defs:  make(map[*ast.Ident]types.Object),
+		Uses:  make(map[*ast.Ident]types.Object),
+		Types: make(map[ast.Expr]types.TypeAndValue),
+	}
 	conf := types.Config{
 		Importer: importer.ForCompiler(fset, "source", nil),
 		Error:    func(err error) { t.Error(err) },
@@ -253,6 +279,10 @@ func keyFindings(fset *token.FileSet, info *types.Info, decl ast.Decl) []keyCall
 	allowed := make(map[*ast.Ident]bool)
 	var findings []keyCall
 	ast.Inspect(decl, func(node ast.Node) bool {
+		if lit, isLit := node.(*ast.CompositeLit); isLit {
+			findings = append(findings, settingHelpFindings(fset, info, lit)...)
+			return true
+		}
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -347,6 +377,32 @@ func qualifiedMethod(method *types.Func) string {
 		return ""
 	}
 	return named.Obj().Pkg().Path() + "." + named.Obj().Name() + "." + method.Name()
+}
+
+func settingHelpFindings(fset *token.FileSet, info *types.Info, lit *ast.CompositeLit) []keyCall {
+	if !isSetting(info.Types[lit].Type) {
+		return nil
+	}
+	var findings []keyCall
+	for _, elt := range lit.Elts {
+		field, isField := elt.(*ast.KeyValueExpr)
+		if !isField || !isIdentNamed(field.Key, "Help") {
+			continue
+		}
+		key, literal := constantKey(field.Value, info)
+		findings = append(findings, keyCall{where: fset.Position(field.Pos()), name: "Setting.Help", key: key, literal: literal})
+	}
+	return findings
+}
+
+func isSetting(t types.Type) bool {
+	named, ok := t.(*types.Named)
+	return ok && named.Obj().Pkg() != nil && named.Obj().Pkg().Path() == contractsPkg && named.Obj().Name() == "Setting"
+}
+
+func isIdentNamed(expr ast.Expr, name string) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == name
 }
 
 func keyCallOfArg(fset *token.FileSet, call *ast.CallExpr, arg ast.Expr, info *types.Info) keyCall {
@@ -473,13 +529,13 @@ func (e testError) Error() string { return string(e) }
 
 func TestMessageFallsBackToEnglishWhenLanguageLacksKey(t *testing.T) {
 	catalog, err := i18n.NewCatalog(testLog(), fstest.MapFS{
-		"en.json": {Data: []byte(`[{"id":"progress.done","other":"done"}]`)},
+		"en.json": {Data: []byte(`[{"id":"discord.progress.done","other":"done"}]`)},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	msgs := messages{catalog: catalog, lang: i18n.French, log: testLog()}
-	if got := msgs.say("progress.done", nil); got != "done" {
+	if got := msgs.say("discord.progress.done", nil); got != "done" {
 		t.Errorf("got %q, want the English text", got)
 	}
 }
@@ -497,7 +553,7 @@ func TestPluralFormFollowsCount(t *testing.T) {
 		{i18n.French, 3, "3 actions"},
 	}
 	for _, tc := range tests {
-		got := msgs.sayIn(tc.lang, "progress.actions", map[string]any{"Count": tc.count})
+		got := msgs.sayIn(tc.lang, "discord.progress.actions", map[string]any{"Count": tc.count})
 		if got != tc.want {
 			t.Errorf("%s %d: got %q, want %q", tc.lang, tc.count, got, tc.want)
 		}
@@ -515,7 +571,7 @@ func TestZeroLanguageResolvesToOperatorDefault(t *testing.T) {
 	if got := msgs.resolve(i18n.English); got != i18n.English {
 		t.Errorf("resolve(en) = %s, want en", got)
 	}
-	if got := msgs.say("progress.done", nil); got != "terminé" {
+	if got := msgs.say("discord.progress.done", nil); got != "terminé" {
 		t.Errorf("default rendering = %q, want the French text", got)
 	}
 }
@@ -767,7 +823,7 @@ func TestCapLimitUsesTheCeilingGiven(t *testing.T) {
 }
 
 func TestFrenchAllowListPutsASpaceBeforeTheColon(t *testing.T) {
-	got := testMessages().sayIn(i18n.French, "allow.list", map[string]any{"Label": "x", "Mentions": "y"})
+	got := testMessages().sayIn(i18n.French, "discord.allow.list", map[string]any{"Label": "x", "Mentions": "y"})
 	if got != "x : y" {
 		t.Errorf("got %q, want %q", got, "x : y")
 	}
