@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -887,5 +888,20 @@ func TestUnknownCodeNoticeIsPostedAsAFailure(t *testing.T) {
 	}
 	if len(f.sent) != 1 || !strings.HasPrefix(f.sent[0].content, englishHead(headFail)+" ") {
 		t.Fatalf("sent %+v, want the fallback under %s", f.sent, englishHead(headFail))
+	}
+}
+
+func TestLocaleRootIsAFileSystem(t *testing.T) {
+	if err := fstest.TestFS(localeRoot{}, "en.json", "fr.json"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLocaleRootRejectsPathsOutsideTheLocales(t *testing.T) {
+	for _, name := range []string{"../text.go", "/en.json", "locales/../../text.go"} {
+		_, err := localeRoot{}.Open(name)
+		if !errors.Is(err, fs.ErrInvalid) {
+			t.Fatalf("Open(%q) error = %v, want fs.ErrInvalid", name, err)
+		}
 	}
 }
