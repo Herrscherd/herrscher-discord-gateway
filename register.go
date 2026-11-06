@@ -65,7 +65,8 @@ func init() {
 		Gateway: func(ctx context.Context, cfg contracts.PluginConfig) (contracts.GatewaySet, error) {
 			return NewGatewaySet(ctx, cfg, slog.Default())
 		},
-		Skills: shipSkills,
+		Skills:  shipSkills,
+		Catalog: localeRoot{},
 	})
 }
 

@@ -8,12 +8,23 @@ import (
 	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
-func TestCatalogSourceFeedsAHost(t *testing.T) {
+func registeredDescriptor(t *testing.T) contracts.Plugin {
+	t.Helper()
+	gateways := contracts.Default.Gateways()
+	for idx := range gateways {
+		if gateways[idx].Manifest.Kind == gatewayKind {
+			return gateways[idx]
+		}
+	}
+	t.Fatal("the gateway descriptor is not registered")
+	return contracts.Plugin{}
+}
+
+func TestDescriptorCatalogFeedsAHost(t *testing.T) {
 	t.Parallel()
-	gateway := &Gateway{}
-	catalog, err := i18n.NewCatalog(testLog(), gateway.Catalog())
+	catalog, err := i18n.NewCatalog(testLog(), registeredDescriptor(t).Catalog)
 	if err != nil {
-		t.Fatalf("NewCatalog over Catalog(): %v", err)
+		t.Fatalf("NewCatalog over the descriptor catalog: %v", err)
 	}
 	got, err := catalog.Message(i18n.French, "discord.help.channel_read", nil)
 	if err != nil {

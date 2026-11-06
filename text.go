@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"path"
 	"strings"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -39,31 +40,17 @@ type messages struct {
 	log      *slog.Logger
 }
 
-var _ contracts.CatalogSource = (*Gateway)(nil)
+type localeRoot struct{}
 
-func localeSources() (fs.FS, error) {
-	sources, err := fs.Sub(localeFS, "locales")
-	if err != nil {
-		return nil, fmt.Errorf("discord gateway: embedded locales: %w", err)
+func (localeRoot) Open(name string) (fs.File, error) {
+	if !fs.ValidPath(name) {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrInvalid}
 	}
-	return sources, nil
-}
-
-// Catalog returns the gateway's translated texts, one go-i18n file per language at its root, for the host to merge into its catalog.
-func (g *Gateway) Catalog() fs.FS {
-	sources, err := localeSources()
-	if err != nil {
-		return nil
-	}
-	return sources
+	return localeFS.Open(path.Join("locales", name))
 }
 
 func newMessages(lang i18n.Language, log *slog.Logger) (messages, error) {
-	sources, err := localeSources()
-	if err != nil {
-		return messages{}, err
-	}
-	catalog, err := i18n.NewCatalog(log, sources)
+	catalog, err := i18n.NewCatalog(log, localeRoot{})
 	if err != nil {
 		return messages{}, fmt.Errorf("discord gateway: message catalog: %w", err)
 	}

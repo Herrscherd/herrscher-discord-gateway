@@ -11,7 +11,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -183,11 +182,7 @@ func declaredMessages() map[string][]string {
 }
 
 func TestGatewayCatalogIsComplete(t *testing.T) {
-	sources, err := fs.Sub(localeFS, "locales")
-	if err != nil {
-		t.Fatal(err)
-	}
-	i18ntest.CheckDeclared(t, declaredMessages(), sources)
+	i18ntest.CheckDeclared(t, declaredMessages(), localeRoot{})
 }
 
 const keyVar = "key"
