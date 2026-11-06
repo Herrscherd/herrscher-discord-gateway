@@ -294,7 +294,7 @@ func TestFrenchModeInteractionGetsAFrenchEphemeralReply(t *testing.T) {
 	if _, err := s.handleMode(context.Background(), ix); err != nil {
 		t.Fatal(err)
 	}
-	requireReplies(t, tr, frenchReply(t, "mode.off"))
+	requireReplies(t, tr, frenchReply(t, "discord.mode.off"))
 }
 
 func TestFrenchStopInteractionGetsAFrenchEphemeralReply(t *testing.T) {
@@ -305,7 +305,7 @@ func TestFrenchStopInteractionGetsAFrenchEphemeralReply(t *testing.T) {
 	if _, err := s.handleStop(context.Background(), frenchInteraction()); err != nil {
 		t.Fatal(err)
 	}
-	requireReplies(t, tr, frenchReply(t, "stop.none"))
+	requireReplies(t, tr, frenchReply(t, "discord.stop.none"))
 }
 
 func TestFrenchInteractionDispatchEditsTheResponseInFrench(t *testing.T) {
@@ -314,5 +314,5 @@ func TestFrenchInteractionDispatchEditsTheResponseInFrench(t *testing.T) {
 	_, ctrl, _ := newTestRouter(t)
 	s.ctrl = ctrl
 	s.dispatch(context.Background(), frenchInteraction(), []string{"status"})
-	requireReplies(t, tr, frenchReply(t, "run.done"))
+	requireReplies(t, tr, frenchReply(t, "discord.run.done"))
 }

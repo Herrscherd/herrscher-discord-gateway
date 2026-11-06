@@ -1,589 +1,624 @@
 [
   {
-    "id": "help.channel_read",
+    "id": "discord.help.channel_read",
     "description": "Aide du verbe de lecture d'un salon",
     "other": "lire une conversation : les messages récents d'un salon, du plus ancien au plus récent"
   },
   {
-    "id": "help.channel_post",
+    "id": "discord.help.channel_post",
     "description": "Aide du verbe d'envoi dans un salon",
     "other": "poster un message dans un salon"
   },
   {
-    "id": "help.message_reply",
+    "id": "discord.help.message_reply",
     "description": "Aide du verbe de réponse à un message",
     "other": "répondre à un message précis"
   },
   {
-    "id": "help.message_react",
+    "id": "discord.help.message_react",
     "description": "Aide du verbe d'ajout de réaction",
     "other": "ajouter une réaction à un message"
   },
   {
-    "id": "help.message_unreact",
+    "id": "discord.help.message_unreact",
     "description": "Aide du verbe de retrait de réaction",
     "other": "retirer une réaction que ce bot a ajoutée à un message"
   },
   {
-    "id": "help.message_edit",
+    "id": "discord.help.message_edit",
     "description": "Aide du verbe de réécriture d'un message",
     "other": "réécrire un message envoyé par ce bot"
   },
   {
-    "id": "help.message_delete",
+    "id": "discord.help.message_delete",
     "description": "Aide du verbe de suppression d'un message",
     "other": "supprimer un message envoyé par ce bot"
   },
   {
-    "id": "param.channel_id",
+    "id": "discord.param.channel_id",
     "description": "Paramètre : le salon sur lequel agit un verbe",
     "other": "identifiant du salon"
   },
   {
-    "id": "param.limit",
+    "id": "discord.param.limit",
     "description": "Paramètre : combien de messages une lecture renvoie",
     "other": "combien de messages, dans la limite de lecture"
   },
   {
-    "id": "param.after",
+    "id": "discord.param.after",
     "description": "Paramètre : le message après lequel une lecture paginée commence",
     "other": "identifiant du message à partir duquel lire, pour paginer"
   },
   {
-    "id": "param.text",
+    "id": "discord.param.text",
     "description": "Paramètre : le contenu d'un message",
     "other": "contenu du message"
   },
   {
-    "id": "param.reply_to",
+    "id": "discord.param.reply_to",
     "description": "Paramètre : le message auquel une réponse répond",
     "other": "identifiant du message auquel répondre"
   },
   {
-    "id": "param.message_id",
+    "id": "discord.param.message_id",
     "description": "Paramètre : le message sur lequel agit un verbe",
     "other": "identifiant du message"
   },
   {
-    "id": "param.emoji_add",
+    "id": "discord.param.emoji_add",
     "description": "Paramètre : l'emoji qu'une réaction ajoute",
     "other": "emoji à ajouter"
   },
   {
-    "id": "param.emoji_remove",
+    "id": "discord.param.emoji_remove",
     "description": "Paramètre : l'emoji qu'un retrait supprime",
     "other": "emoji à retirer"
   },
   {
-    "id": "param.new_body",
+    "id": "discord.param.new_body",
     "description": "Paramètre : le nouveau contenu d'un message réécrit",
     "other": "nouveau contenu"
   },
   {
-    "id": "command.no_messages",
+    "id": "discord.command.no_messages",
     "description": "Sortie d'une lecture qui ne trouve aucun message",
     "other": "(aucun message)"
   },
   {
-    "id": "command.attachments",
+    "id": "discord.command.attachments",
     "description": "Tient lieu du contenu d'un message qui ne porte que des pièces jointes",
     "one": "({{.Count}} pièce jointe : {{.Name}})",
     "other": "({{.Count}} pièces jointes : {{.Name}})"
   },
   {
-    "id": "undelivered",
+    "id": "discord.undelivered",
     "description": "Un message n'a pas pu être transmis à la session à laquelle il était rattaché",
     "other": "je n'ai pas pu transmettre ton message à la session, renvoie-le"
   },
   {
-    "id": "repo.none",
+    "id": "discord.repo.none",
     "description": "Aucun repo connu sur lequel travailler",
     "other": "je ne trouve aucun repo sur lequel travailler, vérifie le workspace ou l'auth de la forge"
   },
   {
-    "id": "repo.reused",
+    "id": "discord.repo.reused",
     "description": "Le dernier repo auquel le salon était rattaché est repris",
     "other": "je repars sur **{{.Repo}}**, le dernier repo sur lequel tu m'as mis, `/session close` ici pour repartir d'ailleurs"
   },
   {
-    "id": "repo.ask",
+    "id": "discord.repo.ask",
     "description": "Question demandant sur quel repo travailler",
     "other": "sur quel repo je travaille ? (je ne poserai la question qu'une fois)"
   },
   {
-    "id": "repo.ask_capped",
+    "id": "discord.repo.ask_capped",
     "description": "Question sur le repo quand il y a plus de repos que le menu n'en montre",
     "other": "{{.Question}} ({{.Count}} repos, les {{.Shown}} premiers affichés)"
   },
   {
-    "id": "repo.menu_failed",
+    "id": "discord.repo.menu_failed",
     "description": "Le menu des repos n'a pas pu être posté",
     "other": "je n'ai pas pu poster le menu des repos ici, reformule en nommant le repo, ou vérifie mes permissions dans ce salon"
   },
   {
-    "id": "repo.started",
+    "id": "discord.repo.started",
     "description": "Une session a démarré sur le repo choisi",
     "other": "c'est parti sur {{.Repo}}"
   },
   {
-    "id": "bindings.write_failed",
+    "id": "discord.bindings.write_failed",
     "description": "Le fichier des rattachements n'a pas pu être écrit",
     "other": "le fichier des rattachements n'a pas pu être écrit, ce rattachement sera perdu à la prochaine relance"
   },
   {
-    "id": "bindings.unreadable",
+    "id": "discord.bindings.unreadable",
     "description": "Le fichier des rattachements ne peut pas être lu",
     "other": "le fichier des rattachements est illisible, aucun rattachement ne sera retenu tant qu'il n'est pas réparé"
   },
   {
-    "id": "bind.bad_choice",
+    "id": "discord.bind.bad_choice",
     "description": "Un choix de repo que le routeur ne sait pas lire",
     "other": "choix illisible"
   },
   {
-    "id": "control.unavailable",
+    "id": "discord.control.unavailable",
     "description": "Le contrôleur de sessions n'est pas encore disponible",
     "other": "le contrôle des sessions n'est pas encore disponible"
   },
   {
-    "id": "menu.owned_by",
+    "id": "discord.menu.owned_by",
     "description": "Un menu répond à une question posée à quelqu'un d'autre",
     "other": "ce menu répond à la question de {{.Mention}}"
   },
   {
-    "id": "menu.denied",
+    "id": "discord.menu.denied",
     "description": "Une personne non autorisée répond à un menu de repos",
     "other": "tu n'es pas autorisé à répondre à ce menu"
   },
   {
-    "id": "menu.not_allowed",
+    "id": "discord.menu.not_allowed",
     "description": "Une personne non autorisée actionne un composant",
     "other": "tu n'es pas autorisé à utiliser ce menu"
   },
   {
-    "id": "choice.gone",
+    "id": "discord.choice.gone",
     "description": "Un choix a été fait sur une session qui n'existe plus",
     "other": "cette session n'est plus active"
   },
   {
-    "id": "choice.saved",
+    "id": "discord.choice.saved",
     "description": "Un choix a été enregistré",
     "other": "choix enregistré : {{.Value}}"
   },
   {
-    "id": "thread.public_denied",
+    "id": "discord.thread.public_denied",
     "description": "Un fil public n'a pas pu être ouvert pour un salon de support",
     "other": "je n'ai pas pu ouvrir de fil ici, il me manque « Créer des fils publics » dans ce salon. Je réponds ici, et ce salon ne portera qu'une conversation à la fois."
   },
   {
-    "id": "thread.private_opened",
+    "id": "discord.thread.private_opened",
     "description": "Un fil privé a été ouvert pour la personne qui écrit",
     "other": "je continue en privé dans {{.Channel}}"
   },
   {
-    "id": "thread.private_denied",
+    "id": "discord.thread.private_denied",
     "description": "Un fil privé n'a pas pu être ouvert",
     "other": "je n'ai pas pu ouvrir de fil privé ici, il me manque « Créer des fils privés » dans ce salon (une permission de salon prime sur celle du rôle). Je réponds ici."
   },
   {
-    "id": "stop.none",
+    "id": "discord.stop.none",
     "description": "Un arrêt demandé là où aucun tour ne tourne",
     "other": "aucun tour en cours ici"
   },
   {
-    "id": "stop.done",
+    "id": "discord.stop.done",
     "description": "Un tour en cours a été interrompu",
     "other": "tour interrompu, la conversation est gardée, dis-moi la suite"
   },
   {
-    "id": "store.unavailable",
+    "id": "discord.store.unavailable",
     "description": "Le store des conversations n'est pas configuré",
     "other": "le store de conversations n'est pas disponible"
   },
   {
-    "id": "verbosity.unknown",
+    "id": "discord.verbosity.unknown",
     "description": "Un niveau de verbosité que la passerelle ne connaît pas",
     "other": "niveau inconnu : {{.Level}}"
   },
   {
-    "id": "verbosity.set",
+    "id": "discord.verbosity.set",
     "description": "La verbosité d'un salon a changé",
     "other": "verbosité de ce salon : {{.Level}}"
   },
   {
-    "id": "mode.unknown",
+    "id": "discord.mode.unknown",
     "description": "Un mode de salon que la passerelle ne connaît pas",
     "other": "mode inconnu : {{.Mode}}"
   },
   {
-    "id": "mode.ambient_refused",
+    "id": "discord.mode.ambient_refused",
     "description": "Le mode ambient est refusé sans persona",
     "other": "mode ambient refusé : il fait répondre le bot à tout le monde sans qu'on l'appelle, et rien ne borne ce qu'il peut faire tant qu'aucune persona n'est configurée. Renseigne DISCORD_AGENT puis réessaie."
   },
   {
-    "id": "mode.support",
+    "id": "discord.mode.support",
     "description": "Le mode support a été posé sur un salon",
     "other": "mode support : chaque ping ouvre son propre fil ici. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
   },
   {
-    "id": "mode.ambient",
+    "id": "discord.mode.ambient",
     "description": "Le mode ambient a été posé sur un salon",
     "other": "mode ambient : je réponds ici sans qu'on m'appelle, à qui a le droit de me faire agir. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
   },
   {
-    "id": "mode.off",
+    "id": "discord.mode.off",
     "description": "Le mode off a été posé sur un salon",
     "other": "mode off : je ne réponds plus rien ici, même appelé. Les sessions déjà liées à ce salon tournent toujours, `/session close` si tu n'en veux plus."
   },
   {
-    "id": "mode.normal",
+    "id": "discord.mode.normal",
     "description": "Le mode normal a été posé sur un salon",
     "other": "mode normal : il faut m'appeler ici, et chacun repart sur sa propre session"
   },
   {
-    "id": "gate.denied",
+    "id": "discord.gate.denied",
     "description": "Une personne non autorisée lance une commande slash",
     "other": "tu n'es pas autorisé à utiliser le bot ici"
   },
   {
-    "id": "run.done",
+    "id": "discord.run.done",
     "description": "Une commande s'est exécutée sans rien à montrer",
     "other": "fait"
   },
   {
-    "id": "save.lost",
+    "id": "discord.save.lost",
     "description": "Un réglage a changé mais le store n'a pas pu le sauvegarder",
     "other": "(attention : non sauvegardé, perdu au prochain lancement)"
   },
   {
-    "id": "save.unreadable",
+    "id": "discord.save.unreadable",
     "description": "Un réglage a changé mais le fichier du store est illisible",
     "other": "(attention : non sauvegardé, le fichier est illisible, aucun changement ne sera retenu tant qu'il n'est pas réparé)"
   },
   {
-    "id": "allow.session_added",
+    "id": "discord.allow.session_added",
     "description": "Une personne a été ajoutée à la liste d'autorisation d'une session",
     "other": "ajouté {{.Mention}} à la session « {{.Name}} »"
   },
   {
-    "id": "allow.session_removed",
+    "id": "discord.allow.session_removed",
     "description": "Une personne a été retirée de la liste d'autorisation d'une session",
     "other": "retiré {{.Mention}} de la session « {{.Name}} »"
   },
   {
-    "id": "allow.global_added",
+    "id": "discord.allow.global_added",
     "description": "Une personne a été ajoutée à la liste d'autorisation globale",
     "other": "{{.Mention}} est autorisé à utiliser le bot"
   },
   {
-    "id": "allow.global_removed",
+    "id": "discord.allow.global_removed",
     "description": "Une personne a été retirée de la liste d'autorisation globale",
     "other": "{{.Mention}} retiré de la liste"
   },
   {
-    "id": "allow.label_session",
+    "id": "discord.allow.label_session",
     "description": "Nomme la liste d'autorisation d'une session",
     "other": "session « {{.Name}} »"
   },
   {
-    "id": "allow.label_global",
+    "id": "discord.allow.label_global",
     "description": "Nomme la liste d'autorisation globale",
     "other": "liste d'autorisation globale"
   },
   {
-    "id": "allow.empty",
+    "id": "discord.allow.empty",
     "description": "Une liste d'autorisation vide, donc tout le monde est autorisé",
     "other": "{{.Label}} : vide (tout le monde est autorisé)"
   },
   {
-    "id": "allow.list",
+    "id": "discord.allow.list",
     "description": "Une liste d'autorisation avec ses personnes",
     "other": "{{.Label}} : {{.Mentions}}"
   },
   {
-    "id": "progress.running",
+    "id": "discord.progress.running",
     "description": "En-tête du message de progression en direct d'un tour",
     "other": "en cours…"
   },
   {
-    "id": "progress.done",
+    "id": "discord.progress.done",
     "description": "Un tour s'est terminé sans action à résumer",
     "other": "terminé"
   },
   {
-    "id": "progress.actions",
+    "id": "discord.progress.actions",
     "description": "Résumé des actions d'un tour",
     "one": "{{.Count}} action",
     "other": "{{.Count}} actions"
   },
   {
-    "id": "notice.unexpected",
+    "id": "discord.notice.unexpected",
     "description": "Introduit le détail technique d'un échec inattendu affiché dans un bloc de code",
     "other": "une erreur interne s'est produite, voici le détail technique :"
   },
   {
-    "id": "notice.no_detail",
+    "id": "discord.notice.no_detail",
     "description": "Remplace le bloc de code quand un échec inattendu n'a aucun détail",
     "other": "l'erreur ne contient aucun détail"
   },
   {
-    "id": "channel.unknown",
+    "id": "discord.channel.unknown",
     "description": "Désigne un salon dont l'identifiant est vide",
     "other": "un salon inconnu"
   },
   {
-    "id": "slash.set",
+    "id": "discord.slash.set",
     "description": "Texte de commande slash, base française",
     "other": "configurer le démon"
   },
   {
-    "id": "slash.set.home",
+    "id": "discord.slash.set.home",
     "description": "Texte de commande slash, base française",
     "other": "définir la catégorie ou le forum qui accueille les salons de session"
   },
   {
-    "id": "slash.set.home.channel",
+    "id": "discord.slash.set.home.channel",
     "description": "Texte de commande slash, base française",
     "other": "salon de catégorie ou de forum"
   },
   {
-    "id": "slash.set.source",
+    "id": "discord.slash.set.source",
     "description": "Texte de commande slash, base française",
     "other": "définir le dépôt source à partir duquel `service update` compile"
   },
   {
-    "id": "slash.set.source.path",
+    "id": "discord.slash.set.source.path",
     "description": "Texte de commande slash, base française",
     "other": "chemin absolu du dépôt source"
   },
   {
-    "id": "slash.session",
+    "id": "discord.slash.session",
     "description": "Texte de commande slash, base française",
     "other": "gérer les sessions"
   },
   {
-    "id": "slash.session.create",
+    "id": "discord.slash.session.create",
     "description": "Texte de commande slash, base française",
     "other": "créer une session : un salon relié, un worktree isolé et un backend"
   },
   {
-    "id": "slash.session.create.name",
+    "id": "discord.slash.session.create.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.session.create.cmd",
+    "id": "discord.slash.session.create.cmd",
     "description": "Texte de commande slash, base française",
     "other": "commande reliée (par défaut la commande configurée)"
   },
   {
-    "id": "slash.session.create.shared",
+    "id": "discord.slash.session.create.shared",
     "description": "Texte de commande slash, base française",
     "other": "lancer dans le dépôt principal au lieu d'un worktree isolé"
   },
   {
-    "id": "slash.session.create.backend",
+    "id": "discord.slash.session.create.backend",
     "description": "Texte de commande slash, base française",
     "other": "backend du pont"
   },
   {
-    "id": "slash.session.create.project",
+    "id": "discord.slash.session.create.project",
     "description": "Texte de commande slash, base française",
     "other": "sous-dossier de l'espace de travail où travaille le backend"
   },
   {
-    "id": "slash.session.create.clone",
+    "id": "discord.slash.session.create.clone",
     "description": "Texte de commande slash, base française",
     "other": "dépôt distant (propriétaire/nom) à cloner d'abord dans l'espace de travail"
   },
   {
-    "id": "slash.session.close",
+    "id": "discord.slash.session.close",
     "description": "Texte de commande slash, base française",
     "other": "fermer une session : arrêter le pont, supprimer le worktree, archiver le salon"
   },
   {
-    "id": "slash.session.close.name",
+    "id": "discord.slash.session.close.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.session.close.force",
+    "id": "discord.slash.session.close.force",
     "description": "Texte de commande slash, base française",
     "other": "abandonner les modifications non validées du worktree"
   },
   {
-    "id": "slash.session.list",
+    "id": "discord.slash.session.list",
     "description": "Texte de commande slash, base française",
     "other": "lister les sessions actives"
   },
   {
-    "id": "slash.session.who",
+    "id": "discord.slash.session.who",
     "description": "Texte de commande slash, base française",
     "other": "lister les participants observés dans une session"
   },
   {
-    "id": "slash.session.who.name",
+    "id": "discord.slash.session.who.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.session.allow",
+    "id": "discord.slash.session.allow",
     "description": "Texte de commande slash, base française",
     "other": "gérer qui peut participer à une session"
   },
   {
-    "id": "slash.session.allow.add",
+    "id": "discord.slash.session.allow.add",
     "description": "Texte de commande slash, base française",
     "other": "autoriser un utilisateur dans une session"
   },
   {
-    "id": "slash.session.allow.add.name",
+    "id": "discord.slash.session.allow.add.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.session.allow.add.user",
+    "id": "discord.slash.session.allow.add.user",
     "description": "Texte de commande slash, base française",
     "other": "utilisateur à autoriser"
   },
   {
-    "id": "slash.session.allow.remove",
+    "id": "discord.slash.session.allow.remove",
     "description": "Texte de commande slash, base française",
     "other": "retirer l'autorisation d'un utilisateur dans une session"
   },
   {
-    "id": "slash.session.allow.remove.name",
+    "id": "discord.slash.session.allow.remove.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.session.allow.remove.user",
+    "id": "discord.slash.session.allow.remove.user",
     "description": "Texte de commande slash, base française",
     "other": "utilisateur à retirer"
   },
   {
-    "id": "slash.session.allow.list",
+    "id": "discord.slash.session.allow.list",
     "description": "Texte de commande slash, base française",
     "other": "lister les utilisateurs autorisés dans une session"
   },
   {
-    "id": "slash.session.allow.list.name",
+    "id": "discord.slash.session.allow.list.name",
     "description": "Texte de commande slash, base française",
     "other": "nom de la session"
   },
   {
-    "id": "slash.service",
+    "id": "discord.slash.service",
     "description": "Texte de commande slash, base française",
     "other": "gérer le démon"
   },
   {
-    "id": "slash.service.restart",
+    "id": "discord.slash.service.restart",
     "description": "Texte de commande slash, base française",
     "other": "redémarrer le démon"
   },
   {
-    "id": "slash.service.update",
+    "id": "discord.slash.service.update",
     "description": "Texte de commande slash, base française",
     "other": "recompiler le démon depuis les sources et le redémarrer"
   },
   {
-    "id": "slash.service.update.no_pull",
+    "id": "discord.slash.service.update.no_pull",
     "description": "Texte de commande slash, base française",
     "other": "ne pas faire de git pull avant la compilation"
   },
   {
-    "id": "slash.stop",
+    "id": "discord.slash.stop",
     "description": "Texte de commande slash, base française",
     "other": "annuler le tour en cours dans cette conversation"
   },
   {
-    "id": "slash.verbosity",
+    "id": "discord.slash.verbosity",
     "description": "Texte de commande slash, base française",
     "other": "régler ce que cette conversation affiche d'un tour"
   },
   {
-    "id": "slash.verbosity.level",
+    "id": "discord.slash.verbosity.level",
     "description": "Texte de commande slash, base française",
     "other": "ce qu'il faut afficher d'un tour ici"
   },
   {
-    "id": "slash.verbosity.level.silent",
+    "id": "discord.slash.verbosity.level.silent",
     "description": "Texte de commande slash, base française",
     "other": "silencieux : seulement la réponse"
   },
   {
-    "id": "slash.verbosity.level.quiet",
+    "id": "discord.slash.verbosity.level.quiet",
     "description": "Texte de commande slash, base française",
     "other": "discret : aussi la liste en direct des noms d'outils"
   },
   {
-    "id": "slash.verbosity.level.actions",
+    "id": "discord.slash.verbosity.level.actions",
     "description": "Texte de commande slash, base française",
     "other": "actions : aussi le détail de chaque outil"
   },
   {
-    "id": "slash.verbosity.level.full",
+    "id": "discord.slash.verbosity.level.full",
     "description": "Texte de commande slash, base française",
     "other": "complet : aussi le texte de l'assistant"
   },
   {
-    "id": "slash.mode",
+    "id": "discord.slash.mode",
     "description": "Texte de commande slash, base française",
     "other": "régler comment ce salon traite les mentions"
   },
   {
-    "id": "slash.mode.mode",
+    "id": "discord.slash.mode.mode",
     "description": "Texte de commande slash, base française",
     "other": "comment les mentions sont traitées ici"
   },
   {
-    "id": "slash.mode.mode.normal",
+    "id": "discord.slash.mode.mode.normal",
     "description": "Texte de commande slash, base française",
     "other": "normal : le bot répond quand il est mentionné"
   },
   {
-    "id": "slash.mode.mode.support",
+    "id": "discord.slash.mode.mode.support",
     "description": "Texte de commande slash, base française",
     "other": "support : chaque mention ouvre son propre fil"
   },
   {
-    "id": "slash.mode.mode.ambient",
+    "id": "discord.slash.mode.mode.ambient",
     "description": "Texte de commande slash, base française",
     "other": "ambiant : le bot répond ici sans être mentionné"
   },
   {
-    "id": "slash.mode.mode.off",
+    "id": "discord.slash.mode.mode.off",
     "description": "Texte de commande slash, base française",
     "other": "désactivé : le bot ignore entièrement ce salon"
   },
   {
-    "id": "slash.allow",
+    "id": "discord.slash.allow",
     "description": "Texte de commande slash, base française",
     "other": "gérer qui peut utiliser le bot"
   },
   {
-    "id": "slash.allow.add",
+    "id": "discord.slash.allow.add",
     "description": "Texte de commande slash, base française",
     "other": "autoriser un utilisateur à utiliser le bot"
   },
   {
-    "id": "slash.allow.add.user",
+    "id": "discord.slash.allow.add.user",
     "description": "Texte de commande slash, base française",
     "other": "utilisateur à autoriser"
   },
   {
-    "id": "slash.allow.remove",
+    "id": "discord.slash.allow.remove",
     "description": "Texte de commande slash, base française",
     "other": "retirer un utilisateur de la liste d'autorisation"
   },
   {
-    "id": "slash.allow.remove.user",
+    "id": "discord.slash.allow.remove.user",
     "description": "Texte de commande slash, base française",
     "other": "utilisateur à retirer"
   },
   {
-    "id": "slash.allow.list",
+    "id": "discord.slash.allow.list",
     "description": "Texte de commande slash, base française",
     "other": "lister les utilisateurs autorisés à utiliser le bot"
+  },
+  {
+    "id": "discord.result.posted",
+    "description": "Result of channel post, the id of the message sent",
+    "other": "message {{.ID}} publié"
+  },
+  {
+    "id": "discord.result.replied",
+    "description": "Result of message reply, the id of the message sent",
+    "other": "réponse {{.ID}} envoyée"
+  },
+  {
+    "id": "discord.result.reacted",
+    "description": "Result of message react",
+    "other": "réaction ajoutée"
+  },
+  {
+    "id": "discord.result.unreacted",
+    "description": "Result of message unreact",
+    "other": "réaction retirée"
+  },
+  {
+    "id": "discord.result.edited",
+    "description": "Result of message edit",
+    "other": "message modifié"
+  },
+  {
+    "id": "discord.result.deleted",
+    "description": "Result of message delete",
+    "other": "message supprimé"
+  },
+  {
+    "id": "discord.command.embed",
+    "description": "Stand-in for a message that has only an embed and no text in the channel read output",
+    "other": "(contenu enrichi)"
   }
 ]

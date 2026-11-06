@@ -18,57 +18,57 @@ func newLabels(msgs messages) labelSet {
 
 func slashTextsIn(msgs messages, lang i18n.Language) map[string]string {
 	return map[string]string{
-		"slash.set":                       msgs.sayIn(lang, "slash.set", nil),
-		"slash.set.home":                  msgs.sayIn(lang, "slash.set.home", nil),
-		"slash.set.home.channel":          msgs.sayIn(lang, "slash.set.home.channel", nil),
-		"slash.set.source":                msgs.sayIn(lang, "slash.set.source", nil),
-		"slash.set.source.path":           msgs.sayIn(lang, "slash.set.source.path", nil),
-		"slash.session":                   msgs.sayIn(lang, "slash.session", nil),
-		"slash.session.create":            msgs.sayIn(lang, "slash.session.create", nil),
-		"slash.session.create.name":       msgs.sayIn(lang, "slash.session.create.name", nil),
-		"slash.session.create.cmd":        msgs.sayIn(lang, "slash.session.create.cmd", nil),
-		"slash.session.create.shared":     msgs.sayIn(lang, "slash.session.create.shared", nil),
-		"slash.session.create.backend":    msgs.sayIn(lang, "slash.session.create.backend", nil),
-		"slash.session.create.project":    msgs.sayIn(lang, "slash.session.create.project", nil),
-		"slash.session.create.clone":      msgs.sayIn(lang, "slash.session.create.clone", nil),
-		"slash.session.close":             msgs.sayIn(lang, "slash.session.close", nil),
-		"slash.session.close.name":        msgs.sayIn(lang, "slash.session.close.name", nil),
-		"slash.session.close.force":       msgs.sayIn(lang, "slash.session.close.force", nil),
-		"slash.session.list":              msgs.sayIn(lang, "slash.session.list", nil),
-		"slash.session.who":               msgs.sayIn(lang, "slash.session.who", nil),
-		"slash.session.who.name":          msgs.sayIn(lang, "slash.session.who.name", nil),
-		"slash.session.allow":             msgs.sayIn(lang, "slash.session.allow", nil),
-		"slash.session.allow.add":         msgs.sayIn(lang, "slash.session.allow.add", nil),
-		"slash.session.allow.add.name":    msgs.sayIn(lang, "slash.session.allow.add.name", nil),
-		"slash.session.allow.add.user":    msgs.sayIn(lang, "slash.session.allow.add.user", nil),
-		"slash.session.allow.remove":      msgs.sayIn(lang, "slash.session.allow.remove", nil),
-		"slash.session.allow.remove.name": msgs.sayIn(lang, "slash.session.allow.remove.name", nil),
-		"slash.session.allow.remove.user": msgs.sayIn(lang, "slash.session.allow.remove.user", nil),
-		"slash.session.allow.list":        msgs.sayIn(lang, "slash.session.allow.list", nil),
-		"slash.session.allow.list.name":   msgs.sayIn(lang, "slash.session.allow.list.name", nil),
-		"slash.service":                   msgs.sayIn(lang, "slash.service", nil),
-		"slash.service.restart":           msgs.sayIn(lang, "slash.service.restart", nil),
-		"slash.service.update":            msgs.sayIn(lang, "slash.service.update", nil),
-		"slash.service.update.no_pull":    msgs.sayIn(lang, "slash.service.update.no_pull", nil),
-		"slash.stop":                      msgs.sayIn(lang, "slash.stop", nil),
-		"slash.verbosity":                 msgs.sayIn(lang, "slash.verbosity", nil),
-		"slash.verbosity.level":           msgs.sayIn(lang, "slash.verbosity.level", nil),
-		"slash.verbosity.level.silent":    msgs.sayIn(lang, "slash.verbosity.level.silent", nil),
-		"slash.verbosity.level.quiet":     msgs.sayIn(lang, "slash.verbosity.level.quiet", nil),
-		"slash.verbosity.level.actions":   msgs.sayIn(lang, "slash.verbosity.level.actions", nil),
-		"slash.verbosity.level.full":      msgs.sayIn(lang, "slash.verbosity.level.full", nil),
-		"slash.mode":                      msgs.sayIn(lang, "slash.mode", nil),
-		"slash.mode.mode":                 msgs.sayIn(lang, "slash.mode.mode", nil),
-		"slash.mode.mode.normal":          msgs.sayIn(lang, "slash.mode.mode.normal", nil),
-		"slash.mode.mode.support":         msgs.sayIn(lang, "slash.mode.mode.support", nil),
-		"slash.mode.mode.ambient":         msgs.sayIn(lang, "slash.mode.mode.ambient", nil),
-		"slash.mode.mode.off":             msgs.sayIn(lang, "slash.mode.mode.off", nil),
-		"slash.allow":                     msgs.sayIn(lang, "slash.allow", nil),
-		"slash.allow.add":                 msgs.sayIn(lang, "slash.allow.add", nil),
-		"slash.allow.add.user":            msgs.sayIn(lang, "slash.allow.add.user", nil),
-		"slash.allow.remove":              msgs.sayIn(lang, "slash.allow.remove", nil),
-		"slash.allow.remove.user":         msgs.sayIn(lang, "slash.allow.remove.user", nil),
-		"slash.allow.list":                msgs.sayIn(lang, "slash.allow.list", nil),
+		"discord.slash.set":                       msgs.sayIn(lang, "discord.slash.set", nil),
+		"discord.slash.set.home":                  msgs.sayIn(lang, "discord.slash.set.home", nil),
+		"discord.slash.set.home.channel":          msgs.sayIn(lang, "discord.slash.set.home.channel", nil),
+		"discord.slash.set.source":                msgs.sayIn(lang, "discord.slash.set.source", nil),
+		"discord.slash.set.source.path":           msgs.sayIn(lang, "discord.slash.set.source.path", nil),
+		"discord.slash.session":                   msgs.sayIn(lang, "discord.slash.session", nil),
+		"discord.slash.session.create":            msgs.sayIn(lang, "discord.slash.session.create", nil),
+		"discord.slash.session.create.name":       msgs.sayIn(lang, "discord.slash.session.create.name", nil),
+		"discord.slash.session.create.cmd":        msgs.sayIn(lang, "discord.slash.session.create.cmd", nil),
+		"discord.slash.session.create.shared":     msgs.sayIn(lang, "discord.slash.session.create.shared", nil),
+		"discord.slash.session.create.backend":    msgs.sayIn(lang, "discord.slash.session.create.backend", nil),
+		"discord.slash.session.create.project":    msgs.sayIn(lang, "discord.slash.session.create.project", nil),
+		"discord.slash.session.create.clone":      msgs.sayIn(lang, "discord.slash.session.create.clone", nil),
+		"discord.slash.session.close":             msgs.sayIn(lang, "discord.slash.session.close", nil),
+		"discord.slash.session.close.name":        msgs.sayIn(lang, "discord.slash.session.close.name", nil),
+		"discord.slash.session.close.force":       msgs.sayIn(lang, "discord.slash.session.close.force", nil),
+		"discord.slash.session.list":              msgs.sayIn(lang, "discord.slash.session.list", nil),
+		"discord.slash.session.who":               msgs.sayIn(lang, "discord.slash.session.who", nil),
+		"discord.slash.session.who.name":          msgs.sayIn(lang, "discord.slash.session.who.name", nil),
+		"discord.slash.session.allow":             msgs.sayIn(lang, "discord.slash.session.allow", nil),
+		"discord.slash.session.allow.add":         msgs.sayIn(lang, "discord.slash.session.allow.add", nil),
+		"discord.slash.session.allow.add.name":    msgs.sayIn(lang, "discord.slash.session.allow.add.name", nil),
+		"discord.slash.session.allow.add.user":    msgs.sayIn(lang, "discord.slash.session.allow.add.user", nil),
+		"discord.slash.session.allow.remove":      msgs.sayIn(lang, "discord.slash.session.allow.remove", nil),
+		"discord.slash.session.allow.remove.name": msgs.sayIn(lang, "discord.slash.session.allow.remove.name", nil),
+		"discord.slash.session.allow.remove.user": msgs.sayIn(lang, "discord.slash.session.allow.remove.user", nil),
+		"discord.slash.session.allow.list":        msgs.sayIn(lang, "discord.slash.session.allow.list", nil),
+		"discord.slash.session.allow.list.name":   msgs.sayIn(lang, "discord.slash.session.allow.list.name", nil),
+		"discord.slash.service":                   msgs.sayIn(lang, "discord.slash.service", nil),
+		"discord.slash.service.restart":           msgs.sayIn(lang, "discord.slash.service.restart", nil),
+		"discord.slash.service.update":            msgs.sayIn(lang, "discord.slash.service.update", nil),
+		"discord.slash.service.update.no_pull":    msgs.sayIn(lang, "discord.slash.service.update.no_pull", nil),
+		"discord.slash.stop":                      msgs.sayIn(lang, "discord.slash.stop", nil),
+		"discord.slash.verbosity":                 msgs.sayIn(lang, "discord.slash.verbosity", nil),
+		"discord.slash.verbosity.level":           msgs.sayIn(lang, "discord.slash.verbosity.level", nil),
+		"discord.slash.verbosity.level.silent":    msgs.sayIn(lang, "discord.slash.verbosity.level.silent", nil),
+		"discord.slash.verbosity.level.quiet":     msgs.sayIn(lang, "discord.slash.verbosity.level.quiet", nil),
+		"discord.slash.verbosity.level.actions":   msgs.sayIn(lang, "discord.slash.verbosity.level.actions", nil),
+		"discord.slash.verbosity.level.full":      msgs.sayIn(lang, "discord.slash.verbosity.level.full", nil),
+		"discord.slash.mode":                      msgs.sayIn(lang, "discord.slash.mode", nil),
+		"discord.slash.mode.mode":                 msgs.sayIn(lang, "discord.slash.mode.mode", nil),
+		"discord.slash.mode.mode.normal":          msgs.sayIn(lang, "discord.slash.mode.mode.normal", nil),
+		"discord.slash.mode.mode.support":         msgs.sayIn(lang, "discord.slash.mode.mode.support", nil),
+		"discord.slash.mode.mode.ambient":         msgs.sayIn(lang, "discord.slash.mode.mode.ambient", nil),
+		"discord.slash.mode.mode.off":             msgs.sayIn(lang, "discord.slash.mode.mode.off", nil),
+		"discord.slash.allow":                     msgs.sayIn(lang, "discord.slash.allow", nil),
+		"discord.slash.allow.add":                 msgs.sayIn(lang, "discord.slash.allow.add", nil),
+		"discord.slash.allow.add.user":            msgs.sayIn(lang, "discord.slash.allow.add.user", nil),
+		"discord.slash.allow.remove":              msgs.sayIn(lang, "discord.slash.allow.remove", nil),
+		"discord.slash.allow.remove.user":         msgs.sayIn(lang, "discord.slash.allow.remove.user", nil),
+		"discord.slash.allow.list":                msgs.sayIn(lang, "discord.slash.allow.list", nil),
 	}
 }
 
@@ -144,98 +144,98 @@ func (lab labelSet) channel(name, key string, required bool) dctl.Option {
 }
 
 func commandSet(lab labelSet) *dctl.Command {
-	return lab.command("set", "slash.set").
+	return lab.command("set", "discord.slash.set").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.sub("home", "slash.set.home",
-				lab.channel("channel", "slash.set.home.channel", true)),
-			lab.sub("source", "slash.set.source",
-				lab.str("path", "slash.set.source.path", true)),
+			lab.sub("home", "discord.slash.set.home",
+				lab.channel("channel", "discord.slash.set.home.channel", true)),
+			lab.sub("source", "discord.slash.set.source",
+				lab.str("path", "discord.slash.set.source.path", true)),
 		)
 }
 
 func commandSession(lab labelSet) *dctl.Command {
-	return lab.command("session", "slash.session").
+	return lab.command("session", "discord.slash.session").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.sub("create", "slash.session.create",
-				lab.str("name", "slash.session.create.name", true),
-				lab.str("cmd", "slash.session.create.cmd", false),
-				lab.boolean("shared", "slash.session.create.shared", false),
-				lab.str("backend", "slash.session.create.backend", false).
+			lab.sub("create", "discord.slash.session.create",
+				lab.str("name", "discord.slash.session.create.name", true),
+				lab.str("cmd", "discord.slash.session.create.cmd", false),
+				lab.boolean("shared", "discord.slash.session.create.shared", false),
+				lab.str("backend", "discord.slash.session.create.backend", false).
 					Choices(dctl.NewChoice("stream", "stream"), dctl.NewChoice("oneshot", "oneshot")),
-				lab.str("project", "slash.session.create.project", false),
-				lab.str("clone", "slash.session.create.clone", false),
+				lab.str("project", "discord.slash.session.create.project", false),
+				lab.str("clone", "discord.slash.session.create.clone", false),
 			),
-			lab.sub("close", "slash.session.close",
-				lab.str("name", "slash.session.close.name", true).Autocomplete(),
-				lab.boolean("force", "slash.session.close.force", false),
+			lab.sub("close", "discord.slash.session.close",
+				lab.str("name", "discord.slash.session.close.name", true).Autocomplete(),
+				lab.boolean("force", "discord.slash.session.close.force", false),
 			),
-			lab.sub("list", "slash.session.list"),
-			lab.sub("who", "slash.session.who",
-				lab.str("name", "slash.session.who.name", true).Autocomplete()),
-			lab.group("allow", "slash.session.allow",
-				lab.sub("add", "slash.session.allow.add",
-					lab.str("name", "slash.session.allow.add.name", true).Autocomplete(),
-					lab.user("slash.session.allow.add.user")),
-				lab.sub("remove", "slash.session.allow.remove",
-					lab.str("name", "slash.session.allow.remove.name", true).Autocomplete(),
-					lab.user("slash.session.allow.remove.user")),
-				lab.sub("list", "slash.session.allow.list",
-					lab.str("name", "slash.session.allow.list.name", true).Autocomplete()),
+			lab.sub("list", "discord.slash.session.list"),
+			lab.sub("who", "discord.slash.session.who",
+				lab.str("name", "discord.slash.session.who.name", true).Autocomplete()),
+			lab.group("allow", "discord.slash.session.allow",
+				lab.sub("add", "discord.slash.session.allow.add",
+					lab.str("name", "discord.slash.session.allow.add.name", true).Autocomplete(),
+					lab.user("discord.slash.session.allow.add.user")),
+				lab.sub("remove", "discord.slash.session.allow.remove",
+					lab.str("name", "discord.slash.session.allow.remove.name", true).Autocomplete(),
+					lab.user("discord.slash.session.allow.remove.user")),
+				lab.sub("list", "discord.slash.session.allow.list",
+					lab.str("name", "discord.slash.session.allow.list.name", true).Autocomplete()),
 			),
 		)
 }
 
 func commandService(lab labelSet) *dctl.Command {
-	return lab.command("service", "slash.service").
+	return lab.command("service", "discord.slash.service").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.sub("restart", "slash.service.restart"),
-			lab.sub("update", "slash.service.update",
-				lab.boolean("no_pull", "slash.service.update.no_pull", false)),
+			lab.sub("restart", "discord.slash.service.restart"),
+			lab.sub("update", "discord.slash.service.update",
+				lab.boolean("no_pull", "discord.slash.service.update.no_pull", false)),
 		)
 }
 
 func commandStop(lab labelSet) *dctl.Command {
-	return lab.command("stop", "slash.stop").
+	return lab.command("stop", "discord.slash.stop").
 		Perms(dctl.PermManageGuild)
 }
 
 func commandVerbosity(lab labelSet) *dctl.Command {
-	return lab.command("verbosity", "slash.verbosity").
+	return lab.command("verbosity", "discord.slash.verbosity").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.str("level", "slash.verbosity.level", true).
+			lab.str("level", "discord.slash.verbosity.level", true).
 				Choices(
-					lab.choice(levelSilent, "slash.verbosity.level.silent"),
-					lab.choice(levelQuiet, "slash.verbosity.level.quiet"),
-					lab.choice(levelActions, "slash.verbosity.level.actions"),
-					lab.choice(levelFull, "slash.verbosity.level.full"),
+					lab.choice(levelSilent, "discord.slash.verbosity.level.silent"),
+					lab.choice(levelQuiet, "discord.slash.verbosity.level.quiet"),
+					lab.choice(levelActions, "discord.slash.verbosity.level.actions"),
+					lab.choice(levelFull, "discord.slash.verbosity.level.full"),
 				),
 		)
 }
 
 func commandMode(lab labelSet) *dctl.Command {
-	return lab.command("mode", "slash.mode").
+	return lab.command("mode", "discord.slash.mode").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.str("mode", "slash.mode.mode", true).
+			lab.str("mode", "discord.slash.mode.mode", true).
 				Choices(
-					lab.choice(normalMode, "slash.mode.mode.normal"),
-					lab.choice(supportMode, "slash.mode.mode.support"),
-					lab.choice(ambientMode, "slash.mode.mode.ambient"),
-					lab.choice(offMode, "slash.mode.mode.off"),
+					lab.choice(normalMode, "discord.slash.mode.mode.normal"),
+					lab.choice(supportMode, "discord.slash.mode.mode.support"),
+					lab.choice(ambientMode, "discord.slash.mode.mode.ambient"),
+					lab.choice(offMode, "discord.slash.mode.mode.off"),
 				),
 		)
 }
 
 func commandAllow(lab labelSet) *dctl.Command {
-	return lab.command("allow", "slash.allow").
+	return lab.command("allow", "discord.slash.allow").
 		Perms(dctl.PermManageGuild).
 		With(
-			lab.sub("add", "slash.allow.add", lab.user("slash.allow.add.user")),
-			lab.sub("remove", "slash.allow.remove", lab.user("slash.allow.remove.user")),
-			lab.sub("list", "slash.allow.list"),
+			lab.sub("add", "discord.slash.allow.add", lab.user("discord.slash.allow.add.user")),
+			lab.sub("remove", "discord.slash.allow.remove", lab.user("discord.slash.allow.remove.user")),
+			lab.sub("list", "discord.slash.allow.list"),
 		)
 }

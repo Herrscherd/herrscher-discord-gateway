@@ -25,46 +25,46 @@ const readCap = 100
 func (g *Gateway) Commands() []contracts.Cmd {
 	cmds := []contracts.Cmd{
 		contracts.New("channel", "read").
-			Help("help.channel_read").
-			Param("id", "param.channel_id", true).
-			ValueParam("limit", "param.limit", false).
-			ValueParam("after", "param.after", false).
+			Help("discord.help.channel_read").
+			Param("id", "discord.param.channel_id", true).
+			ValueParam("limit", "discord.param.limit", false).
+			ValueParam("after", "discord.param.after", false).
 			Do(g.readChannel),
 		contracts.New("channel", "post").
-			Help("help.channel_post").
-			Param("id", "param.channel_id", true).
-			Param("text", "param.text", true).
+			Help("discord.help.channel_post").
+			Param("id", "discord.param.channel_id", true).
+			Param("text", "discord.param.text", true).
 			Do(g.postChannel),
 		contracts.New("message", "reply").
-			Help("help.message_reply").
-			Param("id", "param.channel_id", true).
-			Param("to", "param.reply_to", true).
-			Param("text", "param.text", true).
+			Help("discord.help.message_reply").
+			Param("id", "discord.param.channel_id", true).
+			Param("to", "discord.param.reply_to", true).
+			Param("text", "discord.param.text", true).
 			Do(g.replyMessage),
 		contracts.New("message", "react").
-			Help("help.message_react").
-			Param("id", "param.channel_id", true).
-			Param("msg", "param.message_id", true).
-			Param("emoji", "param.emoji_add", true).
+			Help("discord.help.message_react").
+			Param("id", "discord.param.channel_id", true).
+			Param("msg", "discord.param.message_id", true).
+			Param("emoji", "discord.param.emoji_add", true).
 			Do(g.reactMessage),
 		contracts.New("message", "unreact").
-			Help("help.message_unreact").
-			Param("id", "param.channel_id", true).
-			Param("msg", "param.message_id", true).
-			Param("emoji", "param.emoji_remove", true).
+			Help("discord.help.message_unreact").
+			Param("id", "discord.param.channel_id", true).
+			Param("msg", "discord.param.message_id", true).
+			Param("emoji", "discord.param.emoji_remove", true).
 			Do(g.unreactMessage),
 		contracts.New("message", "edit").
-			Help("help.message_edit").
-			Param("id", "param.channel_id", true).
-			Param("msg", "param.message_id", true).
-			Param("text", "param.new_body", true).
+			Help("discord.help.message_edit").
+			Param("id", "discord.param.channel_id", true).
+			Param("msg", "discord.param.message_id", true).
+			Param("text", "discord.param.new_body", true).
 			Do(g.editMessage),
 	}
 	if g.deletes {
 		cmds = append(cmds, contracts.New("message", "delete").
-			Help("help.message_delete").
-			Param("id", "param.channel_id", true).
-			Param("msg", "param.message_id", true).
+			Help("discord.help.message_delete").
+			Param("id", "discord.param.channel_id", true).
+			Param("msg", "discord.param.message_id", true).
 			Do(g.deleteMessage))
 	}
 	return cmds
@@ -85,7 +85,7 @@ func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (contract
 	if err != nil {
 		return contracts.Result{}, fmt.Errorf("discord channel post: %w", err)
 	}
-	return contracts.DataResult("posted " + string(msgID(sent))), nil
+	return contracts.DataResult(g.msgs.say("discord.result.posted", map[string]any{idArg: string(msgID(sent))})), nil
 }
 
 func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
@@ -93,28 +93,28 @@ func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (contrac
 	if err != nil {
 		return contracts.Result{}, fmt.Errorf("discord message reply: %w", err)
 	}
-	return contracts.DataResult("replied " + string(msgID(sent))), nil
+	return contracts.DataResult(g.msgs.say("discord.result.replied", map[string]any{idArg: string(msgID(sent))})), nil
 }
 
 func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.c.React(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
 		return contracts.Result{}, fmt.Errorf("discord message react: %w", err)
 	}
-	return contracts.DataResult("reacted"), nil
+	return contracts.DataResult(g.msgs.say("discord.result.reacted", nil)), nil
 }
 
 func (g *Gateway) unreactMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.c.Unreact(ctx, in.Args["id"], in.Args["msg"], in.Args["emoji"]); err != nil {
 		return contracts.Result{}, fmt.Errorf("discord message unreact: %w", err)
 	}
-	return contracts.DataResult("unreacted"), nil
+	return contracts.DataResult(g.msgs.say("discord.result.unreacted", nil)), nil
 }
 
 func (g *Gateway) editMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
 	if err := g.Edit(ctx, in.Args["id"], in.Args["msg"], in.Args["text"]); err != nil {
 		return contracts.Result{}, err
 	}
-	return contracts.DataResult("edited"), nil
+	return contracts.DataResult(g.msgs.say("discord.result.edited", nil)), nil
 }
 
 func (g *Gateway) deleteMessage(ctx context.Context, input contracts.Input) (contracts.Result, error) {
@@ -124,7 +124,7 @@ func (g *Gateway) deleteMessage(ctx context.Context, input contracts.Input) (con
 	if err := g.Delete(ctx, input.Args["id"], input.Args["msg"]); err != nil {
 		return contracts.Result{}, err
 	}
-	return contracts.DataResult("deleted"), nil
+	return contracts.DataResult(g.msgs.say("discord.result.deleted", nil)), nil
 }
 
 var (
@@ -160,7 +160,7 @@ func capLimit(v string, ceiling int) int {
 
 func renderMessages(texts messages, msgs []dctl.Message) string {
 	if len(msgs) == 0 {
-		return texts.say("command.no_messages", nil)
+		return texts.say("discord.command.no_messages", nil)
 	}
 	var builder strings.Builder
 	for i := range msgs {
@@ -177,10 +177,10 @@ func bodyOf(texts messages, msg dctl.Message) string {
 		return body
 	}
 	if n := len(msg.Attachments); n > 0 {
-		return texts.say("command.attachments", map[string]any{countArg: n, nameArg: neutralise(msg.Attachments[0].Filename)})
+		return texts.say("discord.command.attachments", map[string]any{countArg: n, nameArg: neutralise(msg.Attachments[0].Filename)})
 	}
 	if len(msg.Embeds) > 0 {
-		return "(embed)"
+		return texts.say("discord.command.embed", nil)
 	}
 	return ""
 }

@@ -33,7 +33,7 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
 		r.log.Warn("support thread failed", "channel", msg.ChannelID, "err", err)
-		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("thread.public_denied", nil))
+		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("discord.thread.public_denied", nil))
 		return here
 	}
 	if !wantsThread(msg.Content) {
@@ -44,14 +44,14 @@ func (r *router) conversation(ctx context.Context, msg messageCreate) job {
 		if err = r.c.AddThreadMember(ctx, threadID, msg.Author.ID); err == nil {
 			r.adoptThread(ctx, msg.ChannelID, threadID)
 			texts := r.textsIn(msg.ChannelID)
-			r.post(ctx, msg.ChannelID, texts.say("thread.private_opened", map[string]any{"Channel": texts.channelRef(texts.lang, threadID)}))
+			r.post(ctx, msg.ChannelID, texts.say("discord.thread.private_opened", map[string]any{"Channel": texts.channelRef(texts.lang, threadID)}))
 			return job{conv: threadID, thread: true, parent: msg.ChannelID}
 		}
 		r.log.Warn("private thread left without its member, deleting it", "channel", msg.ChannelID, "thread", threadID, "err", err)
 		r.deleteOrphanThread(ctx, msg.ChannelID, threadID)
 	}
 	r.log.Warn("private thread failed", "channel", msg.ChannelID, "err", err)
-	r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("thread.private_denied", nil))
+	r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("discord.thread.private_denied", nil))
 	return here
 }
 

@@ -43,7 +43,7 @@ func TestSessionChannelNoticesSpeakTheSessionLanguage(t *testing.T) {
 
 	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
 
-	if want := frenchReply(t, "thread.public_denied"); !sentTo(c, "c1", want) {
+	if want := frenchReply(t, "discord.thread.public_denied"); !sentTo(c, "c1", want) {
 		t.Fatalf("sent = %+v, want %q in the session's French", c.sent, want)
 	}
 }
@@ -54,7 +54,7 @@ func TestUnknownSessionLanguageFallsBackToTheOperatorLanguage(t *testing.T) {
 
 	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
 
-	if want := frenchReply(t, "thread.public_denied"); !sentTo(c, "c1", want) {
+	if want := frenchReply(t, "discord.thread.public_denied"); !sentTo(c, "c1", want) {
 		t.Fatalf("sent = %+v, want the operator's French %q", c.sent, want)
 	}
 }
@@ -65,7 +65,7 @@ func TestSessionLanguageBeatsTheOperatorLanguage(t *testing.T) {
 
 	r.onMessage(context.Background(), supportPing("m1", "corrige herrscher"))
 
-	want := testMessages().sayIn(i18n.English, "thread.public_denied", nil)
+	want := testMessages().sayIn(i18n.English, "discord.thread.public_denied", nil)
 	if !sentTo(c, "c1", want) {
 		t.Fatalf("sent = %+v, want the session's English %q", c.sent, want)
 	}
@@ -83,7 +83,7 @@ func TestEphemeralRepliesInASessionChannelFollowTheInteractionLocale(t *testing.
 	if _, err := s.handleMode(context.Background(), ix); err != nil {
 		t.Fatal(err)
 	}
-	requireReplies(t, tr, frenchReply(t, "mode.off"))
+	requireReplies(t, tr, frenchReply(t, "discord.mode.off"))
 }
 
 func TestNotifyRendersInTheSessionLanguage(t *testing.T) {
@@ -125,7 +125,7 @@ func TestSinkProgressSpeaksTheSessionLanguage(t *testing.T) {
 	set.at("chanA").handle(contracts.Event{T: "reply", Text: "", Done: true})
 
 	french := testMessages().in(i18n.French)
-	want := withEmoji(french.head(headDone), french.say("progress.done", nil))
+	want := withEmoji(french.head(headDone), french.say("discord.progress.done", nil))
 	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != want {
 		t.Fatalf("posts = %q, want the French summary %q", got, want)
 	}
@@ -184,8 +184,8 @@ func TestSessionLanguageChangedBetweenTurnsProgressFollows(t *testing.T) {
 
 	french := testMessages().in(i18n.French)
 	english := testMessages().in(i18n.English)
-	wantFrench := withEmoji(french.head(headDone), french.say("progress.done", nil))
-	wantEnglish := withEmoji(english.head(headDone), english.say("progress.done", nil))
+	wantFrench := withEmoji(french.head(headDone), french.say("discord.progress.done", nil))
+	wantEnglish := withEmoji(english.head(headDone), english.say("discord.progress.done", nil))
 	if got := f.postsTo("chanA"); len(got) != 2 || got[0] != wantFrench || got[1] != wantEnglish {
 		t.Fatalf("posts = %q, want the French summary %q then the English one %q", got, wantFrench, wantEnglish)
 	}
@@ -209,7 +209,7 @@ func TestSessionLanguageRefreshedWhenANewHumanArrivesBeforeTheEnd(t *testing.T) 
 	sink.handle(contracts.Event{T: "reply", Text: "", Done: true})
 
 	english := testMessages().in(i18n.English)
-	want := withEmoji(english.head(headDone), english.say("progress.done", nil))
+	want := withEmoji(english.head(headDone), english.say("discord.progress.done", nil))
 	if got := f.postsTo("chanA"); len(got) != 1 || got[0] != want {
 		t.Fatalf("posts = %q, want the English summary %q after a new human before the end", got, want)
 	}
