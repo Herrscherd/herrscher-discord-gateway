@@ -129,6 +129,9 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		}
 		return level
 	}, owner, switchSetting(cfg.Get("tidy_pings"), false), msgs, log)
+	langs := sessionLanguages{ctrl: func() contracts.SessionControl { return gateway.slash.ctrl }, binds: binds}
+	gateway.langs = langs
+	sinks.langs = langs
 	gateway.sinks = sinks
 	plat.sinks = sinks
 

@@ -21,14 +21,17 @@ type renderClient interface {
 }
 
 type sink struct {
-	run   lifetime
-	rc    renderClient
-	ch    string
-	level func() string
-	owner string
-	tidy  bool
-	msgs  messages
-	log   *slog.Logger
+	run       lifetime
+	rc        renderClient
+	ch        string
+	level     func() string
+	owner     string
+	tidy      bool
+	base      messages
+	msgs      messages
+	localized bool
+	langs     sessionLanguages
+	log       *slog.Logger
 
 	mu       sync.Mutex
 	queue    []*sinkJob
@@ -57,7 +60,22 @@ func newSink(run lifetime, renderer renderClient, channel string, level func() s
 	if level == nil {
 		level = staticLevel("")
 	}
-	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, msgs: msgs, log: log}
+	return &sink{run: run, rc: renderer, ch: channel, level: level, owner: owner, tidy: tidy, base: msgs, msgs: msgs, log: log}
+}
+
+func (s *sink) localize() {
+	if s.localized {
+		return
+	}
+	s.localized = true
+	s.msgs = s.langs.messagesFor(s.ch, s.base)
+	if s.pv != nil {
+		s.pv.msgs = s.msgs
+	}
+}
+
+func (s *sink) endTurn() {
+	s.localized = false
 }
 
 func staticLevel(level string) func() string {
@@ -77,6 +95,7 @@ type sinks struct {
 	owner string
 	tidy  bool
 	msgs  messages
+	langs sessionLanguages
 	log   *slog.Logger
 
 	mu sync.Mutex
@@ -97,6 +116,7 @@ func (s *sinks) at(convID string) *sink {
 		return v
 	}
 	created := newSink(s.run, s.rc, convID, func() string { return s.level(convID) }, s.owner, s.tidy, s.msgs, s.log)
+	created.langs = s.langs
 	s.m[convID] = created
 	return created
 }
@@ -270,6 +290,10 @@ func (s *sink) execute(job *sinkJob) {
 		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
 		return
 	}
+	if job.kind == humanKind {
+		s.endTurn()
+	}
+	s.localize()
 	job.step()
 }
 
@@ -345,6 +369,8 @@ func (s *sink) applyFail(ctx context.Context, reason string) {
 	s.postParts(ctx, channel, s.answer(withEmoji(s.msgs.head(headFail), reason)))
 }
 
+const humanKind = "event:human"
+
 func (s *sink) handle(event contracts.Event) {
 	ctx := s.run()
 	s.dispatch(ctx, "event:"+event.T, func() {
@@ -364,8 +390,12 @@ func (s *sink) apply(ctx context.Context, event contracts.Event) {
 		s.onReset()
 	case "abandoned":
 		s.onAbandoned(ctx)
+		s.endTurn()
 	case "reply":
 		s.onReply(ctx, event)
+		if event.Done {
+			s.endTurn()
+		}
 	}
 }
 

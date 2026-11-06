@@ -50,6 +50,7 @@ type Gateway struct {
 	slash *slash
 	sinks *sinks
 	msgs  messages
+	langs sessionLanguages
 
 	deletes bool
 	selfID  string
@@ -148,7 +149,7 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the
 // operator's default language. It satisfies contracts.NoticeSink.
 func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang i18n.Language, notice contracts.Notice) (contracts.MessageID, error) {
-	resolved := g.msgs.resolve(lang)
+	resolved := g.msgs.resolve(g.langs.pick(conv.ID, lang))
 	text, renderErr := g.msgs.notice(resolved, notice)
 	if renderErr != nil {
 		text = g.msgs.renderFailed(resolved, notice, renderErr)

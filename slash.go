@@ -335,21 +335,11 @@ func (s *slash) texts(interaction dctl.Interaction) messages {
 }
 
 func (s *slash) replyLanguage(interaction dctl.Interaction) i18n.Language {
-	if s.sessionChannel(interaction) {
-		return s.msgs.lang
-	}
 	lang, err := i18n.ParseLanguage(string(interaction.Locale))
 	if err != nil {
 		return s.msgs.lang
 	}
 	return lang
-}
-
-func (s *slash) sessionChannel(interaction dctl.Interaction) bool {
-	if s.router == nil || s.ctrl == nil {
-		return false
-	}
-	return s.router.boundSession(s.ctrl, interaction.ChannelID, interaction.UserID(), interaction.GuildID == "") != ""
 }
 
 func (s *slash) sessions() []contracts.SessionInfo {
