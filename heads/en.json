@@ -238,5 +238,50 @@
     "id": "value.invalid_hint",
     "description": "Head of the notice that a value is malformed or out of range, with a hint",
     "other": "❌"
+  },
+  {
+    "id": "health.connected",
+    "description": "Head of the notice that an account is logged in and answered the health check",
+    "other": "✅"
+  },
+  {
+    "id": "health.signed_in_as",
+    "description": "Head of the notice that a service answered as a named identity",
+    "other": "✅"
+  },
+  {
+    "id": "health.not_logged_in",
+    "description": "Head of the notice that an account is not logged in",
+    "other": "⏹️"
+  },
+  {
+    "id": "health.rate_limited",
+    "description": "Head of the notice that a vendor answered with a rate limit",
+    "other": "⏳"
+  },
+  {
+    "id": "health.credentials_refused",
+    "description": "Head of the notice that a service refused its credentials",
+    "other": "❌"
+  },
+  {
+    "id": "health.unreachable",
+    "description": "Head of the notice that a service could not be reached",
+    "other": "⚠️"
+  },
+  {
+    "id": "health.env_missing",
+    "description": "Head of the notice that an environment variable is not set",
+    "other": "⏹️"
+  },
+  {
+    "id": "health.remedy_run",
+    "description": "Head of the remedy that asks to run a command",
+    "other": "🔧"
+  },
+  {
+    "id": "health.remedy_env_restart",
+    "description": "Head of the remedy that asks to add a variable and restart the service",
+    "other": "🔧"
   }
 ]

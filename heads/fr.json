@@ -238,5 +238,50 @@
     "id": "value.invalid_hint",
     "description": "Tête de la notice : valeur mal formée ou hors limites, avec une indication",
     "other": "❌"
+  },
+  {
+    "id": "health.connected",
+    "description": "Tête de la notice : compte connecté, la vérification de santé a répondu",
+    "other": "✅"
+  },
+  {
+    "id": "health.signed_in_as",
+    "description": "Tête de la notice : le service a répondu sous une identité nommée",
+    "other": "✅"
+  },
+  {
+    "id": "health.not_logged_in",
+    "description": "Tête de la notice : compte non connecté",
+    "other": "⏹️"
+  },
+  {
+    "id": "health.rate_limited",
+    "description": "Tête de la notice : le fournisseur a répondu par une limite de débit",
+    "other": "⏳"
+  },
+  {
+    "id": "health.credentials_refused",
+    "description": "Tête de la notice : le service a refusé ses identifiants",
+    "other": "❌"
+  },
+  {
+    "id": "health.unreachable",
+    "description": "Tête de la notice : service injoignable",
+    "other": "⚠️"
+  },
+  {
+    "id": "health.env_missing",
+    "description": "Tête de la notice : variable d'environnement absente",
+    "other": "⏹️"
+  },
+  {
+    "id": "health.remedy_run",
+    "description": "Tête du remède : lancer une commande",
+    "other": "🔧"
+  },
+  {
+    "id": "health.remedy_env_restart",
+    "description": "Tête du remède : ajouter une variable puis redémarrer le service",
+    "other": "🔧"
   }
 ]

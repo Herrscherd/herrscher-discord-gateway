@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,7 +41,7 @@ func init() {
 			Status:       contracts.StatusLive,
 			Capabilities: contracts.Capabilities{Reactions: true, SelectMenus: true, Replies: true},
 			Config: []contracts.Setting{
-				{Key: "token", Env: "DISCORD_BOT_TOKEN", Help: "discord.setting.token", Required: true},
+				{Key: botSettingKey, Env: botSettingEnv, Help: "discord.setting.token", Required: true},
 				{Key: "owner", Env: "DISCORD_USER_ID", Help: "discord.setting.owner"},
 				{Key: "allowed_users", Env: "DISCORD_ALLOWED_USERS", Help: "discord.setting.allowed_users"},
 				{Key: "allowed_roles", Env: "DISCORD_ALLOWED_ROLES", Help: "discord.setting.allowed_roles"},
@@ -67,6 +68,7 @@ func init() {
 		},
 		Skills:  shipSkills,
 		Catalog: localeRoot{},
+		Probe:   newHealthProbe(discordAPIBase, http.DefaultClient),
 	})
 }
 
@@ -111,7 +113,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 		return contracts.GatewaySet{}, err
 	}
 	run := lifetimeFrom(ctx)
-	token := cfg.Get("token")
+	token := cfg.Get(botSettingKey)
 	owner := cfg.Get("owner")
 	bot := dctl.New(token, "", dctl.WithGlobalCommands())
 	gateway := NewGateway(discordClient{bot}, run, msgs, log)
