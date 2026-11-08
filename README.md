@@ -464,6 +464,29 @@ A non-recoverable close is treated as **fatal**. 4004 (bad token) and 4010 to 40
 (bad shard, API version, intents) stop the loop and log once, rather than
 respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 
+## Health and limits
+
+The plugin sets `Plugin.Probe`, so `herrscher health` can check the bot without
+a live gateway. The probe reads the token the way the factory does: the `token`
+setting from `ProbeAccess.Config`, then `DISCORD_BOT_TOKEN` from
+`ProbeAccess.Getenv` when the setting is empty.
+
+It is read only. The one call it makes is `GET /api/v10/users/@me` with
+`Authorization: Bot <token>`; it never posts, reacts or opens the websocket, and
+`--deep` changes nothing because the cheap check is already a real round trip.
+
+| Finding | State | Detail | Remedy |
+|---|---|---|---|
+| no token | off | `health.env_missing` (`DISCORD_BOT_TOKEN`) | `health.remedy_env_restart` (`DISCORD_BOT_TOKEN`) |
+| 200 | ok, latency measured | `health.signed_in_as` (the bot username) | none |
+| 401 | down | `health.credentials_refused` | none |
+| 429 | degraded | `health.rate_limited` | none |
+| 5xx, other status, network error, deadline | degraded | `health.unreachable` with a short reason (`http 503`, `timeout`, `connection refused`, `dns lookup failed`, `network error`) | none |
+
+The reason never carries the token or the request URL. The probe stops when the
+host's context ends, and reports instead of panicking. A gateway has no vendor
+quota, so the plugin sets no `Limits`.
+
 ## Further reading
 
 - [Herrscher docs](https://github.com/Herrscherd/herrscher-docs), page
