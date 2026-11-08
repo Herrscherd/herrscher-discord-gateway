@@ -472,7 +472,7 @@ setting from `ProbeAccess.Config`, then `DISCORD_BOT_TOKEN` from
 `ProbeAccess.Getenv` when the setting is empty.
 
 It is read only. The one call it makes is `GET /api/v10/users/@me` with
-`Authorization: Bot <token>`; it never posts, reacts or opens the websocket, and
+`Authorization: Bot <token>` and the same User-Agent as dctl; it never posts, reacts or opens the websocket, and
 `--deep` changes nothing because the cheap check is already a real round trip.
 
 | Finding | State | Detail | Remedy |
@@ -481,7 +481,8 @@ It is read only. The one call it makes is `GET /api/v10/users/@me` with
 | 200 | ok, latency measured | `health.signed_in_as` (the bot username) | none |
 | 401 | down | `health.credentials_refused` | none |
 | 429 | degraded | `health.rate_limited` | none |
-| 5xx, other status, network error, deadline | degraded | `health.unreachable` with a short reason (`http 503`, `timeout`, `connection refused`, `dns lookup failed`, `network error`) | none |
+| 200 unreadable or nameless | degraded | `health.unreachable` (`invalid response` or `no bot name in response`) | none |
+| 5xx, other status, network error, deadline, cancel | degraded | `health.unreachable` with a short reason (`http 503`, `timeout`, `canceled`, `connection refused`, `dns lookup failed`, `network error`, `invalid request`) | none |
 
 The reason never carries the token or the request URL. The probe stops when the
 host's context ends, and reports instead of panicking. A gateway has no vendor

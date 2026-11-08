@@ -20,6 +20,7 @@ const (
 	discordAPIBase    = "https://discord.com/api/v10"
 	currentUserPath   = "/users/@me"
 	currentUserMaxLen = 64 << 10
+	botUserAgent      = "dctl (https://github.com/Herrscherd/dctl, 1.0)"
 )
 
 const (
@@ -63,6 +64,7 @@ func (p healthProbe) check(ctx context.Context, access contracts.ProbeAccess) co
 	}
 	req.Header.Set("Authorization", "Bot "+token)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", botUserAgent)
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	if err != nil {

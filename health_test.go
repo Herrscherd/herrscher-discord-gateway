@@ -33,6 +33,9 @@ func discordStub(t *testing.T, status int, body string) (*httptest.Server, *atom
 		if got := r.Header.Get("Authorization"); got != "Bot "+probeTestToken {
 			t.Errorf("Authorization = %q, want the bot token", got)
 		}
+		if got := r.Header.Get("User-Agent"); got != botUserAgent {
+			t.Errorf("User-Agent = %q, want %q", got, botUserAgent)
+		}
 		w.WriteHeader(status)
 		if _, err := io.WriteString(w, body); err != nil {
 			t.Errorf("stub write: %v", err)
@@ -67,6 +70,9 @@ func TestProbeWithoutTokenIsOffAndAsksForTheVariable(t *testing.T) {
 	report := probeAgainst(t, srv.URL, contracts.ProbeAccess{Getenv: func(string) string { return "" }})
 	if report.State != contracts.HealthOff {
 		t.Fatalf("State = %v, want off", report.State)
+	}
+	if report.Detail.Code != contracts.CodeHealthEnvMissing || argValue(t, report.Detail, "Name") != botSettingEnv {
+		t.Fatalf("Detail = %+v, want env missing naming %s", report.Detail, botSettingEnv)
 	}
 	if report.Remedy.Code != contracts.CodeHealthRemedyEnvRestart || argValue(t, report.Remedy, "Name") != botSettingEnv {
 		t.Fatalf("Remedy = %+v, want an env restart naming %s", report.Remedy, botSettingEnv)
