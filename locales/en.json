@@ -618,7 +618,8 @@
   },
   {
     "id": "discord.files.refused",
-    "description": "Line added to a message whose files were not sent; Names lists them",
+    "description": "Line added to a message whose files were not sent; Names lists them, Count is how many",
+    "one": "not sent: {{.Names}}",
     "other": "not sent: {{.Names}}"
   },
   {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
+	"github.com/Herrscherd/herrscher-contracts/i18n"
 )
 
 const refusedLine = "not sent: "
@@ -332,7 +333,7 @@ func TestSendFilesKeepsSendingTextPartsAfterAFailedOne(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
 	}
-	if id != "m1" || len(fc.sent) != 2 || fc.sent[1].content != "c" {
+	if id != "m1" || len(fc.sent) != 2 || fc.sent[0].content != strings.Repeat("b", gatewayMaxLen) || fc.sent[1].content != "c" {
 		t.Fatalf("id = %q, sent = %d parts, want m1 and the two parts after the failed one", id, len(fc.sent))
 	}
 }
@@ -367,5 +368,46 @@ func TestSendFilesRefusesBadlyFormedFiles(t *testing.T) {
 				t.Fatalf("trace = %q, want %q", fc.trace, want)
 			}
 		})
+	}
+}
+
+func TestRefusalNoticeAgreesInFrench(t *testing.T) {
+	msgs, err := newMessages(i18n.French, testLog())
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := NewGateway(&fakeClient{}, testRun(), msgs, testLog())
+	twentyOne := make([]string, maxRefusedListed+1)
+	for index := range twentyOne {
+		twentyOne[index] = fmt.Sprintf("%d.txt", index+1)
+	}
+	tests := []struct {
+		name    string
+		refused []string
+		want    string
+	}{
+		{name: "one file", refused: []string{"a.txt"}, want: "non envoyé : a.txt"},
+		{name: "two files", refused: []string{"a.txt", "b.txt"}, want: "non envoyés : a.txt, b.txt"},
+		{name: "one hidden", refused: twentyOne, want: "non envoyés : " + strings.Join(twentyOne[:maxRefusedListed], ", ") + " et 1 autre"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := g.refusalNotice(tc.refused); got != tc.want {
+				t.Fatalf("notice = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSendFilesRefusesABidiOverrideName(t *testing.T) {
+	fc := &fakeClient{}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	file := writeOutbound(t, outboxDir(t), "r.txt", "x")
+	file.Name = "a\u202etxt.exe"
+	if _, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", []contracts.OutboundFile{file}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{`send c1 "not sent: \"a\\\\u202etxt.exe\""`}; !slices.Equal(fc.trace, want) {
+		t.Fatalf("trace = %q, want %q", fc.trace, want)
 	}
 }

@@ -618,13 +618,15 @@
   },
   {
     "id": "discord.files.refused",
-    "description": "Line added to a message whose files were not sent; Names lists them",
-    "other": "non envoyé : {{.Names}}"
+    "description": "Line added to a message whose files were not sent; Names lists them, Count is how many",
+    "one": "non envoyé : {{.Names}}",
+    "other": "non envoyés : {{.Names}}"
   },
   {
     "id": "discord.files.refused_more",
     "description": "Line added to a message whose files were not sent, when there are too many to list; Names lists the first ones, Count the others",
-    "other": "non envoyé : {{.Names}} et {{.Count}} autres"
+    "one": "non envoyés : {{.Names}} et {{.Count}} autre",
+    "other": "non envoyés : {{.Names}} et {{.Count}} autres"
   },
   {
     "id": "discord.command.embed",

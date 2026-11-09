@@ -467,8 +467,8 @@ respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 ## Sending files
 
 The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
-attached. The text goes with the first message, and the files go in batches of at most
-ten files and 10 MiB, the Discord limits for a message. The first message is a reply
+attached. A long text is split into parts posted first, and the files go in batches of at most
+ten files and 9 MiB, under the Discord limits for a message so the request envelope fits. The first message is a reply
 when the host gives a reply target, and the rest are plain posts. A part or a batch
 that fails does not stop the next ones, and the error names its files. The text goes
 with the first batch sent, or alone when every batch fails. The id returned is the

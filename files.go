@@ -20,7 +20,7 @@ import (
 
 const (
 	maxFileBytes     int64 = 8 << 20
-	maxBatchBytes    int64 = 10 << 20
+	maxBatchBytes    int64 = 9 << 20
 	filesPerMessage        = 10
 	maxFilesPerSend        = 50
 	maxRefusedListed       = 20
@@ -36,7 +36,7 @@ type openFile struct {
 }
 
 // SendFiles posts text in reply to replyTo in conv, with files attached, at most ten
-// files and 10 MiB to a message. A file that is missing, unreadable, reached through a
+// files and 9 MiB to a message. A file that is missing, unreadable, reached through a
 // symlink, not a regular file, larger than the size limit, badly named, or past the
 // fiftieth, is not sent: its name is listed at the end of the text. A part or a batch
 // that fails does not stop the next ones, and the text goes with the first batch sent,
@@ -108,7 +108,11 @@ func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 }
 
 func validName(name string) bool {
-	return name != "" && utf8.ValidString(name) && !strings.ContainsFunc(name, unicode.IsControl)
+	return name != "" && utf8.ValidString(name) && !strings.ContainsFunc(name, isHiddenRune)
+}
+
+func isHiddenRune(r rune) bool {
+	return unicode.IsControl(r) || unicode.Is(unicode.Cf, r)
 }
 
 func validContentType(contentType string) bool {
@@ -178,7 +182,7 @@ func (g *Gateway) refusalNotice(refused []string) string {
 	if hidden := len(refused) - len(listed); hidden > 0 {
 		return g.msgs.say("discord.files.refused_more", map[string]any{namesArg: names, countArg: hidden})
 	}
-	return g.msgs.say("discord.files.refused", map[string]any{namesArg: names})
+	return g.msgs.say("discord.files.refused", map[string]any{namesArg: names, countArg: len(listed)})
 }
 
 func displayName(name string) string {
