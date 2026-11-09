@@ -469,14 +469,16 @@ respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
 attached. The text goes with the first message, and the files go in batches of at most
 ten files and 10 MiB, the Discord limits for a message. The first message is a reply
-when the host gives a reply target, and the rest are plain posts. A batch that fails
-does not stop the next ones, and the error names its files. The id returned is the
+when the host gives a reply target, and the rest are plain posts. A part or a batch
+that fails does not stop the next ones, and the error names its files. The text goes
+with the first batch sent, or alone when every batch fails. The id returned is the
 first message sent.
 
 A file is not sent when it is missing or unreadable, when its path goes through a
 symlink, when it is not a regular file (a directory, a device, a pipe), when it is
-larger than 8 MiB, when its name is not valid UTF-8 or holds a control character, or
-when it comes after the fiftieth. The file is opened without blocking, then checked
+larger than 8 MiB, when its name is empty, not valid UTF-8 or holds a control
+character, when its content type is not a valid media type, or when it comes after the
+fiftieth. The file is opened without blocking, then checked
 on the descriptor and against its path, which must resolve to itself and to the same
 file. Its content is read up to the limit and no further, and every descriptor is
 closed when the send returns. The names of refused files are listed at the end of the

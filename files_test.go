@@ -15,6 +15,13 @@ import (
 
 const refusedLine = "not sent: "
 
+func outboxDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	requireNoError(t, err)
+	return dir
+}
+
 func writeOutbound(t *testing.T, dir, name, body string) contracts.OutboundFile {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -109,7 +116,7 @@ func TestSendFiles(t *testing.T) {
 			text: "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
 				t.Helper()
-				outside := t.TempDir()
+				outside := outboxDir(t)
 				secret := writeOutbound(t, outside, "key", "secret")
 				requireNoError(t, os.Symlink(outside, filepath.Join(dir, "d")))
 				return []contracts.OutboundFile{{Path: filepath.Join(dir, "d", filepath.Base(secret.Path)), Name: "key"}, writeOutbound(t, dir, "ok.txt", "fine")}
@@ -206,7 +213,7 @@ func TestSendFiles(t *testing.T) {
 			if tc.limit > 0 {
 				g.fileLimit = tc.limit
 			}
-			id, err := g.SendFiles(context.Background(), conv, tc.replyTo, tc.text, tc.setup(t, t.TempDir()))
+			id, err := g.SendFiles(context.Background(), conv, tc.replyTo, tc.text, tc.setup(t, outboxDir(t)))
 			requireNoError(t, err)
 			if id != tc.wantID {
 				t.Fatalf("first id = %q, want %q", id, tc.wantID)
@@ -222,7 +229,7 @@ func TestSendFilesPropagatesClientErrors(t *testing.T) {
 	wantErr := errors.New("discord is down")
 	fc := &fakeClient{filesErr: wantErr}
 	g := NewGateway(fc, testRun(), testMessages(), testLog())
-	file := writeOutbound(t, t.TempDir(), "a.txt", "alpha")
+	file := writeOutbound(t, outboxDir(t), "a.txt", "alpha")
 	_, err := g.SendFiles(context.Background(), contracts.Conversation{ID: "c1"}, "", "here", []contracts.OutboundFile{file})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
@@ -232,7 +239,7 @@ func TestSendFilesPropagatesClientErrors(t *testing.T) {
 func TestSendFilesRefusesFilesPastTheFiftieth(t *testing.T) {
 	fc := &fakeClient{}
 	g := NewGateway(fc, testRun(), testMessages(), testLog())
-	files := writeNumbered(t, t.TempDir(), maxFilesPerSend+2)
+	files := writeNumbered(t, outboxDir(t), maxFilesPerSend+2)
 	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
 	requireNoError(t, err)
 	if len(fc.trace) != maxFilesPerSend/filesPerMessage {
@@ -247,7 +254,7 @@ func TestSendFilesKeepsSendingAfterAFailedBatch(t *testing.T) {
 	wantErr := errors.New("discord is down")
 	fc := &fakeClient{filesErr: wantErr, filesErrAt: 2}
 	g := NewGateway(fc, testRun(), testMessages(), testLog())
-	files := writeNumbered(t, t.TempDir(), 3*filesPerMessage)
+	files := writeNumbered(t, outboxDir(t), 3*filesPerMessage)
 	id, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "here", files)
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
@@ -264,7 +271,7 @@ func TestSendFilesSplitsBatchesByTotalSize(t *testing.T) {
 	fc := &fakeClient{}
 	g := NewGateway(fc, testRun(), testMessages(), testLog())
 	g.batchLimit = 5
-	dir := t.TempDir()
+	dir := outboxDir(t)
 	files := []contracts.OutboundFile{writeOutbound(t, dir, "a.txt", "abc"), writeOutbound(t, dir, "b.txt", "def"), writeOutbound(t, dir, "c.txt", "gh")}
 	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
 	requireNoError(t, err)
@@ -279,11 +286,72 @@ func TestSendFilesListsTwentyRefusedNamesAtMost(t *testing.T) {
 	g := NewGateway(fc, testRun(), testMessages(), testLog())
 	files := make([]contracts.OutboundFile, 0, maxRefusedListed+3)
 	for index := range maxRefusedListed + 3 {
-		files = append(files, contracts.OutboundFile{Path: filepath.Join(t.TempDir(), "missing"), Name: fmt.Sprintf("m%02d", index)})
+		files = append(files, contracts.OutboundFile{Path: filepath.Join(outboxDir(t), "missing"), Name: fmt.Sprintf("m%02d", index)})
 	}
 	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
 	requireNoError(t, err)
 	if len(fc.trace) != 1 || !strings.HasSuffix(fc.trace[0], `m19 and 3 more"`) {
 		t.Fatalf("trace = %q, want one notice naming twenty files and counting three more", fc.trace)
+	}
+}
+
+func TestSendFilesCarriesTheTextToTheNextBatchWhenTheFirstFails(t *testing.T) {
+	wantErr := errors.New("discord is down")
+	fc := &fakeClient{filesErr: wantErr, filesErrAt: 1}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	files := writeNumbered(t, outboxDir(t), filesPerMessage+1)
+	id, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "here", files)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
+	}
+	if want := []string{`send-files c1 "here" [11.txt=11]`}; id != "f2" || !slices.Equal(fc.trace, want) {
+		t.Fatalf("id = %q, trace = %q, want f2 and %q", id, fc.trace, want)
+	}
+}
+
+func TestSendFilesPostsTheTextAloneWhenEveryBatchFails(t *testing.T) {
+	wantErr := errors.New("discord is down")
+	fc := &fakeClient{filesErr: wantErr}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	files := writeNumbered(t, outboxDir(t), 2)
+	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "here", files)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
+	}
+	if want := []string{`send c1 "here"`}; !slices.Equal(fc.trace, want) {
+		t.Fatalf("trace = %q, want %q", fc.trace, want)
+	}
+}
+
+func TestSendFilesRefusesBadlyFormedFiles(t *testing.T) {
+	dir := outboxDir(t)
+	cases := []struct {
+		name string
+		file func() contracts.OutboundFile
+		want string
+	}{
+		{name: "an empty name", file: func() contracts.OutboundFile { f := writeOutbound(t, dir, "e.txt", "x"); f.Name = ""; return f }, want: `\"\"`},
+		{name: "an invalid UTF-8 name", file: func() contracts.OutboundFile {
+			f := writeOutbound(t, dir, "u.txt", "x")
+			f.Name = "u\xff.txt"
+			return f
+		}, want: `\"u\\xff.txt\"`},
+		{name: "an invalid content type", file: func() contracts.OutboundFile {
+			f := writeOutbound(t, dir, "c.txt", "x")
+			f.ContentType = "text/plain; charset"
+			return f
+		}, want: "c.txt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fc := &fakeClient{}
+			g := NewGateway(fc, testRun(), testMessages(), testLog())
+			ok := writeOutbound(t, dir, "ok.txt", "fine")
+			_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", []contracts.OutboundFile{tc.file(), ok})
+			requireNoError(t, err)
+			if want := []string{`send-files c1 "` + refusedLine + tc.want + `" [ok.txt=fine]`}; !slices.Equal(fc.trace, want) {
+				t.Fatalf("trace = %q, want %q", fc.trace, want)
+			}
+		})
 	}
 }

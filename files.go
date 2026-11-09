@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -37,13 +38,14 @@ type openFile struct {
 // SendFiles posts text in reply to replyTo in conv, with files attached, at most ten
 // files and 10 MiB to a message. A file that is missing, unreadable, reached through a
 // symlink, not a regular file, larger than the size limit, badly named, or past the
-// fiftieth, is not sent: its name is listed at the end of the text. A batch that fails
-// does not stop the next ones. It returns the id of the first message sent, and an
+// fiftieth, is not sent: its name is listed at the end of the text. A part or a batch
+// that fails does not stop the next ones, and the text goes with the first batch sent,
+// or alone when none is. It returns the id of the first message sent, and an
 // error that joins every failure. It satisfies contracts.FileSender.
 func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (contracts.MessageID, error) {
-	sorted := g.openFiles(files)
-	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, sorted.refused), sorted.ready)
-	return sent, errors.Join(err, closeFiles(sorted.ready))
+	split := g.openFiles(files)
+	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, split.refused), split.ready)
+	return sent, errors.Join(err, closeFiles(split.ready))
 }
 
 func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, ready []openFile) (contracts.MessageID, error) {
@@ -55,43 +57,43 @@ func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, r
 	if len(parts) > 0 {
 		lead, last = parts[:len(parts)-1], parts[len(parts)-1]
 	}
-	first, err := g.sendParts(ctx, conv, replyTo, lead)
-	if err != nil {
-		return first, err
-	}
+	first, leadErr := g.sendParts(ctx, conv, replyTo, lead)
 	if len(lead) > 0 {
 		replyTo = ""
 	}
 	batched, err := g.sendBatches(ctx, conv, replyTo, last, ready)
-	return keepFirst(first, batched), err
+	return keepFirst(first, batched), errors.Join(leadErr, err)
 }
 
-type sortedFiles struct {
+type splitFiles struct {
 	ready   []openFile
 	refused []string
 }
 
-func (g *Gateway) openFiles(files []contracts.OutboundFile) sortedFiles {
-	sorted := sortedFiles{ready: make([]openFile, 0, len(files))}
+func (g *Gateway) openFiles(files []contracts.OutboundFile) splitFiles {
+	split := splitFiles{ready: make([]openFile, 0, len(files))}
 	for index, out := range files {
 		if index >= maxFilesPerSend {
-			sorted.refused = append(sorted.refused, out.Name)
+			split.refused = append(split.refused, out.Name)
 			continue
 		}
 		opened, err := openOutbound(out, g.fileLimit)
 		if err != nil {
 			g.log.Warn("outbound file not sent", "file", out.Name, "err", err)
-			sorted.refused = append(sorted.refused, out.Name)
+			split.refused = append(split.refused, out.Name)
 			continue
 		}
-		sorted.ready = append(sorted.ready, opened)
+		split.ready = append(split.ready, opened)
 	}
-	return sorted
+	return split
 }
 
 func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
-	if !utf8.ValidString(out.Name) || strings.ContainsFunc(out.Name, unicode.IsControl) {
+	if !validName(out.Name) {
 		return openFile{}, fmt.Errorf("%w: %q is not a valid file name", errFileRefused, out.Name)
+	}
+	if !validContentType(out.ContentType) {
+		return openFile{}, fmt.Errorf("%w: %q has an invalid content type %q", errFileRefused, out.Name, out.ContentType)
 	}
 	src, err := os.OpenFile(out.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -103,6 +105,21 @@ func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 	}
 	content := io.LimitReader(src, limit)
 	return openFile{file: dctl.File{Name: out.Name, Content: content, ContentType: out.ContentType}, src: src, size: size}, nil
+}
+
+func validName(name string) bool {
+	return name != "" && utf8.ValidString(name) && !strings.ContainsFunc(name, unicode.IsControl)
+}
+
+func validContentType(contentType string) bool {
+	if contentType == "" {
+		return true
+	}
+	if strings.ContainsFunc(contentType, unicode.IsControl) {
+		return false
+	}
+	_, _, err := mime.ParseMediaType(contentType)
+	return err == nil
 }
 
 func checkOpened(src *os.File, out contracts.OutboundFile, limit int64) (int64, error) {
@@ -165,7 +182,7 @@ func (g *Gateway) refusalNotice(refused []string) string {
 }
 
 func displayName(name string) string {
-	if utf8.ValidString(name) && !strings.ContainsFunc(name, unicode.IsControl) {
+	if validName(name) {
 		return name
 	}
 	return strconv.QuoteToASCII(name)
@@ -194,20 +211,20 @@ func (g *Gateway) sendText(ctx context.Context, conv contracts.Conversation, rep
 func (g *Gateway) sendBatches(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []openFile) (contracts.MessageID, error) {
 	var first contracts.MessageID
 	var failed error
-	for index, batch := range batchFiles(files, g.batchLimit) {
-		content := ""
-		if index == 0 {
-			content = text
-		}
-		sentID, err := g.sendFileBatch(ctx, conv, replyTo, content, batch)
+	for _, batch := range batchFiles(files, g.batchLimit) {
+		sentID, err := g.sendFileBatch(ctx, conv, replyTo, text, batch)
 		if err != nil {
 			failed = errors.Join(failed, err)
 			continue
 		}
 		first = keepFirst(first, sentID)
-		replyTo = ""
+		replyTo, text = "", ""
 	}
-	return first, failed
+	if text == "" {
+		return first, failed
+	}
+	sentID, err := g.sendParts(ctx, conv, replyTo, []string{text})
+	return keepFirst(first, sentID), errors.Join(failed, err)
 }
 
 func batchFiles(files []openFile, limit int64) [][]openFile {
