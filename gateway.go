@@ -16,6 +16,8 @@ const gatewayKind = "discord"
 type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
+	SendFiles(ctx context.Context, channelID, content string, files []dctl.File) (*dctl.Message, error)
+	ReplyFiles(ctx context.Context, channelID, replyTo, content string, files []dctl.File) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
@@ -215,6 +217,14 @@ func (d discordClient) Send(ctx context.Context, channelID, content string) (*dc
 
 func (d discordClient) Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error) {
 	return d.c.Messages().Reply(ctx, channelID, replyTo, content)
+}
+
+func (d discordClient) SendFiles(ctx context.Context, channelID, content string, files []dctl.File) (*dctl.Message, error) {
+	return d.c.Messages().SendFiles(ctx, channelID, content, files)
+}
+
+func (d discordClient) ReplyFiles(ctx context.Context, channelID, replyTo, content string, files []dctl.File) (*dctl.Message, error) {
+	return d.c.Messages().ReplyFiles(ctx, channelID, replyTo, content, files)
 }
 
 func (d discordClient) React(ctx context.Context, channelID, messageID, emoji string) error {

@@ -3,6 +3,8 @@ package discord
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
@@ -50,6 +52,10 @@ type fakeClient struct {
 	deleted         []string
 	deletedChannels []string
 	deleteChanErr   error
+
+	trace     []string
+	fileSends int
+	filesErr  error
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -57,12 +63,50 @@ func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message,
 		return nil, f.sendErr
 	}
 	f.sent = append(f.sent, outMsg{ch, content})
+	f.trace = append(f.trace, fmt.Sprintf("send %s %q", ch, content))
 	return &dctl.Message{ID: "m1"}, nil
 }
 
 func (f *fakeClient) Reply(_ context.Context, ch, to, content string) (*dctl.Message, error) {
 	f.replied = append(f.replied, outReply{ch, to, content})
+	f.trace = append(f.trace, fmt.Sprintf("reply %s %s %q", ch, to, content))
 	return &dctl.Message{ID: "m2"}, nil
+}
+
+func (f *fakeClient) SendFiles(_ context.Context, ch, content string, files []dctl.File) (*dctl.Message, error) {
+	return f.sendFiles(ch, "", content, files)
+}
+
+func (f *fakeClient) ReplyFiles(_ context.Context, ch, to, content string, files []dctl.File) (*dctl.Message, error) {
+	return f.sendFiles(ch, to, content, files)
+}
+
+func (f *fakeClient) sendFiles(ch, to, content string, files []dctl.File) (*dctl.Message, error) {
+	if f.filesErr != nil {
+		return nil, f.filesErr
+	}
+	f.fileSends++
+	line, err := describeFileSend(ch, to, content, files)
+	if err != nil {
+		return nil, err
+	}
+	f.trace = append(f.trace, line)
+	return &dctl.Message{ID: fmt.Sprintf("f%d", f.fileSends)}, nil
+}
+
+func describeFileSend(ch, to, content string, files []dctl.File) (string, error) {
+	named := make([]string, 0, len(files))
+	for _, file := range files {
+		body, err := io.ReadAll(file.Content)
+		if err != nil {
+			return "", err
+		}
+		named = append(named, file.Name+"="+string(body))
+	}
+	if to == "" {
+		return fmt.Sprintf("send-files %s %q [%s]", ch, content, strings.Join(named, " ")), nil
+	}
+	return fmt.Sprintf("reply-files %s %s %q [%s]", ch, to, content, strings.Join(named, " ")), nil
 }
 
 func (f *fakeClient) React(_ context.Context, ch, msg, emoji string) error {
