@@ -105,6 +105,31 @@ func TestSendFiles(t *testing.T) {
 			wantID: "f1",
 		},
 		{
+			name: "a file under a symlinked directory is refused",
+			text: "here",
+			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
+				outside := t.TempDir()
+				secret := writeOutbound(t, outside, "key", "secret")
+				requireNoError(t, os.Symlink(outside, filepath.Join(dir, "d")))
+				return []contracts.OutboundFile{{Path: filepath.Join(dir, "d", filepath.Base(secret.Path)), Name: "key"}, writeOutbound(t, dir, "ok.txt", "fine")}
+			},
+			want:   []string{`send-files c1 "here\n` + refusedLine + `key" [ok.txt=fine]`},
+			wantID: "f1",
+		},
+		{
+			name: "a name with a line break is refused",
+			text: "here",
+			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
+				bad := writeOutbound(t, dir, "bad.txt", "x")
+				bad.Name = "bad\n.txt"
+				return []contracts.OutboundFile{bad, writeOutbound(t, dir, "ok.txt", "fine")}
+			},
+			want:   []string{`send-files c1 "here\n` + refusedLine + `bad\n.txt" [ok.txt=fine]`},
+			wantID: "f1",
+		},
+		{
 			name: "a directory is refused",
 			text: "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
@@ -201,5 +226,19 @@ func TestSendFilesPropagatesClientErrors(t *testing.T) {
 	_, err := g.SendFiles(context.Background(), contracts.Conversation{ID: "c1"}, "", "here", []contracts.OutboundFile{file})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
+	}
+}
+
+func TestSendFilesRefusesFilesPastTheFiftieth(t *testing.T) {
+	fc := &fakeClient{}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	files := writeNumbered(t, t.TempDir(), maxFilesPerSend+2)
+	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
+	requireNoError(t, err)
+	if len(fc.trace) != maxFilesPerSend/filesPerMessage {
+		t.Fatalf("messages = %d, want %d", len(fc.trace), maxFilesPerSend/filesPerMessage)
+	}
+	if want := refusedLine + "51.txt, 52.txt"; !strings.Contains(fc.trace[0], want) {
+		t.Fatalf("first message = %q, want it to list %q", fc.trace[0], want)
 	}
 }

@@ -472,12 +472,13 @@ since Discord takes ten attachments to a message. The first message is a reply w
 the host gives a reply target, and the rest are plain posts. The id returned is the
 first message sent.
 
-A file is not sent when it is not a regular file (a symlink, a directory, a device) or
-when it is larger than 8 MiB. Each file is checked on the descriptor it was opened
-with, not on its path, and every descriptor is closed when the send returns. The name
-of a refused file is listed at the end of the text, in the language of the gateway. A
-file that cannot be stat'ed or opened at all fails the whole send with its error,
-before anything is posted.
+A file is not sent when it is missing or unreadable, when its path goes through a
+symlink, when it is not a regular file (a directory, a device), when it is larger than
+8 MiB, when its name holds a control character, or when it comes after the fiftieth.
+The file opened must be the one checked on its path, its content is read up to the
+limit and no further, and every descriptor is closed when the send returns. The name
+of a refused file is listed at the end of the text, in the language of the gateway,
+and the rest of the message is still sent.
 
 ## Health and limits
 

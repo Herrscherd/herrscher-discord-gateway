@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -14,6 +18,7 @@ import (
 const (
 	maxFileBytes    int64 = 8 << 20
 	filesPerMessage       = 10
+	maxFilesPerSend       = 50
 	namesArg              = "Names"
 )
 
@@ -25,10 +30,10 @@ type openFile struct {
 }
 
 // SendFiles posts text in reply to replyTo in conv, with files attached, at most ten
-// files to a message. A file that is not a regular file, or that is larger than the
-// size limit, or that cannot be read, is not sent: its name is listed at the end
-// of the text. It returns the
-// id of the first message sent, and an error that wraps the failure. It satisfies
+// files to a message. A file that is missing, unreadable, reached through a symlink,
+// not a regular file, larger than the size limit, badly named, or past the fiftieth,
+// is not sent: its name is listed at the end of the text. It returns the id of the
+// first message sent, and an error that wraps the failure. It satisfies
 // contracts.FileSender.
 func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (contracts.MessageID, error) {
 	sorted := g.openFiles(files)
@@ -63,7 +68,11 @@ type sortedFiles struct {
 
 func (g *Gateway) openFiles(files []contracts.OutboundFile) sortedFiles {
 	sorted := sortedFiles{ready: make([]openFile, 0, len(files))}
-	for _, out := range files {
+	for index, out := range files {
+		if index >= maxFilesPerSend {
+			sorted.refused = append(sorted.refused, out.Name)
+			continue
+		}
 		opened, err := openOutbound(out, g.fileLimit)
 		if err != nil {
 			g.log.Warn("outbound file not sent", "file", out.Name, "err", err)
@@ -76,6 +85,16 @@ func (g *Gateway) openFiles(files []contracts.OutboundFile) sortedFiles {
 }
 
 func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
+	if !utf8.ValidString(out.Name) || strings.ContainsFunc(out.Name, unicode.IsControl) {
+		return openFile{}, fmt.Errorf("%w: %q is not a valid file name", errFileRefused, out.Name)
+	}
+	resolved, err := filepath.EvalSymlinks(out.Path)
+	if err != nil {
+		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
+	}
+	if resolved != filepath.Clean(out.Path) {
+		return openFile{}, fmt.Errorf("%w: %q is reached through a symlink", errFileRefused, out.Name)
+	}
 	info, err := os.Lstat(out.Path)
 	if err != nil {
 		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
@@ -87,19 +106,20 @@ func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 	if err != nil {
 		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
 	}
-	if err = checkOpened(src, out.Name, limit); err != nil {
+	if err = checkOpened(src, info, out.Name, limit); err != nil {
 		return openFile{}, errors.Join(err, src.Close())
 	}
-	return openFile{file: dctl.File{Name: out.Name, Content: src, ContentType: out.ContentType}, src: src}, nil
+	content := io.LimitReader(src, limit)
+	return openFile{file: dctl.File{Name: out.Name, Content: content, ContentType: out.ContentType}, src: src}, nil
 }
 
-func checkOpened(src *os.File, name string, limit int64) error {
+func checkOpened(src *os.File, checked os.FileInfo, name string, limit int64) error {
 	info, err := src.Stat()
 	if err != nil {
 		return fmt.Errorf("%w: %q: %w", errFileRefused, name, err)
 	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("%w: %q is not a regular file", errFileRefused, name)
+	if !info.Mode().IsRegular() || !os.SameFile(checked, info) {
+		return fmt.Errorf("%w: %q changed while it was opened", errFileRefused, name)
 	}
 	if info.Size() > limit {
 		return fmt.Errorf("%w: %q is %d bytes, the limit is %d", errFileRefused, name, info.Size(), limit)
