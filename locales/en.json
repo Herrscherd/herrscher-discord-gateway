@@ -617,6 +617,11 @@
     "other": "deleted"
   },
   {
+    "id": "discord.files.refused",
+    "description": "Line added to a message whose files were not sent, because they are too large or not regular files; Names lists them",
+    "other": "not sent, too large or not a regular file: {{.Names}}"
+  },
+  {
     "id": "discord.command.embed",
     "description": "Stand-in for a message that has only an embed and no text in the channel read output",
     "other": "(embed)"

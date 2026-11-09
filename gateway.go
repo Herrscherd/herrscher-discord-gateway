@@ -39,6 +39,7 @@ var (
 	_ contracts.RoutedEventSink        = (*Gateway)(nil)
 	_ contracts.MessageEditor          = (*Gateway)(nil)
 	_ contracts.NoticeSink             = (*Gateway)(nil)
+	_ contracts.FileSender             = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
@@ -54,8 +55,9 @@ type Gateway struct {
 	msgs  messages
 	langs sessionLanguages
 
-	deletes bool
-	selfID  string
+	deletes   bool
+	selfID    string
+	fileLimit int64
 
 	slashMu      sync.Mutex
 	slashClosed  bool
@@ -66,7 +68,7 @@ type Gateway struct {
 // lifetime run, renders its notices with msgs and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
 func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gateway {
-	return &Gateway{c: c, run: run, msgs: msgs, log: log}
+	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes}
 }
 
 // BindSessionControl receives the daemon's runtime session controller and starts
