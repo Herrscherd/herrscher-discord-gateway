@@ -16,6 +16,8 @@ const gatewayKind = "discord"
 type client interface {
 	Send(ctx context.Context, channelID, content string) (*dctl.Message, error)
 	Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error)
+	SendFiles(ctx context.Context, channelID, content string, files []dctl.File) (*dctl.Message, error)
+	ReplyFiles(ctx context.Context, channelID, replyTo, content string, files []dctl.File) (*dctl.Message, error)
 	React(ctx context.Context, channelID, messageID, emoji string) error
 	Unreact(ctx context.Context, channelID, messageID, emoji string) error
 	SendSelectMenu(ctx context.Context, channelID, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error)
@@ -37,6 +39,7 @@ var (
 	_ contracts.RoutedEventSink        = (*Gateway)(nil)
 	_ contracts.MessageEditor          = (*Gateway)(nil)
 	_ contracts.NoticeSink             = (*Gateway)(nil)
+	_ contracts.FileSender             = (*Gateway)(nil)
 )
 
 // Gateway adapts the Discord REST client to contracts.Gateway. When built from
@@ -52,8 +55,10 @@ type Gateway struct {
 	msgs  messages
 	langs sessionLanguages
 
-	deletes bool
-	selfID  string
+	deletes    bool
+	selfID     string
+	fileLimit  int64
+	batchLimit int64
 
 	slashMu      sync.Mutex
 	slashClosed  bool
@@ -64,7 +69,7 @@ type Gateway struct {
 // lifetime run, renders its notices with msgs and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
 func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gateway {
-	return &Gateway{c: c, run: run, msgs: msgs, log: log}
+	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes, batchLimit: maxBatchBytes}
 }
 
 // BindSessionControl receives the daemon's runtime session controller and starts
@@ -215,6 +220,14 @@ func (d discordClient) Send(ctx context.Context, channelID, content string) (*dc
 
 func (d discordClient) Reply(ctx context.Context, channelID, replyTo, content string) (*dctl.Message, error) {
 	return d.c.Messages().Reply(ctx, channelID, replyTo, content)
+}
+
+func (d discordClient) SendFiles(ctx context.Context, channelID, content string, files []dctl.File) (*dctl.Message, error) {
+	return d.c.Messages().SendFiles(ctx, channelID, content, files)
+}
+
+func (d discordClient) ReplyFiles(ctx context.Context, channelID, replyTo, content string, files []dctl.File) (*dctl.Message, error) {
+	return d.c.Messages().ReplyFiles(ctx, channelID, replyTo, content, files)
 }
 
 func (d discordClient) React(ctx context.Context, channelID, messageID, emoji string) error {

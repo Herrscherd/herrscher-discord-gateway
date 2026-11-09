@@ -464,6 +464,31 @@ A non-recoverable close is treated as **fatal**. 4004 (bad token) and 4010 to 40
 (bad shard, API version, intents) stop the loop and log once, rather than
 respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 
+## Sending files
+
+The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
+attached. A long text is split into parts posted first, and the files go in batches of at most
+ten files and 9 MiB, under the Discord limits for a message so the request envelope fits. The first message is a reply
+when the host gives a reply target, and the rest are plain posts. A part or a batch
+that fails does not stop the next ones, and the error names its files. The text goes
+with the first batch sent, or alone when every batch fails. The id returned is the
+first message sent.
+
+A file is not sent when it is missing or unreadable, when its path goes through a
+symlink, when it is not a regular file (a directory, a device, a pipe), when it is
+larger than 8 MiB, when its name is empty, not valid UTF-8 or holds a control
+or format character (a bidi override, a zero-width character), when its content type is not a valid media type, or when it comes after the
+fiftieth. The file is opened without blocking, then checked
+on the descriptor and against its path, which must resolve to itself and to the same
+file. Its content is read up to the limit and no further, and every descriptor is
+closed when the send returns. The names of refused files are listed at the end of the
+text, in the language of the gateway, twenty at most with a count of the others, a
+badly formed name quoted. The rest of the message is still sent.
+
+An outbox under a symlinked directory (`/var` on macOS, for example) has every file
+refused: give the gateway the resolved path. These checks guard against mistakes, not
+against a process of the same user, which can read the files anyway.
+
 ## Health and limits
 
 The plugin sets `Plugin.Probe`, so `herrscher health` can check the bot without

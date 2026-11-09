@@ -617,6 +617,17 @@
     "other": "deleted"
   },
   {
+    "id": "discord.files.refused",
+    "description": "Line added to a message whose files were not sent; Names lists them, Count is how many",
+    "one": "not sent: {{.Names}}",
+    "other": "not sent: {{.Names}}"
+  },
+  {
+    "id": "discord.files.refused_more",
+    "description": "Line added to a message whose files were not sent, when there are too many to list; Names lists the first ones, Count the others",
+    "other": "not sent: {{.Names}} and {{.Count}} more"
+  },
+  {
     "id": "discord.command.embed",
     "description": "Stand-in for a message that has only an embed and no text in the channel read output",
     "other": "(embed)"

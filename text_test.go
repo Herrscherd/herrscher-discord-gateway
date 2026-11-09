@@ -79,6 +79,8 @@ func declaredMessages() map[string][]string {
 		"discord.result.unreacted":                 {},
 		"discord.result.edited":                    {},
 		"discord.result.deleted":                   {},
+		"discord.files.refused":                    {"Names"},
+		"discord.files.refused_more":               {"Names", "Count"},
 		"discord.command.embed":                    {},
 		"discord.undelivered":                      {},
 		"discord.repo.none":                        {},
