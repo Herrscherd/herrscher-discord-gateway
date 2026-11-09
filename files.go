@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"unicode"
 	"unicode/utf8"
 
@@ -16,10 +18,12 @@ import (
 )
 
 const (
-	maxFileBytes    int64 = 8 << 20
-	filesPerMessage       = 10
-	maxFilesPerSend       = 50
-	namesArg              = "Names"
+	maxFileBytes     int64 = 8 << 20
+	maxBatchBytes    int64 = 10 << 20
+	filesPerMessage        = 10
+	maxFilesPerSend        = 50
+	maxRefusedListed       = 20
+	namesArg               = "Names"
 )
 
 var errFileRefused = errors.New("file not sent")
@@ -27,14 +31,15 @@ var errFileRefused = errors.New("file not sent")
 type openFile struct {
 	file dctl.File
 	src  *os.File
+	size int64
 }
 
 // SendFiles posts text in reply to replyTo in conv, with files attached, at most ten
-// files to a message. A file that is missing, unreadable, reached through a symlink,
-// not a regular file, larger than the size limit, badly named, or past the fiftieth,
-// is not sent: its name is listed at the end of the text. It returns the id of the
-// first message sent, and an error that wraps the failure. It satisfies
-// contracts.FileSender.
+// files and 10 MiB to a message. A file that is missing, unreadable, reached through a
+// symlink, not a regular file, larger than the size limit, badly named, or past the
+// fiftieth, is not sent: its name is listed at the end of the text. A batch that fails
+// does not stop the next ones. It returns the id of the first message sent, and an
+// error that joins every failure. It satisfies contracts.FileSender.
 func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (contracts.MessageID, error) {
 	sorted := g.openFiles(files)
 	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, sorted.refused), sorted.ready)
@@ -88,43 +93,44 @@ func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 	if !utf8.ValidString(out.Name) || strings.ContainsFunc(out.Name, unicode.IsControl) {
 		return openFile{}, fmt.Errorf("%w: %q is not a valid file name", errFileRefused, out.Name)
 	}
-	resolved, err := filepath.EvalSymlinks(out.Path)
+	src, err := os.OpenFile(out.Path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
 	}
-	if resolved != filepath.Clean(out.Path) {
-		return openFile{}, fmt.Errorf("%w: %q is reached through a symlink", errFileRefused, out.Name)
-	}
-	info, err := os.Lstat(out.Path)
+	size, err := checkOpened(src, out, limit)
 	if err != nil {
-		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
-	}
-	if !info.Mode().IsRegular() {
-		return openFile{}, fmt.Errorf("%w: %q is not a regular file", errFileRefused, out.Name)
-	}
-	src, err := os.Open(out.Path)
-	if err != nil {
-		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
-	}
-	if err = checkOpened(src, info, out.Name, limit); err != nil {
 		return openFile{}, errors.Join(err, src.Close())
 	}
 	content := io.LimitReader(src, limit)
-	return openFile{file: dctl.File{Name: out.Name, Content: content, ContentType: out.ContentType}, src: src}, nil
+	return openFile{file: dctl.File{Name: out.Name, Content: content, ContentType: out.ContentType}, src: src, size: size}, nil
 }
 
-func checkOpened(src *os.File, checked os.FileInfo, name string, limit int64) error {
-	info, err := src.Stat()
+func checkOpened(src *os.File, out contracts.OutboundFile, limit int64) (int64, error) {
+	opened, err := src.Stat()
 	if err != nil {
-		return fmt.Errorf("%w: %q: %w", errFileRefused, name, err)
+		return 0, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
 	}
-	if !info.Mode().IsRegular() || !os.SameFile(checked, info) {
-		return fmt.Errorf("%w: %q changed while it was opened", errFileRefused, name)
+	if !opened.Mode().IsRegular() {
+		return 0, fmt.Errorf("%w: %q is not a regular file", errFileRefused, out.Name)
 	}
-	if info.Size() > limit {
-		return fmt.Errorf("%w: %q is %d bytes, the limit is %d", errFileRefused, name, info.Size(), limit)
+	if opened.Size() > limit {
+		return 0, fmt.Errorf("%w: %q is %d bytes, the limit is %d", errFileRefused, out.Name, opened.Size(), limit)
 	}
-	return nil
+	resolved, err := filepath.EvalSymlinks(out.Path)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
+	}
+	if resolved != filepath.Clean(out.Path) {
+		return 0, fmt.Errorf("%w: %q is reached through a symlink", errFileRefused, out.Name)
+	}
+	onPath, err := os.Lstat(out.Path)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
+	}
+	if !os.SameFile(opened, onPath) {
+		return 0, fmt.Errorf("%w: %q changed while it was opened", errFileRefused, out.Name)
+	}
+	return opened.Size(), nil
 }
 
 func closeFiles(opened []openFile) error {
@@ -139,11 +145,30 @@ func (g *Gateway) withRefusals(text string, refused []string) string {
 	if len(refused) == 0 {
 		return text
 	}
-	notice := g.msgs.say("discord.files.refused", map[string]any{namesArg: strings.Join(refused, ", ")})
+	notice := g.refusalNotice(refused)
 	if text == "" {
 		return notice
 	}
 	return text + "\n" + notice
+}
+
+func (g *Gateway) refusalNotice(refused []string) string {
+	listed := make([]string, 0, min(len(refused), maxRefusedListed))
+	for _, name := range refused[:min(len(refused), maxRefusedListed)] {
+		listed = append(listed, displayName(name))
+	}
+	names := strings.Join(listed, ", ")
+	if hidden := len(refused) - len(listed); hidden > 0 {
+		return g.msgs.say("discord.files.refused_more", map[string]any{namesArg: names, countArg: hidden})
+	}
+	return g.msgs.say("discord.files.refused", map[string]any{namesArg: names})
+}
+
+func displayName(name string) string {
+	if utf8.ValidString(name) && !strings.ContainsFunc(name, unicode.IsControl) {
+		return name
+	}
+	return strconv.QuoteToASCII(name)
 }
 
 func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
@@ -168,20 +193,39 @@ func (g *Gateway) sendText(ctx context.Context, conv contracts.Conversation, rep
 
 func (g *Gateway) sendBatches(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []openFile) (contracts.MessageID, error) {
 	var first contracts.MessageID
-	for start := 0; start < len(files); start += filesPerMessage {
+	var failed error
+	for index, batch := range batchFiles(files, g.batchLimit) {
 		content := ""
-		if start == 0 {
+		if index == 0 {
 			content = text
 		}
-		end := min(start+filesPerMessage, len(files))
-		sentID, err := g.sendFileBatch(ctx, conv, replyTo, content, files[start:end])
+		sentID, err := g.sendFileBatch(ctx, conv, replyTo, content, batch)
 		if err != nil {
-			return first, err
+			failed = errors.Join(failed, err)
+			continue
 		}
 		first = keepFirst(first, sentID)
 		replyTo = ""
 	}
-	return first, nil
+	return first, failed
+}
+
+func batchFiles(files []openFile, limit int64) [][]openFile {
+	var batches [][]openFile
+	var current []openFile
+	var size int64
+	for _, file := range files {
+		if len(current) == filesPerMessage || (len(current) > 0 && size+file.size > limit) {
+			batches = append(batches, current)
+			current, size = nil, 0
+		}
+		current = append(current, file)
+		size += file.size
+	}
+	if len(current) > 0 {
+		batches = append(batches, current)
+	}
+	return batches
 }
 
 func (g *Gateway) sendFileBatch(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, batch []openFile) (contracts.MessageID, error) {
@@ -197,7 +241,7 @@ func (g *Gateway) sendFileBatch(ctx context.Context, conv contracts.Conversation
 		sent, err = g.c.ReplyFiles(ctx, conv.ID, string(replyTo), text, files)
 	}
 	if err != nil {
-		return msgID(sent), fmt.Errorf("discord send files: %w", err)
+		return msgID(sent), fmt.Errorf("discord send files %s: %w", batchNames(batch), err)
 	}
 	return msgID(sent), nil
 }
@@ -207,4 +251,12 @@ func keepFirst(first, next contracts.MessageID) contracts.MessageID {
 		return first
 	}
 	return next
+}
+
+func batchNames(batch []openFile) string {
+	names := make([]string, 0, len(batch))
+	for _, opened := range batch {
+		names = append(names, opened.file.Name)
+	}
+	return strings.Join(names, ", ")
 }

@@ -467,18 +467,25 @@ respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 ## Sending files
 
 The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
-attached. The text goes with the first message, and the files go in batches of ten,
-since Discord takes ten attachments to a message. The first message is a reply when
-the host gives a reply target, and the rest are plain posts. The id returned is the
+attached. The text goes with the first message, and the files go in batches of at most
+ten files and 10 MiB, the Discord limits for a message. The first message is a reply
+when the host gives a reply target, and the rest are plain posts. A batch that fails
+does not stop the next ones, and the error names its files. The id returned is the
 first message sent.
 
 A file is not sent when it is missing or unreadable, when its path goes through a
-symlink, when it is not a regular file (a directory, a device), when it is larger than
-8 MiB, when its name holds a control character, or when it comes after the fiftieth.
-The file opened must be the one checked on its path, its content is read up to the
-limit and no further, and every descriptor is closed when the send returns. The name
-of a refused file is listed at the end of the text, in the language of the gateway,
-and the rest of the message is still sent.
+symlink, when it is not a regular file (a directory, a device, a pipe), when it is
+larger than 8 MiB, when its name is not valid UTF-8 or holds a control character, or
+when it comes after the fiftieth. The file is opened without blocking, then checked
+on the descriptor and against its path, which must resolve to itself and to the same
+file. Its content is read up to the limit and no further, and every descriptor is
+closed when the send returns. The names of refused files are listed at the end of the
+text, in the language of the gateway, twenty at most with a count of the others, a
+badly formed name quoted. The rest of the message is still sent.
+
+An outbox under a symlinked directory (`/var` on macOS, for example) has every file
+refused: give the gateway the resolved path. These checks guard against mistakes, not
+against a process of the same user, which can read the files anyway.
 
 ## Health and limits
 

@@ -13,7 +13,7 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-const refusedLine = "not sent, too large, unreadable or not a regular file: "
+const refusedLine = "not sent: "
 
 func writeOutbound(t *testing.T, dir, name, body string) contracts.OutboundFile {
 	t.Helper()
@@ -126,7 +126,7 @@ func TestSendFiles(t *testing.T) {
 				bad.Name = "bad\n.txt"
 				return []contracts.OutboundFile{bad, writeOutbound(t, dir, "ok.txt", "fine")}
 			},
-			want:   []string{`send-files c1 "here\n` + refusedLine + `bad\n.txt" [ok.txt=fine]`},
+			want:   []string{`send-files c1 "here\n` + refusedLine + `\"bad\\n.txt\"" [ok.txt=fine]`},
 			wantID: "f1",
 		},
 		{
@@ -240,5 +240,50 @@ func TestSendFilesRefusesFilesPastTheFiftieth(t *testing.T) {
 	}
 	if want := refusedLine + "51.txt, 52.txt"; !strings.Contains(fc.trace[0], want) {
 		t.Fatalf("first message = %q, want it to list %q", fc.trace[0], want)
+	}
+}
+
+func TestSendFilesKeepsSendingAfterAFailedBatch(t *testing.T) {
+	wantErr := errors.New("discord is down")
+	fc := &fakeClient{filesErr: wantErr, filesErrAt: 2}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	files := writeNumbered(t, t.TempDir(), 3*filesPerMessage)
+	id, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "here", files)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
+	}
+	if !strings.Contains(err.Error(), "11.txt") {
+		t.Fatalf("SendFiles error = %v, want it to name the files not sent", err)
+	}
+	if id != "f1" || len(fc.trace) != 2 {
+		t.Fatalf("id = %q, messages = %d, want f1 and the first and third batches", id, len(fc.trace))
+	}
+}
+
+func TestSendFilesSplitsBatchesByTotalSize(t *testing.T) {
+	fc := &fakeClient{}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	g.batchLimit = 5
+	dir := t.TempDir()
+	files := []contracts.OutboundFile{writeOutbound(t, dir, "a.txt", "abc"), writeOutbound(t, dir, "b.txt", "def"), writeOutbound(t, dir, "c.txt", "gh")}
+	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
+	requireNoError(t, err)
+	want := []string{`send-files c1 "" [a.txt=abc]`, `send-files c1 "" [b.txt=def c.txt=gh]`}
+	if !slices.Equal(fc.trace, want) {
+		t.Fatalf("trace = %q, want %q", fc.trace, want)
+	}
+}
+
+func TestSendFilesListsTwentyRefusedNamesAtMost(t *testing.T) {
+	fc := &fakeClient{}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	files := make([]contracts.OutboundFile, 0, maxRefusedListed+3)
+	for index := range maxRefusedListed + 3 {
+		files = append(files, contracts.OutboundFile{Path: filepath.Join(t.TempDir(), "missing"), Name: fmt.Sprintf("m%02d", index)})
+	}
+	_, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", "", files)
+	requireNoError(t, err)
+	if len(fc.trace) != 1 || !strings.HasSuffix(fc.trace[0], `m19 and 3 more"`) {
+		t.Fatalf("trace = %q, want one notice naming twenty files and counting three more", fc.trace)
 	}
 }

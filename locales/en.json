@@ -618,8 +618,13 @@
   },
   {
     "id": "discord.files.refused",
-    "description": "Line added to a message whose files were not sent, because they are too large, unreadable or not regular files; Names lists them",
-    "other": "not sent, too large, unreadable or not a regular file: {{.Names}}"
+    "description": "Line added to a message whose files were not sent; Names lists them",
+    "other": "not sent: {{.Names}}"
+  },
+  {
+    "id": "discord.files.refused_more",
+    "description": "Line added to a message whose files were not sent, when there are too many to list; Names lists the first ones, Count the others",
+    "other": "not sent: {{.Names}} and {{.Count}} more"
   },
   {
     "id": "discord.command.embed",

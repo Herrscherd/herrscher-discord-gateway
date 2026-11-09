@@ -55,9 +55,10 @@ type Gateway struct {
 	msgs  messages
 	langs sessionLanguages
 
-	deletes   bool
-	selfID    string
-	fileLimit int64
+	deletes    bool
+	selfID     string
+	fileLimit  int64
+	batchLimit int64
 
 	slashMu      sync.Mutex
 	slashClosed  bool
@@ -68,7 +69,7 @@ type Gateway struct {
 // lifetime run, renders its notices with msgs and logs to log. It starts no work: that begins when the host calls
 // BindSessionControl.
 func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gateway {
-	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes}
+	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes, batchLimit: maxBatchBytes}
 }
 
 // BindSessionControl receives the daemon's runtime session controller and starts

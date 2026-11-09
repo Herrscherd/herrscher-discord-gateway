@@ -53,9 +53,10 @@ type fakeClient struct {
 	deletedChannels []string
 	deleteChanErr   error
 
-	trace     []string
-	fileSends int
-	filesErr  error
+	trace      []string
+	fileSends  int
+	filesErr   error
+	filesErrAt int
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
@@ -82,10 +83,10 @@ func (f *fakeClient) ReplyFiles(_ context.Context, ch, to, content string, files
 }
 
 func (f *fakeClient) sendFiles(ch, to, content string, files []dctl.File) (*dctl.Message, error) {
-	if f.filesErr != nil {
+	f.fileSends++
+	if f.filesErr != nil && (f.filesErrAt == 0 || f.filesErrAt == f.fileSends) {
 		return nil, f.filesErr
 	}
-	f.fileSends++
 	line, err := describeFileSend(ch, to, content, files)
 	if err != nil {
 		return nil, err
