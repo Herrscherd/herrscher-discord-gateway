@@ -283,5 +283,15 @@
     "id": "health.remedy_env_restart",
     "description": "Head of the remedy that asks to add a variable and restart the service",
     "other": "🔧"
+  },
+  {
+    "id": "account.fallback",
+    "description": "Head of the notice that a new session starts on another account, whose quota is spent",
+    "other": "🔀"
+  },
+  {
+    "id": "account.no_quota",
+    "description": "Head of the notice that no account has quota left",
+    "other": "⛔"
   }
 ]

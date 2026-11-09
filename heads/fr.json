@@ -283,5 +283,15 @@
     "id": "health.remedy_env_restart",
     "description": "Tête du remède : ajouter une variable puis redémarrer le service",
     "other": "🔧"
+  },
+  {
+    "id": "account.fallback",
+    "description": "Tête de la notice : une nouvelle session démarre sur un autre compte, dont le quota est épuisé",
+    "other": "🔀"
+  },
+  {
+    "id": "account.no_quota",
+    "description": "Tête de la notice : aucun compte n'a de quota restant",
+    "other": "⛔"
   }
 ]
