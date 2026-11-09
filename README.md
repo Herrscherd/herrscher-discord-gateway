@@ -464,6 +464,21 @@ A non-recoverable close is treated as **fatal**. 4004 (bad token) and 4010 to 40
 (bad shard, API version, intents) stop the loop and log once, rather than
 respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 
+## Sending files
+
+The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
+attached. The text goes with the first message, and the files go in batches of ten,
+since Discord takes ten attachments to a message. The first message is a reply when
+the host gives a reply target, and the rest are plain posts. The id returned is the
+first message sent.
+
+A file is not sent when it is not a regular file (a symlink, a directory, a device) or
+when it is larger than 8 MiB. Each file is checked on the descriptor it was opened
+with, not on its path, and every descriptor is closed when the send returns. The name
+of a refused file is listed at the end of the text, in the language of the gateway. A
+file that cannot be stat'ed or opened at all fails the whole send with its error,
+before anything is posted.
+
 ## Health and limits
 
 The plugin sets `Plugin.Probe`, so `herrscher health` can check the bot without
