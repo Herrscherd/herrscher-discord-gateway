@@ -28,6 +28,8 @@ type fakeClient struct {
 	menus      []outMenu
 	menuErr    error
 	sendErr    error
+	sendErrAt  int
+	sends      int
 	read       []dctl.Message
 	readLimit  int
 	readErr    error
@@ -60,7 +62,8 @@ type fakeClient struct {
 }
 
 func (f *fakeClient) Send(_ context.Context, ch, content string) (*dctl.Message, error) {
-	if f.sendErr != nil {
+	f.sends++
+	if f.sendErr != nil && (f.sendErrAt == 0 || f.sendErrAt == f.sends) {
 		return nil, f.sendErr
 	}
 	f.sent = append(f.sent, outMsg{ch, content})

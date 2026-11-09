@@ -58,7 +58,7 @@ func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, r
 		lead, last = parts[:len(parts)-1], parts[len(parts)-1]
 	}
 	first, leadErr := g.sendParts(ctx, conv, replyTo, lead)
-	if len(lead) > 0 {
+	if first != "" {
 		replyTo = ""
 	}
 	batched, err := g.sendBatches(ctx, conv, replyTo, last, ready)
@@ -183,22 +183,24 @@ func (g *Gateway) refusalNotice(refused []string) string {
 
 func displayName(name string) string {
 	if validName(name) {
-		return name
+		return neutralise(name)
 	}
-	return strconv.QuoteToASCII(name)
+	return neutralise(strconv.QuoteToASCII(name))
 }
 
 func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
 	var first contracts.MessageID
+	var failed error
 	for _, part := range parts {
 		sentID, err := g.sendText(ctx, conv, replyTo, part)
 		if err != nil {
-			return first, err
+			failed = errors.Join(failed, err)
+			continue
 		}
 		first = keepFirst(first, sentID)
 		replyTo = ""
 	}
-	return first, nil
+	return first, failed
 }
 
 func (g *Gateway) sendText(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {

@@ -133,7 +133,7 @@ func TestSendFiles(t *testing.T) {
 				bad.Name = "bad\n.txt"
 				return []contracts.OutboundFile{bad, writeOutbound(t, dir, "ok.txt", "fine")}
 			},
-			want:   []string{`send-files c1 "here\n` + refusedLine + `\"bad\\n.txt\"" [ok.txt=fine]`},
+			want:   []string{`send-files c1 "here\n` + refusedLine + `\"bad\\\\n.txt\"" [ok.txt=fine]`},
 			wantID: "f1",
 		},
 		{
@@ -323,6 +323,20 @@ func TestSendFilesPostsTheTextAloneWhenEveryBatchFails(t *testing.T) {
 	}
 }
 
+func TestSendFilesKeepsSendingTextPartsAfterAFailedOne(t *testing.T) {
+	wantErr := errors.New("discord is down")
+	fc := &fakeClient{sendErr: wantErr, sendErrAt: 1}
+	g := NewGateway(fc, testRun(), testMessages(), testLog())
+	text := strings.Repeat("a", gatewayMaxLen) + strings.Repeat("b", gatewayMaxLen) + "c"
+	id, err := g.SendFiles(context.Background(), contracts.Conversation{Gateway: "discord", ID: "c1"}, "", text, nil)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("SendFiles error = %v, want it to wrap %v", err, wantErr)
+	}
+	if id != "m1" || len(fc.sent) != 2 || fc.sent[1].content != "c" {
+		t.Fatalf("id = %q, sent = %d parts, want m1 and the two parts after the failed one", id, len(fc.sent))
+	}
+}
+
 func TestSendFilesRefusesBadlyFormedFiles(t *testing.T) {
 	dir := outboxDir(t)
 	cases := []struct {
@@ -335,7 +349,7 @@ func TestSendFilesRefusesBadlyFormedFiles(t *testing.T) {
 			f := writeOutbound(t, dir, "u.txt", "x")
 			f.Name = "u\xff.txt"
 			return f
-		}, want: `\"u\\xff.txt\"`},
+		}, want: `\"u\\\\xff.txt\"`},
 		{name: "an invalid content type", file: func() contracts.OutboundFile {
 			f := writeOutbound(t, dir, "c.txt", "x")
 			f.ContentType = "text/plain; charset"
