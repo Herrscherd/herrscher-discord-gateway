@@ -618,8 +618,8 @@
   },
   {
     "id": "discord.files.refused",
-    "description": "Line added to a message whose files were not sent, because they are too large or not regular files; Names lists them",
-    "other": "non envoyé, trop volumineux ou pas un fichier régulier : {{.Names}}"
+    "description": "Line added to a message whose files were not sent, because they are too large, unreadable or not regular files; Names lists them",
+    "other": "non envoyé, trop volumineux, illisible ou pas un fichier régulier : {{.Names}}"
   },
   {
     "id": "discord.command.embed",

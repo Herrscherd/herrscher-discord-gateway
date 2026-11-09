@@ -13,7 +13,7 @@ import (
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
 
-const refusedLine = "not sent, too large or not a regular file: "
+const refusedLine = "not sent, too large, unreadable or not a regular file: "
 
 func writeOutbound(t *testing.T, dir, name, body string) contracts.OutboundFile {
 	t.Helper()
@@ -92,6 +92,16 @@ func TestSendFiles(t *testing.T) {
 				return []contracts.OutboundFile{{Path: link, Name: "link.txt"}, writeOutbound(t, dir, "ok.txt", "fine")}
 			},
 			want:   []string{`send-files c1 "here\n` + refusedLine + `link.txt" [ok.txt=fine]`},
+			wantID: "f1",
+		},
+		{
+			name: "a missing file is refused, the others are still sent",
+			text: "here",
+			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
+				return []contracts.OutboundFile{{Path: filepath.Join(dir, "gone.txt"), Name: "gone.txt"}, writeOutbound(t, dir, "ok.txt", "fine")}
+			},
+			want:   []string{`send-files c1 "here\n` + refusedLine + `gone.txt" [ok.txt=fine]`},
 			wantID: "f1",
 		},
 		{

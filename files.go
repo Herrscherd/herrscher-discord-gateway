@@ -26,16 +26,14 @@ type openFile struct {
 
 // SendFiles posts text in reply to replyTo in conv, with files attached, at most ten
 // files to a message. A file that is not a regular file, or that is larger than the
-// size limit, is not sent: its name is listed at the end of the text. It returns the
+// size limit, or that cannot be read, is not sent: its name is listed at the end
+// of the text. It returns the
 // id of the first message sent, and an error that wraps the failure. It satisfies
 // contracts.FileSender.
 func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (contracts.MessageID, error) {
-	ready, refused, openErr := g.openFiles(files)
-	if openErr != nil {
-		return "", errors.Join(openErr, closeFiles(ready))
-	}
-	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, refused), ready)
-	return sent, errors.Join(err, closeFiles(ready))
+	sorted := g.openFiles(files)
+	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, sorted.refused), sorted.ready)
+	return sent, errors.Join(err, closeFiles(sorted.ready))
 }
 
 func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, ready []openFile) (contracts.MessageID, error) {
@@ -58,35 +56,36 @@ func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, r
 	return keepFirst(first, batched), err
 }
 
-func (g *Gateway) openFiles(files []contracts.OutboundFile) ([]openFile, []string, error) {
-	ready := make([]openFile, 0, len(files))
-	var refused []string
+type sortedFiles struct {
+	ready   []openFile
+	refused []string
+}
+
+func (g *Gateway) openFiles(files []contracts.OutboundFile) sortedFiles {
+	sorted := sortedFiles{ready: make([]openFile, 0, len(files))}
 	for _, out := range files {
 		opened, err := openOutbound(out, g.fileLimit)
-		switch {
-		case errors.Is(err, errFileRefused):
+		if err != nil {
 			g.log.Warn("outbound file not sent", "file", out.Name, "err", err)
-			refused = append(refused, out.Name)
-		case err != nil:
-			return ready, refused, err
-		default:
-			ready = append(ready, opened)
+			sorted.refused = append(sorted.refused, out.Name)
+			continue
 		}
+		sorted.ready = append(sorted.ready, opened)
 	}
-	return ready, refused, nil
+	return sorted
 }
 
 func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 	info, err := os.Lstat(out.Path)
 	if err != nil {
-		return openFile{}, fmt.Errorf("discord file %q: %w", out.Name, err)
+		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
 	}
 	if !info.Mode().IsRegular() {
 		return openFile{}, fmt.Errorf("%w: %q is not a regular file", errFileRefused, out.Name)
 	}
 	src, err := os.Open(out.Path)
 	if err != nil {
-		return openFile{}, fmt.Errorf("discord file %q: %w", out.Name, err)
+		return openFile{}, fmt.Errorf("%w: %q: %w", errFileRefused, out.Name, err)
 	}
 	if err = checkOpened(src, out.Name, limit); err != nil {
 		return openFile{}, errors.Join(err, src.Close())
@@ -97,7 +96,7 @@ func openOutbound(out contracts.OutboundFile, limit int64) (openFile, error) {
 func checkOpened(src *os.File, name string, limit int64) error {
 	info, err := src.Stat()
 	if err != nil {
-		return fmt.Errorf("discord file %q: %w", name, err)
+		return fmt.Errorf("%w: %q: %w", errFileRefused, name, err)
 	}
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: %q is not a regular file", errFileRefused, name)
