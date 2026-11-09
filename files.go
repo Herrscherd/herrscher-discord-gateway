@@ -29,17 +29,24 @@ type openFile struct {
 // size limit, is not sent: its name is listed at the end of the text. It returns the
 // id of the first message sent, and an error that wraps the failure. It satisfies
 // contracts.FileSender.
-func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (sent contracts.MessageID, err error) {
+func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []contracts.OutboundFile) (contracts.MessageID, error) {
 	ready, refused, openErr := g.openFiles(files)
-	defer func() { err = errors.Join(err, closeFiles(ready)) }()
 	if openErr != nil {
-		return "", openErr
+		return "", errors.Join(openErr, closeFiles(ready))
 	}
-	parts := chunkText(g.withRefusals(text, refused), gatewayMaxLen)
+	sent, err := g.sendOpened(ctx, conv, replyTo, g.withRefusals(text, refused), ready)
+	return sent, errors.Join(err, closeFiles(ready))
+}
+
+func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, ready []openFile) (contracts.MessageID, error) {
+	parts := chunkText(text, gatewayMaxLen)
 	if len(ready) == 0 {
 		return g.sendParts(ctx, conv, replyTo, parts)
 	}
-	lead, last := splitLast(parts)
+	lead, last := parts, ""
+	if len(parts) > 0 {
+		lead, last = parts[:len(parts)-1], parts[len(parts)-1]
+	}
 	first, err := g.sendParts(ctx, conv, replyTo, lead)
 	if err != nil {
 		return first, err
@@ -123,11 +130,11 @@ func (g *Gateway) withRefusals(text string, refused []string) string {
 func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
 	var first contracts.MessageID
 	for _, part := range parts {
-		id, err := g.sendText(ctx, conv, replyTo, part)
+		sentID, err := g.sendText(ctx, conv, replyTo, part)
 		if err != nil {
 			return first, err
 		}
-		first = keepFirst(first, id)
+		first = keepFirst(first, sentID)
 		replyTo = ""
 	}
 	return first, nil
@@ -148,11 +155,11 @@ func (g *Gateway) sendBatches(ctx context.Context, conv contracts.Conversation, 
 			content = text
 		}
 		end := min(start+filesPerMessage, len(files))
-		id, err := g.sendFileBatch(ctx, conv, replyTo, content, files[start:end])
+		sentID, err := g.sendFileBatch(ctx, conv, replyTo, content, files[start:end])
 		if err != nil {
 			return first, err
 		}
-		first = keepFirst(first, id)
+		first = keepFirst(first, sentID)
 		replyTo = ""
 	}
 	return first, nil
@@ -174,14 +181,6 @@ func (g *Gateway) sendFileBatch(ctx context.Context, conv contracts.Conversation
 		return msgID(sent), fmt.Errorf("discord send files: %w", err)
 	}
 	return msgID(sent), nil
-}
-
-func splitLast(parts []string) ([]string, string) {
-	if len(parts) == 0 {
-		return nil, ""
-	}
-	last := len(parts) - 1
-	return parts[:last], parts[last]
 }
 
 func keepFirst(first, next contracts.MessageID) contracts.MessageID {

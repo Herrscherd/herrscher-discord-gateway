@@ -51,6 +51,7 @@ func TestSendFiles(t *testing.T) {
 			name: "one file without a reply target is posted",
 			text: "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				return []contracts.OutboundFile{writeOutbound(t, dir, "a.txt", "alpha")}
 			},
 			want:   []string{`send-files c1 "here" [a.txt=alpha]`},
@@ -61,6 +62,7 @@ func TestSendFiles(t *testing.T) {
 			replyTo: "mid",
 			text:    "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				return []contracts.OutboundFile{writeOutbound(t, dir, "a.txt", "alpha")}
 			},
 			want:   []string{`reply-files c1 mid "here" [a.txt=alpha]`},
@@ -70,6 +72,7 @@ func TestSendFiles(t *testing.T) {
 			name:    "twelve files go in two batches, the text with the first",
 			replyTo: "mid",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				return writeNumbered(t, dir, 12)
 			},
 			want: []string{
@@ -82,6 +85,7 @@ func TestSendFiles(t *testing.T) {
 			name: "a symlink is refused and its target is never sent",
 			text: "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				target := writeOutbound(t, dir, "real.txt", "secret")
 				link := filepath.Join(dir, "link.txt")
 				requireNoError(t, os.Symlink(target.Path, link))
@@ -94,6 +98,7 @@ func TestSendFiles(t *testing.T) {
 			name: "a directory is refused",
 			text: "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				sub := filepath.Join(dir, "sub")
 				requireNoError(t, os.Mkdir(sub, 0o700))
 				return []contracts.OutboundFile{{Path: sub, Name: "sub"}, writeOutbound(t, dir, "ok.txt", "fine")}
@@ -106,6 +111,7 @@ func TestSendFiles(t *testing.T) {
 			text:  "here",
 			limit: 5,
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				return []contracts.OutboundFile{
 					writeOutbound(t, dir, "big.txt", "0123456"),
 					writeOutbound(t, dir, "small.txt", "abcde"),
@@ -119,6 +125,7 @@ func TestSendFiles(t *testing.T) {
 			replyTo: "mid",
 			text:    long,
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				return []contracts.OutboundFile{writeOutbound(t, dir, "a.txt", "alpha")}
 			},
 			want: []string{
@@ -143,6 +150,7 @@ func TestSendFiles(t *testing.T) {
 			replyTo: "mid",
 			text:    "here",
 			setup: func(t *testing.T, dir string) []contracts.OutboundFile {
+				t.Helper()
 				target := writeOutbound(t, dir, "real.txt", "secret")
 				link := filepath.Join(dir, "link.txt")
 				requireNoError(t, os.Symlink(target.Path, link))
