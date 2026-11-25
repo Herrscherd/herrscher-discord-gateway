@@ -2,7 +2,7 @@ module github.com/Herrscherd/herrscher-discord-gateway
 
 go 1.27.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 require (
 	github.com/Herrscherd/dctl v1.11.0
