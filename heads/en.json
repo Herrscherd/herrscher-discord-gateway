@@ -293,5 +293,20 @@
     "id": "account.no_quota",
     "description": "Head of the notice that no account has quota left",
     "other": "⛔"
+  },
+  {
+    "id": "turn.interrupted",
+    "description": "Head of the notice that the last message got no reply",
+    "other": "⚠️"
+  },
+  {
+    "id": "session.resume_lost",
+    "description": "Head of the notice that the earlier conversation could not be resumed",
+    "other": "🔄"
+  },
+  {
+    "id": "health.repo_access_unreadable",
+    "description": "Head of the health notice that the token's permission on a repository could not be read",
+    "other": "🔒"
   }
 ]

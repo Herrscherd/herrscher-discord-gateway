@@ -293,5 +293,20 @@
     "id": "account.no_quota",
     "description": "Tête de la notice : aucun compte n'a de quota restant",
     "other": "⛔"
+  },
+  {
+    "id": "turn.interrupted",
+    "description": "Tête de la notice : le dernier message est resté sans réponse",
+    "other": "⚠️"
+  },
+  {
+    "id": "session.resume_lost",
+    "description": "Tête de la notice : la conversation précédente n'a pas pu être reprise",
+    "other": "🔄"
+  },
+  {
+    "id": "health.repo_access_unreadable",
+    "description": "Tête de la notice de santé : la permission du jeton sur un dépôt n'a pas pu être lue",
+    "other": "🔒"
   }
 ]
