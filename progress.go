@@ -56,6 +56,8 @@ func (p *progressView) add(event contracts.BackendEvent) {
 	case "result":
 		p.cost = event.Cost
 		return
+	case "tool_failed":
+		p.push(withEmoji(p.msgs.head(headFail), event.Tool))
 	case "text":
 		if p.level != levelFull {
 			return
@@ -110,11 +112,11 @@ func (p *progressView) flush(force bool) {
 	p.dirty = false
 }
 
-func (p *progressView) finish() {
+func (p *progressView) finish(ending turnEnding) {
 	if p.post == nil || (p.msgID == "" && len(p.lines) == 0) {
 		return
 	}
-	if _, err := p.post(p.msgID, p.summary()); err != nil {
+	if _, err := p.post(p.msgID, p.summary(ending)); err != nil {
 		p.log.Warn("progress message update failed", "err", err)
 	}
 }
@@ -153,7 +155,7 @@ func (p *progressView) frame(lines []string, elided bool) string {
 	return header + strings.Join(lines, "\n")
 }
 
-func (p *progressView) summary() string {
+func (p *progressView) summary(ending turnEnding) string {
 	parts := make([]string, 0, len(p.order))
 	for _, name := range p.order {
 		if n := p.counts[name]; n > 1 {
@@ -164,9 +166,9 @@ func (p *progressView) summary() string {
 	}
 	var summary string
 	if p.actions == 0 {
-		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("discord.progress.done", nil))
+		summary = withEmoji(p.msgs.head(ending.summary), ending.label)
 	} else {
-		summary = withEmoji(p.msgs.head(headDone), p.msgs.say("discord.progress.actions", map[string]any{countArg: p.actions}))
+		summary = withEmoji(p.msgs.head(ending.summary), p.msgs.say("discord.progress.actions", map[string]any{countArg: p.actions}))
 		if len(parts) > 0 {
 			summary += " (" + strings.Join(parts, ", ") + ")"
 		}

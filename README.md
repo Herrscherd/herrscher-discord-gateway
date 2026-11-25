@@ -61,15 +61,18 @@ line, because a ⏳ that merely vanishes reads like a bot that died.
 
 The ⏳ is a state, never a destination. Every path that marks a ping as taken
 ends either in a turn, which clears it, or in a ❌ on the same message plus one
-line saying why, in the channel the ping was written in. A repo menu that could
+line saying why, in the channel the ping was written in. A failed turn swaps the
+⏳ for a ❌ and a stopped turn swaps it for a ⏹️, so the reaction always says how
+the turn ended. A repo menu that could
 not be posted, a session the daemon refused to create: those used to reach only
 the daemon's stderr, leaving an hourglass that nothing would ever come back to.
 
 Above the default level the gateway also draws one live-updating progress message
 per turn (15 lines, trimmed further if they would exceed the message limit, one
-edit per 1.5 s), collapsed to a ✅ summary at the end. A mid-turn backend reset
-discards the partial render and keeps going, and an abandoned turn clears the ack
-silently.
+edit per 1.5 s), collapsed at the end to a summary headed ✅ on success, ❌ when
+the turn failed, or ⏹️ when it was interrupted. A failed tool call adds a ❌ line
+with the tool's name, never its error text. A mid-turn backend reset discards the
+partial render and keeps going, and an abandoned turn clears the ack silently.
 
 ### Verbosity
 
