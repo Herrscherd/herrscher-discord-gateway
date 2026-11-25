@@ -31,7 +31,7 @@ func TestTurnWithoutOutcomeEndsAsASuccess(t *testing.T) {
 	if want := []string{englishHead(headAck)}; !slices.Equal(f.unreacted, want) {
 		t.Fatalf("unreacted = %v, want the ack cleared %v", f.unreacted, want)
 	}
-	if last := f.upserts[len(f.upserts)-1]; !strings.HasPrefix(last, englishHead(headDone)+" ") {
+	if last := lastStatus(t, f); !strings.HasPrefix(last, englishHead(headDone)+" ") {
 		t.Fatalf("final status = %q, want the done summary", last)
 	}
 }
@@ -48,7 +48,7 @@ func TestFailedTurnEndsWithAFailureReaction(t *testing.T) {
 	if want := []string{englishHead(headAck)}; !slices.Equal(f.unreacted, want) {
 		t.Fatalf("unreacted = %v, want the ack cleared %v", f.unreacted, want)
 	}
-	if last := f.upserts[len(f.upserts)-1]; !strings.HasPrefix(last, englishHead(headFail)+" ") {
+	if last := lastStatus(t, f); !strings.HasPrefix(last, englishHead(headFail)+" ") {
 		t.Fatalf("final status = %q, want the failure head on the summary", last)
 	}
 }
@@ -65,23 +65,24 @@ func TestInterruptedTurnEndsWithAStopReactionAndNoReply(t *testing.T) {
 	if want := []string{englishHead(headAck)}; !slices.Equal(f.unreacted, want) {
 		t.Fatalf("unreacted = %v, want the ack cleared %v", f.unreacted, want)
 	}
-	if last := f.upserts[len(f.upserts)-1]; !strings.HasPrefix(last, englishHead(headStop)+" ") {
+	if last := lastStatus(t, f); !strings.HasPrefix(last, englishHead(headStop)+" ") {
 		t.Fatalf("final status = %q, want the stop head on the summary", last)
 	}
 }
 
-func toolDoneTurn(state contracts.ToolCallState) string {
+func toolDoneTurn(t *testing.T, state contracts.ToolCallState) string {
+	t.Helper()
 	f := &fakeRender{channel: "c1"}
 	s := newTestSink(f)
 	s.handle(contracts.Event{T: "human"})
 	s.handle(contracts.Event{T: "status", Text: "Bash ls", ToolCall: &contracts.ToolCall{ID: "t1", Tool: "Bash", State: contracts.ToolCallStarted}})
 	s.handle(contracts.Event{T: "tool_done", ToolCall: &contracts.ToolCall{ID: "t1", Tool: "Bash", State: state}})
 	s.handle(contracts.Event{T: "abandoned"})
-	return f.upserts[len(f.upserts)-1]
+	return lastStatus(t, f)
 }
 
 func TestFailedToolCallIsShownAsALine(t *testing.T) {
-	last := toolDoneTurn(contracts.ToolCallFailed)
+	last := toolDoneTurn(t, contracts.ToolCallFailed)
 
 	if !strings.Contains(last, englishHead(headFail)+" Bash") {
 		t.Fatalf("status = %q, want a failed line for Bash", last)
@@ -89,7 +90,7 @@ func TestFailedToolCallIsShownAsALine(t *testing.T) {
 }
 
 func TestSucceededToolCallAddsNoLine(t *testing.T) {
-	last := toolDoneTurn(contracts.ToolCallSucceeded)
+	last := toolDoneTurn(t, contracts.ToolCallSucceeded)
 
 	if strings.Contains(last, englishHead(headFail)) {
 		t.Fatalf("status = %q, want no failed line for a call that succeeded", last)
@@ -152,7 +153,7 @@ func TestFailedToolCallErrorTextNeverReachesDiscord(t *testing.T) {
 	s.handle(contracts.Event{T: "tool_done", ToolCall: &contracts.ToolCall{ID: "t1", Tool: "Bash", State: contracts.ToolCallFailed, Error: secret}})
 	s.handle(contracts.Event{T: "abandoned"})
 
-	last := f.upserts[len(f.upserts)-1]
+	last := lastStatus(t, f)
 	if !slices.Contains(strings.Split(last, "\n"), englishHead(headFail)+" Bash") {
 		t.Fatalf("status = %q, want the failed line exactly %q", last, englishHead(headFail)+" Bash")
 	}
@@ -161,4 +162,12 @@ func TestFailedToolCallErrorTextNeverReachesDiscord(t *testing.T) {
 			t.Fatalf("sent %q, the tool error text must never reach Discord", sent)
 		}
 	}
+}
+
+func lastStatus(t *testing.T, f *fakeRender) string {
+	t.Helper()
+	if len(f.upserts) == 0 {
+		t.Fatal("no status was posted")
+	}
+	return f.upserts[len(f.upserts)-1]
 }
