@@ -116,7 +116,7 @@ func TestProgressViewSummaryCountsActions(t *testing.T) {
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "tool", Tool: "Read"})
 	pv.add(contracts.BackendEvent{Kind: "result", Cost: 0.02})
-	pv.finish()
+	pv.finish(endingOf(pv.msgs, ""))
 
 	got := posted[len(posted)-1]
 	if !strings.HasPrefix(got, "✅") || !strings.Contains(got, "2 actions") || !strings.Contains(got, "Read×2") {

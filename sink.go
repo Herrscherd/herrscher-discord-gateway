@@ -42,18 +42,6 @@ type sink struct {
 	acked    msgRef
 }
 
-const sinkDrainBudget = 16
-
-type sinkJob struct {
-	kind     string
-	step     func()
-	done     chan struct{}
-	lead     chan struct{}
-	waiting  bool
-	promoted bool
-	finished bool
-}
-
 type msgRef struct{ ch, id, author string }
 
 func newSink(run lifetime, renderer renderClient, channel string, level func() string, owner string, tidy bool, msgs messages, log *slog.Logger) *sink {
@@ -127,190 +115,6 @@ func (s *sinks) drop(convID string) {
 	s.mu.Unlock()
 }
 
-func (s *sink) submit(ctx context.Context, kind string, step func()) error {
-	job := &sinkJob{kind: kind, step: step, done: make(chan struct{}), lead: make(chan struct{}, 1), waiting: true}
-	s.mu.Lock()
-	s.queue = append(s.queue, job)
-	leads := !s.draining
-	s.draining = true
-	s.mu.Unlock()
-	if leads && s.drain(ctx, job) {
-		return s.stoppedOutcome(ctx, job)
-	}
-	return s.await(ctx, job)
-}
-
-func (s *sink) dispatch(ctx context.Context, kind string, step func()) {
-	if err := s.submit(ctx, kind, step); err != nil {
-		s.log.Debug("sink waiter gave up, its step still runs in order", "step", kind, "err", err)
-	}
-}
-
-func (s *sink) await(ctx context.Context, job *sinkJob) error {
-	for {
-		select {
-		case <-job.done:
-			return nil
-		case <-job.lead:
-			s.mu.Lock()
-			job.promoted = false
-			finished := job.finished
-			s.mu.Unlock()
-			if finished {
-				return nil
-			}
-			if s.drain(ctx, job) {
-				return s.stoppedOutcome(ctx, job)
-			}
-		case <-ctx.Done():
-			if s.leave(job) {
-				return nil
-			}
-			return ctx.Err()
-		}
-	}
-}
-
-func (s *sink) stoppedOutcome(ctx context.Context, job *sinkJob) error {
-	s.mu.Lock()
-	finished := job.finished
-	s.mu.Unlock()
-	if finished {
-		return nil
-	}
-	return ctx.Err()
-}
-
-func (s *sink) leave(job *sinkJob) bool {
-	s.mu.Lock()
-	job.waiting = false
-	finished := job.finished
-	pending := job.promoted && !finished
-	job.promoted = false
-	s.mu.Unlock()
-	if pending {
-		<-job.lead
-		s.handOff()
-	}
-	return finished
-}
-
-func (s *sink) drain(ctx context.Context, own *sinkJob) bool {
-	clean := false
-	defer func() {
-		if !clean {
-			s.abort()
-		}
-	}()
-	for range sinkDrainBudget {
-		if ctx.Err() != nil {
-			s.stepDown(own)
-			clean = true
-			return true
-		}
-		job := s.take()
-		if job == nil {
-			clean = true
-			return false
-		}
-		s.execute(job)
-	}
-	s.handOff()
-	clean = true
-	return false
-}
-
-func (s *sink) stepDown(own *sinkJob) {
-	s.mu.Lock()
-	own.waiting = false
-	s.mu.Unlock()
-	s.handOff()
-}
-
-func (s *sink) take() *sinkJob {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.queue) == 0 {
-		s.draining = false
-		return nil
-	}
-	return s.pop()
-}
-
-func (s *sink) handOff() {
-	clean := false
-	defer func() {
-		if !clean {
-			s.abort()
-		}
-	}()
-	for {
-		s.mu.Lock()
-		if len(s.queue) == 0 {
-			s.draining = false
-			s.mu.Unlock()
-			clean = true
-			return
-		}
-		head := s.queue[0]
-		if head.waiting {
-			head.promoted = true
-			head.lead <- struct{}{}
-			s.mu.Unlock()
-			clean = true
-			return
-		}
-		s.pop()
-		s.mu.Unlock()
-		s.execute(head)
-	}
-}
-
-func (s *sink) abort() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, job := range s.queue {
-		s.log.Warn("sink step dropped after a panic", "step", job.kind)
-		s.settleLocked(job)
-	}
-	s.queue = nil
-	s.draining = false
-}
-
-func (s *sink) pop() *sinkJob {
-	job := s.queue[0]
-	s.queue[0] = nil
-	s.queue = s.queue[1:]
-	return job
-}
-
-func (s *sink) execute(job *sinkJob) {
-	defer s.settle(job)
-	if s.run().Err() != nil {
-		s.log.Debug("sink step dropped, lifetime ended", "step", job.kind)
-		return
-	}
-	if job.kind == humanKind {
-		s.endTurn()
-	}
-	s.localize()
-	job.step()
-}
-
-func (s *sink) settle(job *sinkJob) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.settleLocked(job)
-}
-
-func (s *sink) settleLocked(job *sinkJob) {
-	if job.finished {
-		return
-	}
-	job.finished = true
-	close(job.done)
-}
-
 func (s *sink) noteUser(ctx context.Context, channelID, messageID, author string) {
 	ref := msgRef{ch: channelID, id: messageID, author: author}
 	s.dispatch(ctx, "note", func() {
@@ -353,20 +157,11 @@ func (s *sink) applyFail(ctx context.Context, reason string) {
 		s.pv = nil
 	}
 	channel := s.acked.chOr(s.ch)
-	if s.acked.id != "" {
-		failed := s.acked
-		s.clearAck(ctx, channel)
-		if fail := s.msgs.head(headFail); fail != "" {
-			if err := s.rc.React(ctx, channel, failed.id, fail); err != nil {
-				s.log.Warn("add failure reaction failed", "err", err)
-			}
-		}
-		s.acked = msgRef{}
-	}
+	s.swapAck(ctx, channel, headFail)
 	if reason == "" {
 		return
 	}
-	s.postParts(ctx, channel, s.answer(withEmoji(s.msgs.head(headFail), reason)))
+	s.postParts(ctx, channel, s.mention(withEmoji(s.msgs.head(headFail), reason)))
 }
 
 const humanKind = "event:human"
@@ -391,6 +186,8 @@ func (s *sink) apply(ctx context.Context, event contracts.Event) {
 	case "abandoned":
 		s.onAbandoned(ctx)
 		s.endTurn()
+	case "tool_done":
+		s.onToolDone(event.ToolCall)
 	case "reply":
 		s.onReply(ctx, event)
 		if event.Done {
@@ -439,23 +236,31 @@ func (s *sink) onAbandoned(ctx context.Context) {
 	s.clearAck(ctx, s.ch)
 }
 
+func (s *sink) onToolDone(call *contracts.ToolCall) {
+	if s.pv == nil || call == nil || call.State != contracts.ToolCallFailed {
+		return
+	}
+	s.pv.add(contracts.BackendEvent{Kind: "tool_failed", Tool: call.Tool})
+}
+
 func (s *sink) onReply(ctx context.Context, event contracts.Event) {
 	if !event.Done {
 		return
 	}
+	ending := endingOf(s.msgs, event.Outcome)
 	channel := s.ch
-	s.postParts(ctx, channel, s.answer(event.Text))
+	s.postParts(ctx, channel, s.answer(ending, event.Text))
 	if s.pv != nil {
 		if event.Cost > 0 {
 			s.pv.add(contracts.BackendEvent{Kind: "result", Cost: event.Cost})
 		}
-		s.pv.finish()
+		s.pv.finish(ending)
 		s.pv = nil
 	}
-	if s.tidyPing(ctx, channel) {
+	if ending.reaction == "" && s.tidyPing(ctx, channel) {
 		return
 	}
-	s.clearAck(ctx, channel)
+	s.swapAck(ctx, channel, ending.reaction)
 }
 
 func (s *sink) postParts(ctx context.Context, channelID, text string) {
@@ -485,14 +290,39 @@ func (s *sink) tidyPing(ctx context.Context, channelID string) bool {
 	return true
 }
 
-func (s *sink) answer(text string) string {
-	if text == "" {
-		text = withEmoji(s.msgs.head(headDone), s.msgs.say("discord.progress.done", nil))
+func (s *sink) answer(ending turnEnding, text string) string {
+	if text != "" {
+		return s.mention(withEmoji(s.msgs.head(ending.prefix), text))
 	}
+	if !ending.announce {
+		return ""
+	}
+	return s.mention(withEmoji(s.msgs.head(ending.summary), ending.label))
+}
+
+func (s *sink) mention(text string) string {
 	if s.owner == "" {
 		return text
 	}
 	return "<@" + s.owner + "> " + text
+}
+
+func (s *sink) swapAck(ctx context.Context, channel string, reaction headKey) {
+	if s.acked.id == "" {
+		return
+	}
+	acked := s.acked
+	s.clearAck(ctx, channel)
+	if reaction == "" {
+		return
+	}
+	emoji := s.msgs.head(reaction)
+	if emoji == "" {
+		return
+	}
+	if err := s.rc.React(ctx, channel, acked.id, emoji); err != nil {
+		s.log.Warn("add outcome reaction failed", "err", err)
+	}
 }
 
 func (s *sink) clearAck(ctx context.Context, channelID string) {

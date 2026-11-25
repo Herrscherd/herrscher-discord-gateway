@@ -317,6 +317,16 @@
     "other": "{{.Count}} actions"
   },
   {
+    "id": "discord.progress.failed",
+    "description": "A turn ended in a failure with no action to summarise",
+    "other": "failed"
+  },
+  {
+    "id": "discord.progress.interrupted",
+    "description": "A turn was stopped before its end with no action to summarise",
+    "other": "interrupted"
+  },
+  {
     "id": "discord.notice.unexpected",
     "description": "Introduces the technical detail of an unexpected failure shown in a code block",
     "other": "something went wrong inside the gateway, here is the technical detail:"

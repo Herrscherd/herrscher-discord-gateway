@@ -128,6 +128,8 @@ func declaredMessages() map[string][]string {
 		"discord.allow.list":                       {"Label", "Mentions"},
 		"discord.progress.running":                 {},
 		"discord.progress.done":                    {},
+		"discord.progress.failed":                  {},
+		"discord.progress.interrupted":             {},
 		"discord.progress.actions":                 {"Count"},
 		"discord.notice.unexpected":                {},
 		"discord.slash.set":                        {},

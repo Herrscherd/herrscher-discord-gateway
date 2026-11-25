@@ -317,6 +317,16 @@
     "other": "{{.Count}} actions"
   },
   {
+    "id": "discord.progress.failed",
+    "description": "Un tour s'est terminé en échec sans action à résumer",
+    "other": "échec"
+  },
+  {
+    "id": "discord.progress.interrupted",
+    "description": "Un tour a été arrêté avant sa fin sans action à résumer",
+    "other": "interrompu"
+  },
+  {
     "id": "discord.notice.unexpected",
     "description": "Introduit le détail technique d'un échec inattendu affiché dans un bloc de code",
     "other": "une erreur interne s'est produite, voici le détail technique :"
