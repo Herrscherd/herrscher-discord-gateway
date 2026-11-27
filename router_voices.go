@@ -248,3 +248,16 @@ func (r *router) answerAs(ctx context.Context, ctrl contracts.SessionControl, ro
 	task := job{conv: conv, parent: bare, slot: slot, shared: shared, agent: route.agent}
 	r.askPlaced(ctx, ctrl, msg, func() job { return task })
 }
+
+func (r *router) voiceCaptured(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, parent string) bool {
+	route, ok := r.houseVoice(ctrl, msg, parent)
+	if !ok {
+		return false
+	}
+	r.answerAs(ctx, ctrl, route, msg)
+	return !r.cfg.address.mentioned(msg)
+}
+
+func (r *router) setHouseContent(on bool) {
+	r.houseContent.Store(on)
+}

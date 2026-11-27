@@ -123,19 +123,6 @@ func (r *router) mode(conv, parent string) string {
 	return normalMode
 }
 
-func (r *router) voiceCaptured(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, parent string) bool {
-	route, ok := r.houseVoice(ctrl, msg, parent)
-	if !ok {
-		return false
-	}
-	r.answerAs(ctx, ctrl, route, msg)
-	return !r.cfg.address.mentioned(msg)
-}
-
-func (r *router) setHouseContent(on bool) {
-	r.houseContent.Store(on)
-}
-
 func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	ctrl := r.ctrl()
 	if ctrl == nil {
