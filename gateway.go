@@ -78,14 +78,9 @@ func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gatewa
 	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes, batchLimit: maxBatchBytes}
 }
 
-// BindSessionControl receives the daemon's runtime session controller and starts
-// the slash command surface (sync + websocket loop). It satisfies
-// contracts.SessionControlReceiver. Gateways built without a slash runtime (e.g.
-// in tests) ignore the binding. Only the first binding starts the runtime and
-// keeps its controller: a later binding, or one after Close, is ignored. The
-// house bot starts at once; the agent bots are identified inside the same
-// runtime, each under its own timeout, so a Close cancels them and never waits
-// on Discord.
+// BindSessionControl receives the daemon's session controller and starts the
+// gateway's runtime. Only the first binding takes effect: later bindings, and
+// bindings after Close, are ignored.
 func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slash == nil {
 		return
