@@ -17,6 +17,9 @@ func (r *router) onChannelGone(ctx context.Context, channelID string) {
 			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
+	for _, voiced := range r.binds.VoicedIn(channelID) {
+		r.endConversation(ctx, voiced)
+	}
 	r.endConversation(ctx, channelID)
 }
 

@@ -1,7 +1,10 @@
 package discord
 
 import (
+	"context"
+	"fmt"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/Herrscherd/dctl"
 )
@@ -65,10 +68,43 @@ func (b *voiceBots) agentAppIDs() []string {
 	return ids
 }
 
+func (b *voiceBots) headerOf(conv string) string {
+	agent := addressOf(conv).agent
+	if _, ok := b.ownOf(agent); ok {
+		return ""
+	}
+	return agentHeader(agent)
+}
+
+func (b *voiceBots) textLimit(conv string) int {
+	return gatewayMaxLen - utf8.RuneCountInString(b.headerOf(conv))
+}
+
 type speaker struct {
 	client  *dctl.Client
 	channel string
 	header  string
+}
+
+func (s speaker) limit() int {
+	return gatewayMaxLen - utf8.RuneCountInString(s.header)
+}
+
+func (s speaker) frame(content string) (string, error) {
+	text := s.header + content
+	if n := utf8.RuneCountInString(text); n > gatewayMaxLen {
+		return "", fmt.Errorf("%w: %d characters, the limit is %d", errTooLong, n, gatewayMaxLen)
+	}
+	return text, nil
+}
+
+func (s speaker) post(ctx context.Context, content string) error {
+	text, err := s.frame(content)
+	if err != nil {
+		return err
+	}
+	_, err = s.client.Messages().Send(ctx, s.channel, text)
+	return err
 }
 
 func (b *voiceBots) at(conv string) speaker {

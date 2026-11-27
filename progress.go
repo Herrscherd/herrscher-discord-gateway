@@ -29,6 +29,7 @@ func rendersProgress(level string) bool { return level != levelSilent }
 
 type progressView struct {
 	post      func(msgID, content string) (string, error)
+	maxLen    int
 	msgs      messages
 	level     string
 	start     time.Time
@@ -48,7 +49,7 @@ type progressView struct {
 }
 
 func newProgressView(post func(string, string) (string, error), level string, start time.Time, msgs messages, log *slog.Logger) *progressView {
-	return &progressView{post: post, msgs: msgs, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int)}
+	return &progressView{post: post, msgs: msgs, level: level, start: start, now: time.Now, log: log, counts: make(map[string]int), maxLen: gatewayMaxLen}
 }
 
 func (p *progressView) add(event contracts.BackendEvent) {
@@ -140,7 +141,7 @@ func (p *progressView) render() string {
 	lines, elided := p.lines, p.elided
 	for {
 		out := p.frame(lines, elided)
-		if len(lines) <= 1 || utf8.RuneCountInString(out) <= gatewayMaxLen {
+		if len(lines) <= 1 || utf8.RuneCountInString(out) <= p.maxLen {
 			return out
 		}
 		lines, elided = lines[1:], true

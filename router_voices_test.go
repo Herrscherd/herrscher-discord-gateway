@@ -80,6 +80,7 @@ func TestNeverRuleNeverAnswers(t *testing.T) {
 func TestChannelsRuleAnswersEveryMessageOfItsChannel(t *testing.T) {
 	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
 	r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+	r.houseContent = true
 
 	r.onMessage(context.Background(), guildPing("u1", "no mention in this one", false))
 	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "bob" {
@@ -101,7 +102,7 @@ func TestAgentBotAnswersADirectMessageOnItsOwnSocket(t *testing.T) {
 	r, ctrl := newVoiceRouter(t, voices, bots)
 
 	dm := messageCreate{ID: "m1", ChannelID: "dm1", Content: "fix the login bug", Author: dctl.Author{ID: "u1", Username: "u1"}}
-	r.onAgentMessage(context.Background(), "bob", dm)
+	r.onAgentMessage(context.Background(), "bob", dm, true)
 
 	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "dm1@bob" {
 		t.Fatalf("created = %+v, want bob to answer the direct message in dm1@bob", ctrl.created)
@@ -114,7 +115,7 @@ func TestAgentBotIgnoresAChannelMessageThatDoesNotAddressIt(t *testing.T) {
 	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyOnMention}}
 	r, ctrl := newVoiceRouter(t, voices, bots)
 
-	r.onAgentMessage(context.Background(), "bob", guildPing("u1", "a message for someone else", false))
+	r.onAgentMessage(context.Background(), "bob", guildPing("u1", "a message for someone else", false), true)
 
 	if len(ctrl.created) != 0 {
 		t.Fatalf("bob answered a message that did not address it: %+v", ctrl.created)
@@ -135,5 +136,88 @@ func TestLoopGuardIgnoresOurOwnBotsWhateverAllowBotsSays(t *testing.T) {
 	}
 	if !policy.permits(foreign, "", true) {
 		t.Fatal("a foreign bot message was refused although allow_bots is all")
+	}
+}
+
+func TestMentionBeatsAChannelCaptureWhateverTheDirectoryOrder(t *testing.T) {
+	orders := map[string][]string{"capture first": {"carol", "bob"}, "mention first": {"bob", "carol"}}
+	for name, order := range orders {
+		t.Run(name, func(t *testing.T) {
+			var voices []contracts.AgentVoice
+			for _, agent := range order {
+				voice := contracts.AgentVoice{Agent: agent, Reply: contracts.ReplyOnMention}
+				if agent == "carol" {
+					voice.Reply, voice.Channels = contracts.ReplyInChannels, []string{"c1"}
+				}
+				voices = append(voices, voice)
+			}
+			r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+			r.houseContent = true
+
+			r.onMessage(context.Background(), guildPing("u1", "@bob fix the login bug", false))
+
+			if len(ctrl.created) != 1 || ctrl.created[0].Agent != "bob" {
+				t.Fatalf("created = %+v, want the explicit @bob to win the channel c1 of carol", ctrl.created)
+			}
+		})
+	}
+}
+
+func TestChannelRuleAnswersOnlyOnASocketWithTheContentIntent(t *testing.T) {
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+	r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+
+	r.onMessage(context.Background(), guildPing("u1", "no mention, empty on a socket without the intent", false))
+	r.onAgentMessage(context.Background(), "bob", guildPing("u1", "no mention, empty on a socket without the intent", false), false)
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want no channel capture without the Message Content intent", ctrl.created)
+	}
+
+	r.onAgentMessage(context.Background(), "bob", guildPing("u1", "no mention, read on a socket with the intent", false), true)
+	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "bob" {
+		t.Fatalf("created = %+v, want bob to answer the channel on a socket with the intent", ctrl.created)
+	}
+}
+
+func TestHouseAndAnAgentBotMentionedBothAnswer(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.register("bob", nil, "bot-app")
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyOnMention}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+
+	msg := guildPing("u1", "<@app1> <@bot-app> fix the login bug", false)
+	msg.Mentions = []dctl.Author{{ID: "app1"}, {ID: "bot-app"}}
+	r.onMessage(context.Background(), msg)
+	r.onAgentMessage(context.Background(), "bob", msg, false)
+
+	if len(ctrl.created) != 2 {
+		t.Fatalf("created = %+v, want the house and bob to answer a message that mentions both", ctrl.created)
+	}
+	if ctrl.created[0].ChannelID != "c1" || ctrl.created[1].ChannelID != "c1@bob" || ctrl.created[1].Agent != "bob" {
+		t.Fatalf("created = %+v, want the house in c1 and bob in c1@bob", ctrl.created)
+	}
+}
+
+func TestOurOwnBotsNeverTriggerThroughTheHouseSocket(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.register("bob", nil, "bot-app")
+	voices := []contracts.AgentVoice{
+		{Agent: "bob", Reply: contracts.ReplyOnMention},
+		{Agent: "carol", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}},
+	}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	r.houseContent = true
+	r.acl.bots = botsAll
+
+	for _, author := range []string{"bot-app", "app1"} {
+		msg := messageCreate{
+			ID: "m1", ChannelID: "c1", GuildID: "g1", Content: "@bob @carol fix it",
+			Author: dctl.Author{ID: author, Username: author, Bot: true},
+		}
+		r.onMessage(context.Background(), msg)
+	}
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want none: our own bots never trigger one another even with allow_bots all", ctrl.created)
 	}
 }

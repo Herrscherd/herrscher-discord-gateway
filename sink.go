@@ -13,6 +13,7 @@ import (
 const gatewayMaxLen = 2000
 
 type renderClient interface {
+	TextLimit(channelID string) int
 	UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error)
 	Post(ctx context.Context, channelID, content string) error
 	React(ctx context.Context, channelID, messageID, emoji string) error
@@ -199,6 +200,7 @@ func (s *sink) apply(ctx context.Context, event contracts.Event) {
 func (s *sink) onHuman(ctx context.Context) {
 	if level := s.level(); rendersProgress(level) {
 		s.pv = newProgressView(s.upsertStatus, level, time.Now(), s.msgs, s.log)
+		s.pv.maxLen = s.rc.TextLimit(s.ch)
 	}
 	if s.lastUser.id != "" && s.acked != s.lastUser {
 		s.addAck(ctx, s.lastUser)
@@ -264,7 +266,7 @@ func (s *sink) onReply(ctx context.Context, event contracts.Event) {
 }
 
 func (s *sink) postParts(ctx context.Context, channelID, text string) {
-	for _, part := range chunkText(text, gatewayMaxLen) {
+	for _, part := range chunkText(text, s.rc.TextLimit(channelID)) {
 		if err := s.rc.Post(ctx, channelID, part); err != nil {
 			s.log.Warn("post message part failed", "err", err)
 		}

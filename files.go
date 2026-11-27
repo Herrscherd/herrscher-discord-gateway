@@ -49,7 +49,7 @@ func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, re
 }
 
 func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, ready []openFile) (contracts.MessageID, error) {
-	parts := chunkText(text, gatewayMaxLen)
+	parts := chunkText(text, g.voices.textLimit(conv.ID))
 	if len(ready) == 0 {
 		return g.sendParts(ctx, conv, replyTo, parts)
 	}

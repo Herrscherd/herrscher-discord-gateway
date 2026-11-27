@@ -16,6 +16,7 @@ const (
 var (
 	agentName    = regexp.MustCompile(agentNamePattern)
 	errBadVoiced = errors.New("bad voiced conversation address")
+	errTooLong   = errors.New("message over the Discord limit")
 )
 
 type voiceAddress struct {
@@ -63,9 +64,14 @@ func agentHeader(agent string) string {
 	return "**" + neutralise(agent) + "**\n"
 }
 
-func mentionsAgentText(text, agent string) bool {
-	pattern := regexp.MustCompile(`(?i)(?:^|\s)@` + regexp.QuoteMeta(agent) + `(?:$|[^\p{L}\p{N}_-])`)
-	return pattern.MatchString(text)
+type agentMention struct{ pattern *regexp.Regexp }
+
+func newAgentMention(agent string) agentMention {
+	return agentMention{pattern: regexp.MustCompile(`(?i)(?:^|\s)@` + regexp.QuoteMeta(agent) + `(?:$|[^\p{L}\p{N}_-])`)}
+}
+
+func (m agentMention) matches(text string) bool {
+	return m.pattern.MatchString(text)
 }
 
 func mentionsID(msg messageCreate, appID string) bool {

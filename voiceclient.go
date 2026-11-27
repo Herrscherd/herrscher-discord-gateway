@@ -10,22 +10,38 @@ type voicedClient struct{ bots *voiceBots }
 
 func (v voicedClient) Send(ctx context.Context, conv, content string) (*dctl.Message, error) {
 	target := v.bots.at(conv)
-	return discordClient{target.client}.Send(ctx, target.channel, target.header+content)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.Send(ctx, target.channel, text)
 }
 
 func (v voicedClient) Reply(ctx context.Context, conv, replyTo, content string) (*dctl.Message, error) {
 	target := v.bots.at(conv)
-	return discordClient{target.client}.Reply(ctx, target.channel, replyTo, target.header+content)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.Reply(ctx, target.channel, replyTo, text)
 }
 
 func (v voicedClient) SendFiles(ctx context.Context, conv, content string, files []dctl.File) (*dctl.Message, error) {
 	target := v.bots.at(conv)
-	return discordClient{target.client}.SendFiles(ctx, target.channel, target.header+content, files)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.SendFiles(ctx, target.channel, text, files)
 }
 
 func (v voicedClient) ReplyFiles(ctx context.Context, conv, replyTo, content string, files []dctl.File) (*dctl.Message, error) {
 	target := v.bots.at(conv)
-	return discordClient{target.client}.ReplyFiles(ctx, target.channel, replyTo, target.header+content, files)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.ReplyFiles(ctx, target.channel, replyTo, text, files)
 }
 
 func (v voicedClient) React(ctx context.Context, conv, messageID, emoji string) error {
@@ -40,7 +56,11 @@ func (v voicedClient) Unreact(ctx context.Context, conv, messageID, emoji string
 
 func (v voicedClient) SendSelectMenu(ctx context.Context, conv, replyTo, content, customID string, options []dctl.SelectOption) (*dctl.Message, error) {
 	target := v.bots.menuAt(conv)
-	return discordClient{target.client}.SendSelectMenu(ctx, target.channel, replyTo, target.header+content, customID, options)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.SendSelectMenu(ctx, target.channel, replyTo, text, customID, options)
 }
 
 func (v voicedClient) ReadMessages(ctx context.Context, conv string, limit int, after string) ([]dctl.Message, error) {
@@ -70,7 +90,11 @@ func (v voicedClient) StartThread(ctx context.Context, conv, messageID, name str
 
 func (v voicedClient) EditMessage(ctx context.Context, conv, messageID, content string) (*dctl.Message, error) {
 	target := v.bots.at(conv)
-	return discordClient{target.client}.EditMessage(ctx, target.channel, messageID, target.header+content)
+	text, err := target.frame(content)
+	if err != nil {
+		return nil, err
+	}
+	return discordClient{target.client}.EditMessage(ctx, target.channel, messageID, text)
 }
 
 func (v voicedClient) DeleteMessage(ctx context.Context, conv, messageID string) error {

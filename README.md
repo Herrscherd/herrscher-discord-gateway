@@ -528,19 +528,32 @@ the place it was addressed, and its session is bound to that place.
 Messages written by any of the gateway's own bots never trigger any of them,
 whatever `allow_bots` says, so two agents cannot answer each other in a loop.
 A message that mentions only an agent's bot is left to that bot: the house bot
-drops it.
+drops it. A message that mentions both the house bot and an agent's bot is
+answered by both, since the user addressed both.
 
 An agent whose rule is `channels` when the daemon starts identifies with the
 privileged Message Content intent, since without it Discord delivers only the
 mentions and DMs of a bot. Enable that intent for such a bot in the Discord
 developer portal. If Discord refuses it, the agent stays down, the refusal is
-logged, and the house bot keeps running. A rule changed to `channels` while the
-daemon runs takes effect after a restart.
+logged, and the house bot keeps running.
+
+An agent without a bot of its own that has the `channels` rule when the daemon
+starts is answered through the house bot, so the house bot needs the same
+privileged Message Content intent: enable it for the house bot in the developer
+portal as well. If Discord refuses it there, the house bot stops and the refusal
+is logged, so enable the intent before starting the daemon.
+
+A rule changed to `channels` while the daemon runs takes full effect after a
+restart. Until then, a socket that was started without the intent answers only
+the mentions and DMs it receives, never a channel capture from empty messages.
+
+Each reply is split so that its agent header counts toward Discord's 2000
+character limit. An edit whose text, with the header, would pass that limit is
+refused, not sent truncated.
 
 Limits: an agent bot takes no slash commands and no interactions, and a voice
 opens no thread. When a channel is deleted, the gateway closes the sessions of
-the house bot there but not those of an agent, which stay until they are closed
-by hand.
+the house bot there and of every agent bound in it.
 
 ## Health and limits
 

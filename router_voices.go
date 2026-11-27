@@ -2,6 +2,8 @@ package discord
 
 import (
 	"context"
+	"slices"
+	"sync"
 
 	contracts "github.com/Herrscherd/herrscher-contracts"
 )
@@ -10,11 +12,16 @@ type voiceRoute struct {
 	agent    string
 	reply    contracts.ReplyRule
 	channels idSet
+	mention  agentMention
 	own      bool
 	appID    string
 }
 
-func (r *router) agentVoices(ctrl contracts.SessionControl) []contracts.AgentVoice {
+func (v voiceRoute) answersThroughHouse() bool {
+	return !v.own && v.reply != contracts.ReplyNever
+}
+
+func directoryVoices(ctrl contracts.SessionControl) []contracts.AgentVoice {
 	directory, ok := ctrl.(contracts.AgentDirectory)
 	if !ok {
 		return nil
@@ -22,22 +29,67 @@ func (r *router) agentVoices(ctrl contracts.SessionControl) []contracts.AgentVoi
 	return directory.AgentVoices(gatewayKind)
 }
 
-func (r *router) voiceRoutes(ctrl contracts.SessionControl) []voiceRoute {
+type routeCache struct {
+	mu     sync.Mutex
+	primed bool
+	voices []contracts.AgentVoice
+	routes []voiceRoute
+}
+
+func (c *routeCache) of(voices []contracts.AgentVoice, build func([]contracts.AgentVoice) []voiceRoute) []voiceRoute {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.primed && sameVoices(c.voices, voices) {
+		return c.routes
+	}
+	c.voices, c.routes, c.primed = cloneVoices(voices), build(voices), true
+	return c.routes
+}
+
+func sameVoices(left, right []contracts.AgentVoice) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index].Agent != right[index].Agent || left[index].Reply != right[index].Reply || !slices.Equal(left[index].Channels, right[index].Channels) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneVoices(voices []contracts.AgentVoice) []contracts.AgentVoice {
+	out := make([]contracts.AgentVoice, len(voices))
+	for index, voice := range voices {
+		out[index] = voice
+		out[index].Channels = slices.Clone(voice.Channels)
+	}
+	return out
+}
+
+func buildRoutes(voices []contracts.AgentVoice, bots *voiceBots) []voiceRoute {
 	var routes []voiceRoute
-	for _, voice := range r.agentVoices(ctrl) {
+	for _, voice := range voices {
 		if !validAgent(voice.Agent) {
 			continue
 		}
-		bot, own := r.cfg.voices.ownOf(voice.Agent)
+		bot, own := bots.ownOf(voice.Agent)
 		routes = append(routes, voiceRoute{
 			agent:    voice.Agent,
 			reply:    voice.Reply,
 			channels: channelSet(voice.Channels),
+			mention:  newAgentMention(voice.Agent),
 			own:      own,
 			appID:    bot.appID,
 		})
 	}
 	return routes
+}
+
+func (r *router) voiceRoutes(ctrl contracts.SessionControl) []voiceRoute {
+	return r.routes.of(directoryVoices(ctrl), func(voices []contracts.AgentVoice) []voiceRoute {
+		return buildRoutes(voices, r.cfg.voices)
+	})
 }
 
 func channelSet(ids []string) idSet {
@@ -69,21 +121,24 @@ func (r *router) addressesAgentBot(msg messageCreate) bool {
 }
 
 func (r *router) houseVoice(ctrl contracts.SessionControl, msg messageCreate, parent string) (voiceRoute, bool) {
-	for _, route := range r.voiceRoutes(ctrl) {
-		if route.own || route.reply == contracts.ReplyNever {
-			continue
-		}
-		if mentionsAgentText(msg.Content, route.agent) {
+	routes := r.voiceRoutes(ctrl)
+	for _, route := range routes {
+		if route.answersThroughHouse() && route.mention.matches(msg.Content) {
 			return route, true
 		}
-		if route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent) {
+	}
+	if !r.houseContent {
+		return voiceRoute{}, false
+	}
+	for _, route := range routes {
+		if route.answersThroughHouse() && route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent) {
 			return route, true
 		}
 	}
 	return voiceRoute{}, false
 }
 
-func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCreate) {
+func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCreate, content bool) {
 	ctrl := r.ctrl()
 	if ctrl == nil {
 		return
@@ -93,27 +148,27 @@ func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCr
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
-	if !r.voiceAddressed(route, msg, parent) {
+	if !r.voiceAddressed(route, msg, parent, content) {
 		return
 	}
 	r.answerAs(ctx, ctrl, route, msg)
 }
 
-func (r *router) voiceAddressed(route voiceRoute, msg messageCreate, parent string) bool {
+func (r *router) voiceAddressed(route voiceRoute, msg messageCreate, parent string, content bool) bool {
 	if msg.direct() || mentionsID(msg, route.appID) {
 		return true
 	}
 	if (addressPolicy{appID: route.appID}).repliesToSelf(msg) {
 		return true
 	}
-	return route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent)
+	return content && route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent)
 }
 
 func (r *router) mentionedBy(route voiceRoute, msg messageCreate) bool {
 	if route.own {
 		return mentionsID(msg, route.appID)
 	}
-	return mentionsAgentText(msg.Content, route.agent)
+	return route.mention.matches(msg.Content)
 }
 
 func (r *router) answerAs(ctx context.Context, ctrl contracts.SessionControl, route voiceRoute, msg messageCreate) {

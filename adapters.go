@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -79,10 +80,13 @@ func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
 // the Discord failure.
 func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) error {
 	target := a.bots.at(channelID)
-	if _, err := target.client.Messages().Send(ctx, target.channel, target.header+content); err != nil {
-		return fmt.Errorf("discord send: %w", err)
+	var failed error
+	for _, part := range chunkText(content, target.limit()) {
+		if err := target.post(ctx, part); err != nil {
+			failed = errors.Join(failed, fmt.Errorf("discord send: %w", err))
+		}
 	}
-	return nil
+	return failed
 }
 
 // ChannelRef renders a Discord channel id as channel-mention markup so operator
@@ -221,7 +225,11 @@ func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji stri
 // that wraps the Discord failure.
 func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error) {
 	target := p.bots.at(channelID)
-	statusID, err := target.client.Interactions().UpsertStatusMessage(ctx, target.channel, messageID, target.header+content)
+	text, err := target.frame(content)
+	if err != nil {
+		return "", fmt.Errorf("discord status message: %w", err)
+	}
+	statusID, err := target.client.Interactions().UpsertStatusMessage(ctx, target.channel, messageID, text)
 	if err != nil {
 		return statusID, fmt.Errorf("discord status message: %w", err)
 	}
@@ -236,7 +244,11 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
 	target := p.bots.menuAt(channelID)
-	sent, err := p.bots.house.Components().SendSelectMenu(ctx, target.channel, replyTo, target.header+prompt, ChoiceCustomID(route), out)
+	text, err := target.frame(prompt)
+	if err != nil {
+		return "", fmt.Errorf("discord menu: %w", err)
+	}
+	sent, err := p.bots.house.Components().SendSelectMenu(ctx, target.channel, replyTo, text, ChoiceCustomID(route), out)
 	if err != nil {
 		return "", fmt.Errorf("discord menu: %w", err)
 	}
@@ -258,9 +270,12 @@ func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error 
 	return r.p.Unreact(ctx, ch, id, emoji)
 }
 
+func (r renderAdapter) TextLimit(ch string) int {
+	return r.p.bots.textLimit(ch)
+}
+
 func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
-	target := r.p.bots.at(ch)
-	if _, err := target.client.Messages().Send(ctx, target.channel, target.header+content); err != nil {
+	if err := r.p.bots.at(ch).post(ctx, content); err != nil {
 		return fmt.Errorf("discord post: %w", err)
 	}
 	return nil

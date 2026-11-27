@@ -54,6 +54,9 @@ type router struct {
 	langs sessionLanguages
 	acl   *accessPolicy
 
+	houseContent bool
+	routes       routeCache
+
 	mu      sync.Mutex
 	pending map[string]messageCreate
 	jobs    map[string]job

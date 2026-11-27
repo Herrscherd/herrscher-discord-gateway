@@ -39,6 +39,8 @@ type fakeRender struct {
 	postChans []string
 }
 
+func (f *fakeRender) TextLimit(string) int { return gatewayMaxLen }
+
 func (f *fakeRender) UpsertStatusMessage(_ context.Context, _, _, content string) (string, error) {
 	f.upserts = append(f.upserts, content)
 	if f.statusID == "" {

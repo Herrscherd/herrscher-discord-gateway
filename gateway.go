@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -61,8 +62,11 @@ type Gateway struct {
 	batchLimit int64
 
 	voices *voiceBots
+	wsURL  string
+	newBot func(token string) *dctl.Client
 
 	slashMu      sync.Mutex
+	bound        bool
 	slashClosed  bool
 	slashRunning *slashRuntime
 }
@@ -78,28 +82,57 @@ func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gatewa
 // the slash command surface (sync + websocket loop). It satisfies
 // contracts.SessionControlReceiver. Gateways built without a slash runtime (e.g.
 // in tests) ignore the binding. Only the first binding starts the runtime and
-// keeps its controller: a later binding, or one after Close, is ignored.
+// keeps its controller: a later binding, or one after Close, is ignored. The
+// agent bots are identified before the runtime starts, outside the lock, so a
+// Close never waits on Discord; a Close that comes first starts nothing.
 func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slash == nil {
 		return
 	}
 	g.slashMu.Lock()
-	defer g.slashMu.Unlock()
-	if g.slashClosed || g.slashRunning != nil {
+	if g.slashClosed || g.bound {
+		g.slashMu.Unlock()
 		return
 	}
+	g.bound = true
+	g.slashMu.Unlock()
+
+	voices := directoryVoices(ctrl)
 	g.slash.ctrl = ctrl
-	g.slash.agents = g.agentSockets(g.run(), ctrl)
+	g.slash.agents = g.agentSockets(g.run(), voices)
+	contentHouse := houseNeedsContent(voices)
+	if contentHouse {
+		g.slash.socket.intents |= intentMessageContent
+	}
+	if g.slash.router != nil {
+		g.slash.router.houseContent = contentHouse
+	}
+
+	g.slashMu.Lock()
+	defer g.slashMu.Unlock()
+	if g.slashClosed {
+		return
+	}
 	g.slashRunning = startSlashRuntime(g.run(), g.slash)
 }
 
-func (g *Gateway) agentSockets(ctx context.Context, ctrl contracts.SessionControl) []*ws {
-	directory, ok := ctrl.(contracts.AgentDirectory)
-	if !ok || g.voices == nil {
+func houseNeedsContent(voices []contracts.AgentVoice) bool {
+	for _, voice := range voices {
+		if !voice.Token.Valid() && validAgent(voice.Agent) && voice.Reply == contracts.ReplyInChannels {
+			return true
+		}
+	}
+	return false
+}
+
+const appIDTimeout = 10 * time.Second
+
+func (g *Gateway) agentSockets(ctx context.Context, voices []contracts.AgentVoice) []*ws {
+	if g.voices == nil {
 		return nil
 	}
 	var sockets []*ws
-	for _, voice := range directory.AgentVoices(gatewayKind) {
+	for _, voice := range voices {
 		if !voice.Token.Valid() {
 			continue
 		}
@@ -107,24 +140,45 @@ func (g *Gateway) agentSockets(ctx context.Context, ctrl contracts.SessionContro
 			g.log.Warn("agent name is not a valid bot name, the agent gets no bot of its own", "agent", voice.Agent)
 			continue
 		}
-		bot := dctl.New(voice.Token.Secret(), "")
-		appID, err := bot.Interactions().AppID(ctx)
+		bot := g.botFor(voice.Token.Secret())
+		appID, err := appIDOf(ctx, bot)
 		if err != nil {
 			g.log.Warn("agent bot token rejected, the agent answers through the house bot", "agent", voice.Agent, "err", err)
 			continue
 		}
 		g.voices.register(voice.Agent, bot, appID)
 		agent := voice.Agent
+		content := voice.Reply == contracts.ReplyInChannels
 		onMessage := func(ctx context.Context, msg messageCreate) {
-			g.slash.router.onAgentMessage(ctx, agent, msg)
+			g.slash.router.onAgentMessage(ctx, agent, msg, content)
 		}
-		socket := newWS(gatewayURL, voice.Token.Secret(), g.log, nil, onMessage, nil)
-		if voice.Reply == contracts.ReplyInChannels {
+		socket := newWS(g.socketURL(), voice.Token.Secret(), g.log, nil, onMessage, nil)
+		if content {
 			socket.intents |= intentMessageContent
 		}
 		sockets = append(sockets, socket)
 	}
 	return sockets
+}
+
+func appIDOf(ctx context.Context, bot *dctl.Client) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, appIDTimeout)
+	defer cancel()
+	return bot.Interactions().AppID(ctx)
+}
+
+func (g *Gateway) botFor(token string) *dctl.Client {
+	if g.newBot != nil {
+		return g.newBot(token)
+	}
+	return dctl.New(token, "")
+}
+
+func (g *Gateway) socketURL() string {
+	if g.wsURL != "" {
+		return g.wsURL
+	}
+	return gatewayURL
 }
 
 // Close stops the slash runtime started by BindSessionControl and waits for its
@@ -200,7 +254,7 @@ func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang 
 	if renderErr == nil {
 		emoji = g.msgs.headIn(resolved, noticeHead(notice.Code))
 	}
-	sent, err := g.Post(ctx, conv, withEmoji(emoji, text))
+	sent, err := g.sendParts(ctx, conv, "", chunkText(withEmoji(emoji, text), g.voices.textLimit(conv.ID)))
 	if err != nil {
 		return sent, err
 	}

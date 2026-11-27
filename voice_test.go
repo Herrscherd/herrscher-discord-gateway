@@ -75,8 +75,8 @@ func TestMentionOfAnAgentNeedsAWholeWord(t *testing.T) {
 		"bob":             false,
 	}
 	for text, want := range cases {
-		if got := mentionsAgentText(text, "bob"); got != want {
-			t.Fatalf("mentionsAgentText(%q) = %v, want %v", text, got, want)
+		if got := newAgentMention("bob").matches(text); got != want {
+			t.Fatalf("mention of bob in %q = %v, want %v", text, got, want)
 		}
 	}
 }
