@@ -140,3 +140,33 @@ func TestAgentSocketReadsTheBlankMessageInTheAgentsChannel(t *testing.T) {
 		t.Fatalf("read channels = %v, want [c1@bob] so the agent's own bot reads", counter.channels)
 	}
 }
+
+func TestBotAuthorWithoutMentionIsCapturedByNoOneInAChannel(t *testing.T) {
+	voices := []contracts.AgentVoice{{Agent: "alice", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+
+	t.Run("human author in the capture channel is captured", func(t *testing.T) {
+		r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+		r.setHouseContent(true)
+		r.acl.bots = botsMentions
+
+		r.onMessage(context.Background(), guildPing("u1", "hello channel, no name", false))
+
+		if len(ctrl.created) != 1 {
+			t.Fatalf("human author was not captured: %+v", ctrl.created)
+		}
+	})
+
+	t.Run("bot author without a mention is captured by no one", func(t *testing.T) {
+		r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+		r.setHouseContent(true)
+		r.acl.bots = botsMentions
+		bot := guildPing("bot1", "hello channel, no name", false)
+		bot.Author.Bot = true
+
+		r.onMessage(context.Background(), bot)
+
+		if len(ctrl.created) != 0 {
+			t.Fatalf("bot author without a mention was captured: %+v", ctrl.created)
+		}
+	})
+}
