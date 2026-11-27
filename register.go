@@ -118,6 +118,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	bot := dctl.New(token, "", dctl.WithGlobalCommands())
 	voices := newVoiceBots(bot)
 	gateway := NewGateway(voicedClient{voices}, run, msgs, log)
+	gateway.voices = voices
 	plat := NewPlatform(voices)
 	bindPath, err := bindStorePath()
 	if err != nil {

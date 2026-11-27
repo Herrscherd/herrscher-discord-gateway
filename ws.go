@@ -36,6 +36,7 @@ const (
 	intentGuilds         = 1 << 0
 	intentGuildMessages  = 1 << 9
 	intentDirectMessages = 1 << 12
+	intentMessageContent = 1 << 15
 )
 
 const (
@@ -55,6 +56,7 @@ const (
 type ws struct {
 	url       string
 	token     string
+	intents   int
 	log       *slog.Logger
 	handle    func(context.Context, dctl.Interaction)
 	onMessage func(context.Context, messageCreate)
@@ -79,7 +81,7 @@ type gwPayload struct {
 }
 
 func newWS(url, token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	return &ws{url: url, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+	return &ws{url: url, token: token, intents: wsIntents, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
 }
 
 func (w *ws) run(ctx context.Context) {
@@ -258,7 +260,7 @@ func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 		Op: opIdentify,
 		D: identifyData{
 			Token:      w.token,
-			Intents:    wsIntents,
+			Intents:    w.intents,
 			Properties: identifyProps{OS: "linux", Browser: "herrscher", Device: "herrscher"},
 		},
 	})

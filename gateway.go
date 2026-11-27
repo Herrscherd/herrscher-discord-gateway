@@ -60,6 +60,8 @@ type Gateway struct {
 	fileLimit  int64
 	batchLimit int64
 
+	voices *voiceBots
+
 	slashMu      sync.Mutex
 	slashClosed  bool
 	slashRunning *slashRuntime
@@ -87,7 +89,42 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 		return
 	}
 	g.slash.ctrl = ctrl
+	g.slash.agents = g.agentSockets(g.run(), ctrl)
 	g.slashRunning = startSlashRuntime(g.run(), g.slash)
+}
+
+func (g *Gateway) agentSockets(ctx context.Context, ctrl contracts.SessionControl) []*ws {
+	directory, ok := ctrl.(contracts.AgentDirectory)
+	if !ok || g.voices == nil {
+		return nil
+	}
+	var sockets []*ws
+	for _, voice := range directory.AgentVoices(gatewayKind) {
+		if !voice.Token.Valid() {
+			continue
+		}
+		if !validAgent(voice.Agent) {
+			g.log.Warn("agent name is not a valid bot name, the agent gets no bot of its own", "agent", voice.Agent)
+			continue
+		}
+		bot := dctl.New(voice.Token.Secret(), "")
+		appID, err := bot.Interactions().AppID(ctx)
+		if err != nil {
+			g.log.Warn("agent bot token rejected, the agent answers through the house bot", "agent", voice.Agent, "err", err)
+			continue
+		}
+		g.voices.register(voice.Agent, bot, appID)
+		agent := voice.Agent
+		onMessage := func(ctx context.Context, msg messageCreate) {
+			g.slash.router.onAgentMessage(ctx, agent, msg)
+		}
+		socket := newWS(gatewayURL, voice.Token.Secret(), g.log, nil, onMessage, nil)
+		if voice.Reply == contracts.ReplyInChannels {
+			socket.intents |= intentMessageContent
+		}
+		sockets = append(sockets, socket)
+	}
+	return sockets
 }
 
 // Close stops the slash runtime started by BindSessionControl and waits for its
