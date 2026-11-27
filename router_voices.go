@@ -119,7 +119,7 @@ func (r *router) namesPendingAgent(ctrl contracts.SessionControl, msg messageCre
 		return false
 	}
 	for _, route := range r.voiceRoutes(ctrl) {
-		if route.pending && route.mention.matches(msg.Content) {
+		if route.pending && route.reply != contracts.ReplyNever && route.mention.matches(msg.Content) {
 			return true
 		}
 	}

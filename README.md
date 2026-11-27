@@ -557,9 +557,14 @@ without a bot of its own. Closing the gateway cancels the checks still pending.
 A message addressed to an agent's bot during that check is dropped, not captured:
 the agent's socket starts only once its token is resolved, so nothing holds the
 message for it. The same goes for a text `@name` of such an agent, in a DM, a thread
-or a channel alike: it is dropped too. The house bot does not answer it as if the
-agent had no bot of its own, because the agent may
-yet get one.
+or a channel alike: it is dropped too, unless another voice answers that message.
+A token-less agent with the `mention` or `channels` rule that the message also
+names answers it, and so does a token-less `channels` agent that captures the
+channel, while the pending agent stays silent. An agent whose rule is `never`
+holds nothing back. When the house bot and a pending agent are both mentioned, the
+house bot answers as itself, and the pending agent's part is neither held nor
+answered later. The house bot does not answer a text `@name` as if the agent had
+no bot of its own, because the agent may yet get one.
 
 An agent without a bot of its own that has the `channels` rule is answered through
 the house bot, so the house bot needs the Message Content intent as well. The house

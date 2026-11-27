@@ -141,11 +141,14 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	if ctrl == nil {
 		return
 	}
-	if r.addressesAgentBot(msg) || r.namesPendingAgent(ctrl, msg) {
+	if r.addressesAgentBot(msg) {
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
 	if r.voiceCaptured(ctx, ctrl, msg, parent) {
+		return
+	}
+	if r.namesPendingAgent(ctrl, msg) {
 		return
 	}
 	mode := r.mode(msg.ChannelID, parent)

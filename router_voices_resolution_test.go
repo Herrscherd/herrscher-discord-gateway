@@ -157,3 +157,61 @@ func TestAPendingAgentsTextMentionIsDroppedInEveryChatKind(t *testing.T) {
 		})
 	}
 }
+
+func TestAPendingAgentDoesNotSilenceAReadyAgentNamedInTheSameMessage(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{
+		{Agent: "bob", Reply: contracts.ReplyOnMention},
+		{Agent: "alice", Reply: contracts.ReplyOnMention},
+	}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+
+	r.onMessage(context.Background(), guildPing("u1", "@bob @alice hi there", false))
+
+	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@alice" {
+		t.Fatalf("created = %+v, want alice to answer c1@alice and bob to stay silent while he resolves", ctrl.created)
+	}
+}
+
+func TestAPendingAgentDoesNotBlockACaptureOfAnotherVoice(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply contracts.ReplyRule
+	}{
+		{name: "pending on mention", reply: contracts.ReplyOnMention},
+		{name: "pending never", reply: contracts.ReplyNever},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bots := newVoiceBots(nil)
+			bots.expect([]string{"bob"})
+			voices := []contracts.AgentVoice{
+				{Agent: "bob", Reply: tc.reply},
+				{Agent: "alice", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}},
+			}
+			r, ctrl := newVoiceRouter(t, voices, bots)
+			r.setHouseContent(true)
+
+			r.onMessage(context.Background(), guildPing("u1", "@bob hi", false))
+
+			if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@alice" {
+				t.Fatalf("created = %+v, want alice to capture c1 and answer c1@alice while bob resolves", ctrl.created)
+			}
+		})
+	}
+}
+
+func TestAPendingNeverAgentDoesNotHoldTheHouseBack(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyNever}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+
+	r.onMessage(context.Background(), guildPing("u1", "@bob hi", false))
+
+	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "" {
+		t.Fatalf("created = %+v, want the house to answer in ambient mode: a never agent that resolves keeps no silence on the house", ctrl.created)
+	}
+}
