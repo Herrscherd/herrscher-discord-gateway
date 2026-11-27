@@ -193,11 +193,18 @@ func displayName(name string) string {
 }
 
 func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
+	return g.sendEach(ctx, conv, replyTo, parts, false)
+}
+
+func (g *Gateway) sendEach(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string, stopOnFailure bool) (contracts.MessageID, error) {
 	var first contracts.MessageID
 	var failed error
 	for _, part := range parts {
 		sentID, err := g.sendText(ctx, conv, replyTo, part)
 		if err != nil {
+			if stopOnFailure {
+				return first, err
+			}
 			failed = errors.Join(failed, err)
 			continue
 		}
