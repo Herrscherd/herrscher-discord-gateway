@@ -471,6 +471,10 @@ A non-recoverable close is treated as **fatal**. 4004 (bad token) and 4010 to 40
 (bad shard, API version, intents) stop the loop and log once, rather than
 respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 
+When the gateway itself closes the socket to identify again with the Message
+Content intent, it reconnects at once, without the backoff. Messages that arrive
+during that restart are not delivered.
+
 ## Sending files
 
 The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files

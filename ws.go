@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -73,6 +74,7 @@ type ws struct {
 	}
 	sem     chan struct{}
 	workers sync.WaitGroup
+	restart atomic.Bool
 }
 
 type gwPayload struct {
@@ -93,21 +95,30 @@ func (w *ws) run(ctx context.Context) {
 	backoff := time.Second
 	for ctx.Err() == nil {
 		connected := func() { backoff = time.Second }
-		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
-			if code, ok := permanentClose(err); ok {
-				w.log.Error("gateway closed permanently, not reconnecting, check the bot token and intents", "err", err, "close_code", int(code))
-				return
-			}
-			w.log.Warn("gateway connection lost, reconnecting", "err", err, "backoff", backoff.String())
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(backoff):
-			}
-			if backoff *= 2; backoff > maxReconnectBackoff {
-				backoff = maxReconnectBackoff
-			}
+		err := w.session(ctx, connected)
+		if err == nil || ctx.Err() != nil || w.restart.Swap(false) {
+			continue
 		}
+		if !w.awaitReconnect(ctx, err, backoff) {
+			return
+		}
+		if backoff *= 2; backoff > maxReconnectBackoff {
+			backoff = maxReconnectBackoff
+		}
+	}
+}
+
+func (w *ws) awaitReconnect(ctx context.Context, err error, backoff time.Duration) bool {
+	if code, ok := permanentClose(err); ok {
+		w.log.Error("gateway closed permanently, not reconnecting, check the bot token and intents", "err", err, "close_code", int(code))
+		return false
+	}
+	w.log.Warn("gateway connection lost, reconnecting", "err", err, "backoff", backoff.String())
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(backoff):
+		return true
 	}
 }
 
@@ -281,6 +292,7 @@ func (w *ws) require(intents int) {
 	conn := w.conn
 	w.link.Unlock()
 	if conn != nil {
+		w.restart.Store(true)
 		w.closeSocket(conn, websocket.StatusNormalClosure, "intents changed, identifying again")
 	}
 }
@@ -382,7 +394,7 @@ func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
 }
 
 func (w *ws) closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {
-	if err := c.Close(code, reason); err != nil {
+	if err := c.Close(code, reason); err != nil && !errors.Is(err, net.ErrClosed) {
 		w.log.Warn("close gateway socket failed", "err", err)
 	}
 }
