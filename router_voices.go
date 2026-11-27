@@ -181,6 +181,10 @@ func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCr
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
+	if r.mode(msg.ChannelID, parent) == offMode || !r.acl.permits(msg, parent, true) {
+		return
+	}
+	msg = r.hydrate(ctx, msg)
 	if !r.voiceAddressed(ctrl, route, msg, parent, content) {
 		return
 	}
@@ -225,15 +229,11 @@ func (r *router) mentionedBy(route voiceRoute, msg messageCreate) bool {
 func (r *router) answerAs(ctx context.Context, ctrl contracts.SessionControl, route voiceRoute, msg messageCreate) {
 	bare := msg.ChannelID
 	parent := r.binds.Parent(bare)
-	if r.mode(bare, parent) == offMode {
-		return
-	}
 	if !r.acl.permits(msg, parent, r.mentionedBy(route, msg)) {
 		return
 	}
 	conv := voiced(bare, route.agent)
 	msg.ChannelID = conv
-	msg = r.hydrate(ctx, msg)
 	chatType := r.chatType(conv, msg.direct())
 	slot := r.cfg.scope.slot(chatType, conv, msg.Author.ID)
 	shared := r.cfg.scope.multiUser(chatType)

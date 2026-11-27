@@ -132,24 +132,20 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
+	if !r.admittedBeforeRouting(msg, parent) {
+		return
+	}
+	msg = r.hydrate(ctx, msg)
 	if r.voiceCaptured(ctx, ctrl, msg, parent) {
 		return
 	}
 	if r.pendingAgentHolds(ctrl, msg, parent) {
 		return
 	}
-	mode := r.mode(msg.ChannelID, parent)
-	if mode == offMode {
+	if !r.answersAsHouse(msg, parent) {
 		return
 	}
 	chatType := r.chatType(msg.ChannelID, msg.direct())
-	if mode != ambientMode && !r.cfg.address.addressed(msg, chatType, parent) {
-		return
-	}
-	if !r.acl.permits(msg, parent, r.cfg.address.mentioned(msg)) {
-		return
-	}
-	msg = r.hydrate(ctx, msg)
 	slot := r.cfg.scope.slot(chatType, msg.ChannelID, msg.Author.ID)
 	if session := r.binds.Session(slot); session != "" {
 		if r.fork(ctx, ctrl, session, msg) {
@@ -163,6 +159,19 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 		}
 	}
 	r.ask(ctx, ctrl, msg)
+}
+
+func (r *router) admittedBeforeRouting(msg messageCreate, parent string) bool {
+	return r.mode(msg.ChannelID, parent) != offMode && r.acl.permits(msg, parent, true)
+}
+
+func (r *router) answersAsHouse(msg messageCreate, parent string) bool {
+	mode := r.mode(msg.ChannelID, parent)
+	chatType := r.chatType(msg.ChannelID, msg.direct())
+	if mode != ambientMode && !r.cfg.address.addressed(msg, chatType, parent) {
+		return false
+	}
+	return r.acl.permits(msg, parent, r.cfg.address.mentioned(msg))
 }
 
 const hydrateWindow = 5

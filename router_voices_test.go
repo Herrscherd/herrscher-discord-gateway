@@ -304,3 +304,31 @@ func TestHouseMentionedAfterATokenlessCaptureAlsoAnswers(t *testing.T) {
 		t.Fatalf("created = %+v, want bob in c1@bob and the house in c1 when the house is mentioned", ctrl.created)
 	}
 }
+
+func TestBlankedMessageNamingAPendingAgentIsHeldInAmbientMode(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyOnMention}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+	r.c = &fakeClient{read: []dctl.Message{{ID: "m-u1", ChannelID: "c1", Content: "@bob what changed"}}}
+
+	r.onMessage(context.Background(), guildPing("u1", "", false))
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want the house to hold a message that names the pending agent bob", ctrl.created)
+	}
+}
+
+func TestBlankedMessageNamingAReadyTokenlessAgentIsAnsweredByIt(t *testing.T) {
+	voices := []contracts.AgentVoice{{Agent: "alice", Reply: contracts.ReplyOnMention}}
+	r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+	r.c = &fakeClient{read: []dctl.Message{{ID: "m-u1", ChannelID: "c1", Content: "@alice what changed"}}}
+
+	r.onMessage(context.Background(), guildPing("u1", "", false))
+
+	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@alice" || ctrl.created[0].Agent != "alice" {
+		t.Fatalf("created = %+v, want alice to answer in c1@alice, not the house", ctrl.created)
+	}
+}
