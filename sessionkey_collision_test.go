@@ -1,6 +1,32 @@
 package discord
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestAHashedSessionNameNeverEqualsAPlainOne(t *testing.T) {
+	hashed := sessionNameFor("123456789012345678@bob" + strings.Repeat("x", 40) + ":12345678901234567")
+	plain := sessionNameFor("123456789012345678@bobxx-8dbbbec6b9b2aaea:12345678901234567")
+	if plain != "ch-123456789012345678-12345678901234567-a-bobxx-8dbbbec6b9b2aaea" {
+		t.Fatalf("the plain slot named %q, the collision pair is no longer the one under test", plain)
+	}
+	if hashed == plain {
+		t.Fatalf("a hashed long slot and a plain slot both get the session name %q", plain)
+	}
+}
+
+func TestANonNumericIdNeverSharesANameWithANumericSlot(t *testing.T) {
+	pairs := [][2]string{
+		{"1-2", "1:2"},
+		{"1:2-3", "1-2:3"},
+	}
+	for _, pair := range pairs {
+		if sessionNameFor(pair[0]) == sessionNameFor(pair[1]) {
+			t.Fatalf("slots %q and %q both get the session name %q", pair[0], pair[1], sessionNameFor(pair[0]))
+		}
+	}
+}
 
 func TestDistinctSlotsGetDistinctSessionNames(t *testing.T) {
 	slots := []string{
