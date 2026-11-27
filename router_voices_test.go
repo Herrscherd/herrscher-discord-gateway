@@ -332,3 +332,23 @@ func TestBlankedMessageNamingAReadyTokenlessAgentIsAnsweredByIt(t *testing.T) {
 		t.Fatalf("created = %+v, want alice to answer in c1@alice, not the house", ctrl.created)
 	}
 }
+
+func TestPendingWildcardChannelsAgentHoldsTheHouseUntilItSettles(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"*"}}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	r.setHouseContent(true)
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+
+	r.onMessage(context.Background(), guildPing("u1", "no mention, while bob resolves", false))
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want the house held in every channel while bob is pending", ctrl.created)
+	}
+
+	bots.settle("bob")
+	r.onMessage(context.Background(), guildPing("u1", "no mention, after bob settled", false))
+	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "bob" {
+		t.Fatalf("created = %+v, want bob to answer the wildcard channel once settled", ctrl.created)
+	}
+}
