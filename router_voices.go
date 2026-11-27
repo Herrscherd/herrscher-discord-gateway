@@ -30,19 +30,20 @@ func directoryVoices(ctrl contracts.SessionControl) []contracts.AgentVoice {
 }
 
 type routeCache struct {
-	mu     sync.Mutex
-	primed bool
-	voices []contracts.AgentVoice
-	routes []voiceRoute
+	mu      sync.Mutex
+	primed  bool
+	version uint64
+	voices  []contracts.AgentVoice
+	routes  []voiceRoute
 }
 
-func (c *routeCache) of(voices []contracts.AgentVoice, build func([]contracts.AgentVoice) []voiceRoute) []voiceRoute {
+func (c *routeCache) of(voices []contracts.AgentVoice, version uint64, build func([]contracts.AgentVoice) []voiceRoute) []voiceRoute {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.primed && sameVoices(c.voices, voices) {
+	if c.primed && c.version == version && sameVoices(c.voices, voices) {
 		return c.routes
 	}
-	c.voices, c.routes, c.primed = cloneVoices(voices), build(voices), true
+	c.voices, c.routes, c.version, c.primed = cloneVoices(voices), build(voices), version, true
 	return c.routes
 }
 
@@ -87,7 +88,7 @@ func buildRoutes(voices []contracts.AgentVoice, bots *voiceBots) []voiceRoute {
 }
 
 func (r *router) voiceRoutes(ctrl contracts.SessionControl) []voiceRoute {
-	return r.routes.of(directoryVoices(ctrl), func(voices []contracts.AgentVoice) []voiceRoute {
+	return r.routes.of(directoryVoices(ctrl), r.cfg.voices.version(), func(voices []contracts.AgentVoice) []voiceRoute {
 		return buildRoutes(voices, r.cfg.voices)
 	})
 }
@@ -112,9 +113,24 @@ func (r *router) routeOf(ctrl contracts.SessionControl, agent string) (voiceRout
 }
 
 func (r *router) addressesAgentBot(msg messageCreate) bool {
+	if r.cfg.address.mentioned(msg) {
+		return false
+	}
+	if r.cfg.voices.awaiting() {
+		return mentionsAnyBot(msg)
+	}
 	for _, appID := range r.cfg.voices.agentAppIDs() {
 		if mentionsID(msg, appID) {
-			return !r.cfg.address.mentioned(msg)
+			return true
+		}
+	}
+	return false
+}
+
+func mentionsAnyBot(msg messageCreate) bool {
+	for _, u := range msg.Mentions {
+		if u.Bot {
+			return true
 		}
 	}
 	return false

@@ -114,7 +114,18 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slashClosed {
 		return
 	}
+	g.expectAgents(voices)
 	g.slashRunning = startSlashRuntime(g.run(), g.slash)
+}
+
+func (g *Gateway) expectAgents(voices []contracts.AgentVoice) {
+	var agents []string
+	for _, voice := range voices {
+		if tokenGiven(voice) && validAgent(voice.Agent) {
+			agents = append(agents, voice.Agent)
+		}
+	}
+	g.voices.expect(agents)
 }
 
 func tokenGiven(voice contracts.AgentVoice) bool {
@@ -161,9 +172,6 @@ func (g *Gateway) bindAgents(ctx context.Context, voices []contracts.AgentVoice)
 		return nil
 	}
 	resolved := g.resolveAgents(ctx, voices)
-	for _, agent := range resolved {
-		g.voices.register(agent.voice.Agent, agent.bot, agent.appID)
-	}
 	g.settleHouseContent(voices)
 	sockets := make([]*ws, 0, len(resolved))
 	for _, agent := range resolved {
@@ -226,6 +234,7 @@ func (g *Gateway) resolveAgents(ctx context.Context, voices []contracts.AgentVoi
 }
 
 func (g *Gateway) resolveAgent(ctx context.Context, voice contracts.AgentVoice) *resolvedAgent {
+	defer g.voices.settle(voice.Agent)
 	bot := g.botFor(voice.Token.Secret())
 	appID, err := appIDOf(ctx, bot)
 	if err != nil {
@@ -234,6 +243,7 @@ func (g *Gateway) resolveAgent(ctx context.Context, voice contracts.AgentVoice) 
 		}
 		return nil
 	}
+	g.voices.register(voice.Agent, bot, appID)
 	return &resolvedAgent{voice: voice, bot: bot, appID: appID}
 }
 
@@ -320,11 +330,7 @@ func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyT
 }
 
 func (g *Gateway) textParts(conv contracts.Conversation, text string) []string {
-	parts := chunkText(text, g.voices.textLimit(conv.ID))
-	if len(parts) == 0 {
-		return []string{text}
-	}
-	return parts
+	return splitText(text, g.voices.textLimit(conv.ID))
 }
 
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the

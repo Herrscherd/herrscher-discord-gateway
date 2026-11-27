@@ -17,18 +17,59 @@ type ownBot struct {
 type voiceBots struct {
 	house *dctl.Client
 
-	mu  sync.Mutex
-	own map[string]ownBot
+	mu         sync.Mutex
+	own        map[string]ownBot
+	resolving  map[string]bool
+	generation uint64
 }
 
 func newVoiceBots(house *dctl.Client) *voiceBots {
-	return &voiceBots{house: house, own: make(map[string]ownBot)}
+	return &voiceBots{house: house, own: make(map[string]ownBot), resolving: make(map[string]bool)}
 }
 
 func (b *voiceBots) register(agent string, client *dctl.Client, appID string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.own[agent] = ownBot{client: client, appID: appID}
+	b.generation++
+}
+
+func (b *voiceBots) version() uint64 {
+	if b == nil {
+		return 0
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.generation
+}
+
+func (b *voiceBots) expect(agents []string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, agent := range agents {
+		b.resolving[agent] = true
+	}
+}
+
+func (b *voiceBots) settle(agent string) {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.resolving, agent)
+}
+
+func (b *voiceBots) awaiting() bool {
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.resolving) > 0
 }
 
 func (b *voiceBots) ownOf(agent string) (ownBot, bool) {
@@ -122,4 +163,12 @@ func (b *voiceBots) houseAt(conv string) speaker {
 func (b *voiceBots) menuAt(conv string) speaker {
 	addr := addressOf(conv)
 	return speaker{client: b.house, channel: addr.channel, header: agentHeader(addr.agent)}
+}
+
+func splitText(text string, limit int) []string {
+	parts := chunkText(text, limit)
+	if len(parts) == 0 {
+		return []string{text}
+	}
+	return parts
 }

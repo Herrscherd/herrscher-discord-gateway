@@ -533,7 +533,11 @@ Messages written by any of the gateway's own bots never trigger any of them,
 whatever `allow_bots` says, so two agents cannot answer each other in a loop.
 A message that mentions only an agent's bot is left to that bot: the house bot
 drops it. A message that mentions both the house bot and an agent's bot is
-answered by both, since the user addressed both.
+answered by both, since the user addressed both. While the agent tokens are still
+being checked at startup (at most 10 seconds), the house bot drops a message that
+mentions any bot other than itself, unless it also mentions the house bot, because
+it cannot yet tell which of those bots belongs to an agent. A message that mentions
+a third-party bot can therefore be ignored for at most 10 seconds at startup.
 
 An agent whose rule is `channels` and that has a bot of its own identifies with
 the privileged Message Content intent, since without it Discord delivers only the

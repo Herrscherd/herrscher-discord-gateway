@@ -530,7 +530,10 @@ func (r *router) textsIn(conv string) messages {
 }
 
 func (r *router) post(ctx context.Context, channel, text string) {
-	if _, err := r.c.Send(ctx, channel, text); err != nil {
-		r.log.Warn("post failed", "err", err)
+	for _, part := range splitText(text, r.cfg.voices.textLimit(channel)) {
+		if _, err := r.c.Send(ctx, channel, part); err != nil {
+			r.log.Warn("post failed", "err", err)
+			return
+		}
 	}
 }
