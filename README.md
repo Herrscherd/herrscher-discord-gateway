@@ -554,6 +554,12 @@ checked in parallel, each for at most 10 seconds, while the house bot already
 answers. A token that is refused, or that gets no answer in time, leaves its agent
 without a bot of its own. Closing the gateway cancels the checks still pending.
 
+A message addressed to an agent's bot during that check is dropped, not captured:
+the agent's socket starts only once its token is resolved, so nothing holds the
+message for it. The same goes for a text `@name` of such an agent. The house bot
+does not answer it as if the agent had no bot of its own, because the agent may
+yet get one.
+
 An agent without a bot of its own that has the `channels` rule is answered through
 the house bot, so the house bot needs the Message Content intent as well. The house
 bot identifies with that intent from the start when such an agent is configured. An

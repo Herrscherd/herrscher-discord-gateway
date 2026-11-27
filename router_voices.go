@@ -14,11 +14,12 @@ type voiceRoute struct {
 	channels idSet
 	mention  agentMention
 	own      bool
+	pending  bool
 	appID    string
 }
 
 func (v voiceRoute) answersThroughHouse() bool {
-	return !v.own && v.reply != contracts.ReplyNever
+	return !v.own && !v.pending && v.reply != contracts.ReplyNever
 }
 
 func directoryVoices(ctrl contracts.SessionControl) []contracts.AgentVoice {
@@ -81,6 +82,7 @@ func buildRoutes(voices []contracts.AgentVoice, bots *voiceBots) []voiceRoute {
 			channels: channelSet(voice.Channels),
 			mention:  newAgentMention(voice.Agent),
 			own:      own,
+			pending:  bots.resolvingAgent(voice.Agent),
 			appID:    bot.appID,
 		})
 	}

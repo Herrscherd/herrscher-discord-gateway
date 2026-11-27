@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/Herrscherd/dctl"
@@ -75,5 +76,40 @@ func TestAPendingAgentBotThatFailsStopsBlockingItsMentions(t *testing.T) {
 
 	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@dave" {
 		t.Fatalf("created = %+v, want the channels agent to answer once bob's failed resolution has settled", ctrl.created)
+	}
+}
+
+type slowAppID struct{ release <-chan struct{} }
+
+func (s slowAppID) RoundTrip(req *http.Request) (*http.Response, error) {
+	select {
+	case <-s.release:
+		return jsonReply(`{"id":"42"}`)(req)
+	case <-req.Context().Done():
+		return nil, req.Context().Err()
+	}
+}
+
+func TestAPendingAgentWithItsOwnTokenIsNeverAnsweredAsTokenless(t *testing.T) {
+	release := make(chan struct{})
+	bots := newVoiceBots(nil)
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyOnMention, Token: botToken(t, "slow")}}
+	g := &Gateway{log: testLog(), voices: bots, newBot: botsWith(slowAppID{release})}
+	g.expectAgents(voices)
+	bindDone := make(chan struct{})
+	go func() {
+		defer close(bindDone)
+		g.bindAgents(context.Background(), voices)
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-bindDone
+	})
+
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	r.onMessage(context.Background(), guildPing("u1", "@bob hello there", false))
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want nothing: bob has a token still being checked, so the house must not answer for him as if he had none", ctrl.created)
 	}
 }

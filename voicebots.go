@@ -52,6 +52,7 @@ func (b *voiceBots) expect(agents []string) {
 	for _, agent := range agents {
 		b.resolving[agent] = true
 	}
+	b.generation++
 }
 
 func (b *voiceBots) settle(agent string) {
@@ -61,6 +62,16 @@ func (b *voiceBots) settle(agent string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.resolving, agent)
+	b.generation++
+}
+
+func (b *voiceBots) resolvingAgent(agent string) bool {
+	if b == nil {
+		return false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.resolving[agent]
 }
 
 func (b *voiceBots) awaiting() bool {
