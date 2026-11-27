@@ -65,6 +65,7 @@ type job struct {
 	parent string
 	slot   string
 	shared bool
+	agent  string
 }
 
 func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStore, sinks *sinks, msgs messages, log *slog.Logger, cfg routerConfig) *router {
@@ -101,7 +102,7 @@ func (r *router) chatType(conv string, direct bool) string {
 	switch {
 	case direct:
 		return chatDM
-	case r.binds.IsThread(conv):
+	case r.binds.IsThread(addressOf(conv).channel):
 		return chatThread
 	default:
 		return chatChannel
@@ -109,7 +110,7 @@ func (r *router) chatType(conv string, direct bool) string {
 }
 
 func (r *router) mode(conv, parent string) string {
-	if v := r.binds.Mode(conv); v != "" {
+	if v := r.binds.Mode(addressOf(conv).channel); v != "" {
 		return v
 	}
 	if parent != "" {
@@ -123,7 +124,14 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	if ctrl == nil {
 		return
 	}
+	if r.addressesAgentBot(msg) {
+		return
+	}
 	parent := r.binds.Parent(msg.ChannelID)
+	if route, ok := r.houseVoice(ctrl, msg, parent); ok {
+		r.answerAs(ctx, ctrl, route, msg)
+		return
+	}
 	mode := r.mode(msg.ChannelID, parent)
 	if mode == offMode {
 		return
@@ -173,6 +181,10 @@ func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
 }
 
 func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate) {
+	r.askPlaced(ctx, ctrl, msg, func() job { return r.place(ctx, msg) })
+}
+
+func (r *router) askPlaced(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, place func() job) {
 	repos, err := ctrl.Repos(ctx)
 	if err != nil {
 		r.log.Warn("list repos failed", "err", err)
@@ -181,7 +193,7 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg mes
 		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("discord.repo.none", nil))
 		return
 	}
-	task := r.place(ctx, msg)
+	task := place()
 	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
 	if r.bindKnownRepo(ctx, ctrl, task, msg, repos) {
 		return
@@ -281,11 +293,15 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 	if task.slot == "" {
 		task.slot = task.conv
 	}
+	agent := r.cfg.agent
+	if task.agent != "" {
+		agent = task.agent
+	}
 	spec := contracts.CreateSession{
 		Name:      sessionNameFor(task.slot),
 		ChannelID: task.conv,
 		Gateways:  []string{gatewayKind},
-		Agent:     r.cfg.agent,
+		Agent:     agent,
 	}
 	if target, ok := strings.CutPrefix(value, "local:"); ok {
 		spec.Project = target
@@ -377,10 +393,11 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 }
 
 func (r *router) replaceLostJob(channel, user string) job {
-	parent := r.binds.Parent(channel)
-	thread := r.binds.IsThread(channel)
+	addr := addressOf(channel)
+	parent := r.binds.Parent(addr.channel)
+	thread := addr.agent == "" && r.binds.IsThread(addr.channel)
 	if parent == "" {
-		parent = channel
+		parent = addr.channel
 	}
 	chatType := chatChannel
 	if thread {
@@ -392,6 +409,7 @@ func (r *router) replaceLostJob(channel, user string) job {
 		thread: thread,
 		slot:   r.cfg.scope.slot(chatType, channel, user),
 		shared: r.cfg.scope.multiUser(chatType),
+		agent:  addr.agent,
 	}
 }
 
