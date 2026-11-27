@@ -127,7 +127,7 @@ func (r *router) houseVoice(ctrl contracts.SessionControl, msg messageCreate, pa
 			return route, true
 		}
 	}
-	if !r.houseContent {
+	if !r.houseContent.Load() {
 		return voiceRoute{}, false
 	}
 	for _, route := range routes {
@@ -148,20 +148,38 @@ func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCr
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
-	if !r.voiceAddressed(route, msg, parent, content) {
+	if !r.voiceAddressed(ctrl, route, msg, parent, content) {
 		return
 	}
 	r.answerAs(ctx, ctrl, route, msg)
 }
 
-func (r *router) voiceAddressed(route voiceRoute, msg messageCreate, parent string, content bool) bool {
+func (r *router) voiceAddressed(ctrl contracts.SessionControl, route voiceRoute, msg messageCreate, parent string, content bool) bool {
 	if msg.direct() || mentionsID(msg, route.appID) {
 		return true
 	}
 	if (addressPolicy{appID: route.appID}).repliesToSelf(msg) {
 		return true
 	}
-	return content && route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent)
+	return content && route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent) && !r.addressesAnotherBot(ctrl, route, msg)
+}
+
+func (r *router) addressesAnotherBot(ctrl contracts.SessionControl, route voiceRoute, msg messageCreate) bool {
+	for _, appID := range r.cfg.voices.agentAppIDs() {
+		if appID != route.appID && mentionsID(msg, appID) {
+			return true
+		}
+	}
+	return r.cfg.address.mentioned(msg) || namedTokenless(r.voiceRoutes(ctrl), msg.Content)
+}
+
+func namedTokenless(routes []voiceRoute, content string) bool {
+	for _, route := range routes {
+		if !route.own && route.mention.matches(content) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *router) mentionedBy(route voiceRoute, msg messageCreate) bool {

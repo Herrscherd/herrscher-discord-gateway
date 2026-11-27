@@ -115,6 +115,10 @@ func (b *voiceBots) at(conv string) speaker {
 	return speaker{client: b.house, channel: addr.channel, header: agentHeader(addr.agent)}
 }
 
+func (b *voiceBots) houseAt(conv string) speaker {
+	return speaker{client: b.house, channel: addressOf(conv).channel}
+}
+
 func (b *voiceBots) menuAt(conv string) speaker {
 	addr := addressOf(conv)
 	return speaker{client: b.house, channel: addr.channel, header: agentHeader(addr.agent)}

@@ -80,7 +80,7 @@ func TestNeverRuleNeverAnswers(t *testing.T) {
 func TestChannelsRuleAnswersEveryMessageOfItsChannel(t *testing.T) {
 	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
 	r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
-	r.houseContent = true
+	r.setHouseContent(true)
 
 	r.onMessage(context.Background(), guildPing("u1", "no mention in this one", false))
 	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "bob" {
@@ -152,7 +152,7 @@ func TestMentionBeatsAChannelCaptureWhateverTheDirectoryOrder(t *testing.T) {
 				voices = append(voices, voice)
 			}
 			r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
-			r.houseContent = true
+			r.setHouseContent(true)
 
 			r.onMessage(context.Background(), guildPing("u1", "@bob fix the login bug", false))
 
@@ -206,7 +206,7 @@ func TestOurOwnBotsNeverTriggerThroughTheHouseSocket(t *testing.T) {
 		{Agent: "carol", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}},
 	}
 	r, ctrl := newVoiceRouter(t, voices, bots)
-	r.houseContent = true
+	r.setHouseContent(true)
 	r.acl.bots = botsAll
 
 	for _, author := range []string{"bot-app", "app1"} {
@@ -219,5 +219,88 @@ func TestOurOwnBotsNeverTriggerThroughTheHouseSocket(t *testing.T) {
 
 	if len(ctrl.created) != 0 {
 		t.Fatalf("created = %+v, want none: our own bots never trigger one another even with allow_bots all", ctrl.created)
+	}
+}
+
+func TestChannelCaptureYieldsToAnExplicitlyAddressedOtherBot(t *testing.T) {
+	cases := map[string]struct {
+		content   string
+		mention   []dctl.Author
+		tokenless bool
+	}{
+		"another own bot":           {content: "<@bot-bob> fix the login bug", mention: []dctl.Author{{ID: "bot-bob"}}},
+		"the house bot":             {content: "<@app1> fix the login bug", mention: []dctl.Author{{ID: "app1"}}},
+		"a tokenless agent by name": {content: "hey @dave fix the login bug"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			bots := newVoiceBots(nil)
+			bots.register("carol", nil, "bot-carol")
+			bots.register("bob", nil, "bot-bob")
+			voices := []contracts.AgentVoice{
+				{Agent: "carol", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}},
+				{Agent: "bob", Reply: contracts.ReplyOnMention},
+				{Agent: "dave", Reply: contracts.ReplyOnMention},
+			}
+			r, ctrl := newVoiceRouter(t, voices, bots)
+			msg := guildPing("u1", tc.content, false)
+			msg.Mentions = tc.mention
+			r.onAgentMessage(context.Background(), "carol", msg, true)
+			if len(ctrl.created) != 0 {
+				t.Fatalf("created = %+v, want carol to yield the channel to the addressed bot", ctrl.created)
+			}
+		})
+	}
+	t.Run("a plain message is still captured", func(t *testing.T) {
+		bots := newVoiceBots(nil)
+		bots.register("carol", nil, "bot-carol")
+		voices := []contracts.AgentVoice{{Agent: "carol", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+		r, ctrl := newVoiceRouter(t, voices, bots)
+		r.onAgentMessage(context.Background(), "carol", guildPing("u1", "no one is addressed", false), true)
+		if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@carol" {
+			t.Fatalf("created = %+v, want carol to capture the plain message in c1@carol", ctrl.created)
+		}
+	})
+}
+
+func TestLoopGuardOnTheAgentSocketIgnoresOurOwnBots(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.register("bob", nil, "bot-bob")
+	bots.register("carol", nil, "bot-carol")
+	voices := []contracts.AgentVoice{
+		{Agent: "bob", Reply: contracts.ReplyOnMention},
+		{Agent: "carol", Reply: contracts.ReplyOnMention},
+	}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	r.acl.bots = botsAll
+
+	ownAuthor := guildPing("u1", "<@bot-bob> fix it", false)
+	ownAuthor.Author = dctl.Author{ID: "bot-carol", Bot: true}
+	ownAuthor.Mentions = []dctl.Author{{ID: "bot-bob"}}
+	r.onAgentMessage(context.Background(), "bob", ownAuthor, true)
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want carol's own bot never to trigger bob, whatever allow_bots says", ctrl.created)
+	}
+
+	foreign := guildPing("u1", "<@bot-bob> fix it", false)
+	foreign.Author = dctl.Author{ID: "other-bot", Bot: true}
+	foreign.Mentions = []dctl.Author{{ID: "bot-bob"}}
+	r.onAgentMessage(context.Background(), "bob", foreign, true)
+	if len(ctrl.created) != 1 || ctrl.created[0].ChannelID != "c1@bob" {
+		t.Fatalf("created = %+v, want a foreign bot allowed by allow_bots to reach bob", ctrl.created)
+	}
+}
+
+func TestHouseMentionedAfterATokenlessCaptureAlsoAnswers(t *testing.T) {
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+	r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+	r.setHouseContent(true)
+
+	msg := guildPing("u1", "<@app1> what changed", false)
+	msg.Mentions = []dctl.Author{{ID: "app1"}}
+	r.onMessage(context.Background(), msg)
+
+	if len(ctrl.created) != 2 || ctrl.created[0].ChannelID != "c1@bob" || ctrl.created[1].ChannelID != "c1" {
+		t.Fatalf("created = %+v, want bob in c1@bob and the house in c1 when the house is mentioned", ctrl.created)
 	}
 }

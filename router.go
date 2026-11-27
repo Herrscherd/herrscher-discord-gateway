@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -54,7 +55,7 @@ type router struct {
 	langs sessionLanguages
 	acl   *accessPolicy
 
-	houseContent bool
+	houseContent atomic.Bool
 	routes       routeCache
 
 	mu      sync.Mutex
@@ -122,6 +123,19 @@ func (r *router) mode(conv, parent string) string {
 	return normalMode
 }
 
+func (r *router) voiceCaptured(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, parent string) bool {
+	route, ok := r.houseVoice(ctrl, msg, parent)
+	if !ok {
+		return false
+	}
+	r.answerAs(ctx, ctrl, route, msg)
+	return !r.cfg.address.mentioned(msg)
+}
+
+func (r *router) setHouseContent(on bool) {
+	r.houseContent.Store(on)
+}
+
 func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	ctrl := r.ctrl()
 	if ctrl == nil {
@@ -131,8 +145,7 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
-	if route, ok := r.houseVoice(ctrl, msg, parent); ok {
-		r.answerAs(ctx, ctrl, route, msg)
+	if r.voiceCaptured(ctx, ctrl, msg, parent) {
 		return
 	}
 	mode := r.mode(msg.ChannelID, parent)

@@ -240,6 +240,8 @@ Deleting a channel takes its threads with it, and Discord announces only the
 channel. So the gateway remembers which channel each thread it opened hangs off,
 and closes those sessions too. Without that, the rule would miss the case it
 exists for, since a job asked to run "dans un fil" lives in exactly such a thread.
+The sessions of the agents bound in those threads are closed as well, as are the
+agents' sessions in the channel itself.
 
 The close prefers the non-destructive form. If it is refused because the agent
 left uncommitted changes in its worktree, the forcing one is taken and said out
@@ -269,7 +271,9 @@ deliberately narrow.
 So in a support-mode channel, and for a forked job, nothing is ever deleted. It
 applies to an ordinary channel holding one conversation, where the ping and the
 answer live side by side. The bot role needs `Manage Messages`. Without it the
-delete is refused and the ⏳ is cleared the ordinary way instead.
+delete is refused and the ⏳ is cleared the ordinary way instead. The delete goes
+through the house bot, the one that holds that permission, even when an agent with
+its own bot answered the ping.
 
 ## What the plugin adds to the daemon
 
@@ -531,17 +535,34 @@ A message that mentions only an agent's bot is left to that bot: the house bot
 drops it. A message that mentions both the house bot and an agent's bot is
 answered by both, since the user addressed both.
 
-An agent whose rule is `channels` when the daemon starts identifies with the
-privileged Message Content intent, since without it Discord delivers only the
+An agent whose rule is `channels` and that has a bot of its own identifies with
+the privileged Message Content intent, since without it Discord delivers only the
 mentions and DMs of a bot. Enable that intent for such a bot in the Discord
 developer portal. If Discord refuses it, the agent stays down, the refusal is
 logged, and the house bot keeps running.
 
-An agent without a bot of its own that has the `channels` rule when the daemon
-starts is answered through the house bot, so the house bot needs the same
-privileged Message Content intent: enable it for the house bot in the developer
-portal as well. If Discord refuses it there, the house bot stops and the refusal
-is logged, so enable the intent before starting the daemon.
+The house bot starts first and does not wait for the agents. The agent tokens are
+checked in parallel, each for at most 10 seconds, while the house bot already
+answers. A token that is refused, or that gets no answer in time, leaves its agent
+without a bot of its own. Closing the gateway cancels the checks still pending.
+
+An agent without a bot of its own that has the `channels` rule is answered through
+the house bot, so the house bot needs the Message Content intent as well. The house
+bot identifies with that intent from the start when such an agent is configured. An
+agent whose token is refused counts the same way once the check fails, so the house
+bot identifies again, once, with the intent. Enable the intent for the house bot in
+the developer portal before starting the daemon. If Discord refuses it there, the
+house bot stops and the refusal is logged.
+
+A channels agent with a bot of its own does not take a message that mentions
+another of the gateway's bots, the house bot, or a token-less agent by its `@name`:
+that message is left to the one it names. When the house bot is mentioned in a
+channel that a token-less `channels` agent captures, the house bot answers too, in
+addition to the agent, as it does when both are mentioned.
+
+Two agent names that map to the same key, such as `ops-bot` and `ops_bot`, both
+read `DISCORD_BOT_TOKEN_OPS_BOT`. The host then gives neither a token and logs the
+clash once, so both speak through the house bot.
 
 A rule changed to `channels` while the daemon runs takes full effect after a
 restart. Until then, a socket that was started without the intent answers only
@@ -553,7 +574,8 @@ refused, not sent truncated.
 
 Limits: an agent bot takes no slash commands and no interactions, and a voice
 opens no thread. When a channel is deleted, the gateway closes the sessions of
-the house bot there and of every agent bound in it.
+the house bot there and of every agent bound in it, in the channel and in its
+threads.
 
 ## Health and limits
 

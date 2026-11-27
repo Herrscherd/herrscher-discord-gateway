@@ -209,9 +209,25 @@ func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, re
 
 func (g *Gateway) sendText(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
 	if replyTo == "" {
-		return g.Post(ctx, conv, text)
+		return g.postOne(ctx, conv, text)
 	}
-	return g.Reply(ctx, conv, replyTo, text)
+	return g.replyOne(ctx, conv, replyTo, text)
+}
+
+func (g *Gateway) postOne(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
+	sent, err := g.c.Send(ctx, conv.ID, text)
+	if err != nil {
+		return msgID(sent), fmt.Errorf("discord post: %w", err)
+	}
+	return msgID(sent), nil
+}
+
+func (g *Gateway) replyOne(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
+	sent, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
+	if err != nil {
+		return msgID(sent), fmt.Errorf("discord reply: %w", err)
+	}
+	return msgID(sent), nil
 }
 
 func (g *Gateway) sendBatches(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []openFile) (contracts.MessageID, error) {

@@ -63,6 +63,8 @@ type ws struct {
 	onGone    func(context.Context, string)
 
 	mu    sync.Mutex
+	link  sync.Mutex
+	conn  *websocket.Conn
 	acked atomic.Bool
 	seq   struct {
 		sync.Mutex
@@ -131,6 +133,8 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer w.closeSocket(conn, websocket.StatusNormalClosure, "")
+	w.track(conn)
+	defer w.track(nil)
 	conn.SetReadLimit(readLimit)
 
 	hello, err := readPayload(ctx, conn)
@@ -255,12 +259,38 @@ type heartbeatMsg struct {
 	D  *int `json:"d"`
 }
 
+func (w *ws) track(conn *websocket.Conn) {
+	w.link.Lock()
+	defer w.link.Unlock()
+	w.conn = conn
+}
+
+func (w *ws) currentIntents() int {
+	w.link.Lock()
+	defer w.link.Unlock()
+	return w.intents
+}
+
+func (w *ws) require(intents int) {
+	w.link.Lock()
+	if w.intents&intents == intents {
+		w.link.Unlock()
+		return
+	}
+	w.intents |= intents
+	conn := w.conn
+	w.link.Unlock()
+	if conn != nil {
+		w.closeSocket(conn, websocket.StatusNormalClosure, "intents changed, identifying again")
+	}
+}
+
 func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 	return w.write(ctx, c, identifyMsg{
 		Op: opIdentify,
 		D: identifyData{
 			Token:      w.token,
-			Intents:    w.intents,
+			Intents:    w.currentIntents(),
 			Properties: identifyProps{OS: "linux", Browser: "herrscher", Device: "herrscher"},
 		},
 	})

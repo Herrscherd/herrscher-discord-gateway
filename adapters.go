@@ -290,7 +290,7 @@ func (r renderAdapter) React(ctx context.Context, ch, messageID, emoji string) e
 }
 
 func (r renderAdapter) Delete(ctx context.Context, ch, messageID string) error {
-	target := r.p.bots.at(ch)
+	target := r.p.bots.houseAt(ch)
 	if err := target.client.Messages().Delete(ctx, target.channel, messageID); err != nil {
 		return fmt.Errorf("discord delete: %w", err)
 	}

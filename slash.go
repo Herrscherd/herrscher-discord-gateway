@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Herrscherd/dctl"
@@ -25,7 +24,7 @@ type slash struct {
 	comp   acker
 	router *router
 	socket *ws
-	agents []*ws
+	attach func(context.Context)
 	msgs   messages
 }
 
@@ -55,16 +54,15 @@ func (s *slash) start(ctx context.Context) {
 		defer close(syncDone)
 		s.sync(ctx)
 	}()
-	var agents sync.WaitGroup
-	for _, socket := range s.agents {
-		agents.Add(1)
-		go func() {
-			defer agents.Done()
-			socket.run(ctx)
-		}()
-	}
+	attached := make(chan struct{})
+	go func() {
+		defer close(attached)
+		if s.attach != nil {
+			s.attach(ctx)
+		}
+	}()
 	s.socket.run(ctx)
-	agents.Wait()
+	<-attached
 	<-syncDone
 }
 

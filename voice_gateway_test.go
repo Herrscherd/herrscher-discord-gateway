@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	contracts "github.com/Herrscherd/herrscher-contracts"
 	"github.com/coder/websocket"
 )
 
@@ -27,7 +28,12 @@ func TestCloseStopsTheAgentWebsockets(t *testing.T) {
 	})
 
 	g, _, _ := gatewayWithTeardown(releasedTeardown())
-	g.slash.agents = []*ws{newWS(url, "t", testLog(), nil, func(context.Context, messageCreate) {}, nil)}
+	g.log = testLog()
+	g.voices = newVoiceBots(nil)
+	g.wsURL = url
+	g.newBot = botsWith(tokenAppIDs{known: "good"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Token: botToken(t, "good")}}
+	g.slash.attach = func(ctx context.Context) { g.attachAgents(ctx, voices) }
 	g.slashRunning = startSlashRuntime(g.run(), g.slash)
 
 	select {
