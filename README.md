@@ -200,7 +200,10 @@ ask for. Those messages are read back over REST, which the intent does not gate,
 so a bare message in a thread costs one extra call and no privilege. The call is
 spent only when the message can matter: it addresses the house or an agent, the
 channel is ambient, or a voice could match it by name or channel. A message whose
-content cannot be read back is ignored.
+content cannot be read back is ignored. That includes a blank message addressed to
+the house that is more than five messages back in its channel: the read only looks
+at the last five, so the message is dropped with a debug log and nothing else. This
+is a known limit.
 
 The bot role needs `Create Private Threads` and `Send Messages in Threads`.
 
@@ -557,9 +560,9 @@ checked in parallel, each for at most 10 seconds, while the house bot already
 answers. A token that is refused, or that gets no answer in time, leaves its agent
 without a bot of its own. Closing the gateway cancels the checks still pending.
 
-A message addressed to an agent's bot during that check is dropped, not captured:
-the agent's socket starts only once its token is resolved, so nothing holds the
-message for it. The same goes for a text `@name` of such an agent, in a DM, a thread
+A message that mentions a bot other than the house bot during that check is dropped,
+not captured: the agent's socket starts only once its token is resolved, so nothing
+holds the message for it. The same goes for a text `@name` of such an agent, in a DM, a thread
 or a channel alike: it is dropped too, unless another voice answers that message.
 A token-less agent with the `mention` or `channels` rule that the message also
 names answers it, and so does a token-less `channels` agent that captures the
