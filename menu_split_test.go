@@ -14,8 +14,9 @@ import (
 )
 
 type menuCall struct {
-	content string
-	menu    bool
+	content   string
+	menu      bool
+	reference string
 }
 
 type menuRecorder struct {
@@ -28,11 +29,18 @@ func (rec *menuRecorder) client() *dctl.Client {
 		var body struct {
 			Content    string            `json:"content"`
 			Components []json.RawMessage `json:"components"`
+			Reference  *struct {
+				MessageID string `json:"message_id"`
+			} `json:"message_reference"`
 		}
 		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 			return nil, err
 		}
-		rec.calls = append(rec.calls, menuCall{content: body.Content, menu: len(body.Components) > 0})
+		call := menuCall{content: body.Content, menu: len(body.Components) > 0}
+		if body.Reference != nil {
+			call.reference = body.Reference.MessageID
+		}
+		rec.calls = append(rec.calls, call)
 		if rec.failFirst && len(rec.calls) == 1 {
 			return nil, errors.New("discord refused the part")
 		}
@@ -100,6 +108,25 @@ func TestAMenuForAnAgentWithItsOwnBotFitsWithTheHouseHeader(t *testing.T) {
 	bodies = append(bodies, strings.TrimPrefix(house.calls[0].content, "**bob**\n"))
 	if got := strings.Join(bodies, ""); got != prompt {
 		t.Fatalf("the parts carry %d characters, want the whole %d back", len(got), len(prompt))
+	}
+}
+
+func TestAMenuAfterLeadPartsDoesNotAnswerTheTrigger(t *testing.T) {
+	house := &menuRecorder{}
+	bots := newVoiceBots(house.client())
+	g := &Gateway{c: voicedClient{bots}, voices: bots, log: testLog()}
+	prompt := strings.Repeat("a", gatewayMaxLen*3)
+
+	if err := g.Menu(context.Background(), contracts.Conversation{ID: "c1@ops_bot"}, "m1", prompt, menuChoices()); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(house.calls) < 2 || house.calls[0].reference != "m1" {
+		t.Fatalf("calls = %+v, want the first lead part answering m1", house.calls)
+	}
+	last := house.calls[len(house.calls)-1]
+	if !last.menu || last.reference != "" {
+		t.Fatalf("menu call = %+v, want the menu posted without a reply once lead parts went out", last)
 	}
 }
 

@@ -381,11 +381,10 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	}
 	parts := splitText(prompt, g.voices.menuLimit(conv.ID))
 	lead, last := parts[:len(parts)-1], parts[len(parts)-1]
-	first, err := g.sendLeadParts(ctx, conv, replyTo, lead)
-	if err != nil {
+	if err := g.sendLeadParts(ctx, conv, replyTo, lead); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
-	if first != "" {
+	if len(lead) > 0 {
 		replyTo = ""
 	}
 	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), last, ChoiceCustomID(conv.ID), out); err != nil {
@@ -394,8 +393,9 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	return nil
 }
 
-func (g *Gateway) sendLeadParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
-	return g.sendEach(ctx, conv, replyTo, parts, true)
+func (g *Gateway) sendLeadParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) error {
+	_, err := g.sendEach(ctx, conv, replyTo, parts, true)
+	return err
 }
 
 // Edit rewrites a message already sent. It satisfies contracts.MessageEditor.
