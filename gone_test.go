@@ -83,3 +83,56 @@ func TestDeletedChannelClosesTheSessionsOfItsThreads(t *testing.T) {
 		t.Fatal("the parent link outlived both the thread and its channel")
 	}
 }
+
+func TestDeletedChannelClosesItsVoicedSessions(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	if err := r.binds.Bind("c1@bob", "ch-c1-bob"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.binds.Bind("c2@bob", "ch-c2-bob"); err != nil {
+		t.Fatal(err)
+	}
+	ctrl.live["ch-c1-bob"] = true
+
+	r.onChannelGone(context.Background(), "c1")
+
+	if len(ctrl.closed) != 1 || ctrl.closed[0] != (closeCall{name: "ch-c1-bob"}) {
+		t.Fatalf("closed = %+v, want the agent's session in the deleted channel closed", ctrl.closed)
+	}
+	if s := r.binds.Session("c1@bob"); s != "" {
+		t.Fatalf("c1@bob still bound to %q", s)
+	}
+	if s := r.binds.Session("c2@bob"); s != "ch-c2-bob" {
+		t.Fatalf("c2@bob = %q, want its session kept: another channel was not deleted", s)
+	}
+}
+
+func TestDeletedChannelClosesTheVoicedSessionsOfItsThreads(t *testing.T) {
+	r, ctrl, _ := newTestRouter(t)
+	if err := r.binds.BindThread("t1", "t1", "c1", "ch-t1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.binds.Bind("t1@bob", "ch-t1-bob"); err != nil {
+		t.Fatal(err)
+	}
+	ctrl.live["ch-t1"] = true
+	ctrl.live["ch-t1-bob"] = true
+
+	r.onChannelGone(context.Background(), "c1")
+
+	want := map[string]bool{"ch-t1": false, "ch-t1-bob": false}
+	for _, call := range ctrl.closed {
+		if _, ok := want[call.name]; !ok {
+			t.Fatalf("closed = %+v, want only the thread's sessions closed", ctrl.closed)
+		}
+		want[call.name] = true
+	}
+	for name, closed := range want {
+		if !closed {
+			t.Fatalf("closed = %+v, want %s closed with the deleted channel", ctrl.closed, name)
+		}
+	}
+	if s := r.binds.Session("t1@bob"); s != "" {
+		t.Fatalf("t1@bob still bound to %q", s)
+	}
+}

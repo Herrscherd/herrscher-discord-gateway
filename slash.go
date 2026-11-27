@@ -24,6 +24,7 @@ type slash struct {
 	comp   acker
 	router *router
 	socket *ws
+	attach func(context.Context)
 	msgs   messages
 }
 
@@ -53,7 +54,15 @@ func (s *slash) start(ctx context.Context) {
 		defer close(syncDone)
 		s.sync(ctx)
 	}()
+	attached := make(chan struct{})
+	go func() {
+		defer close(attached)
+		if s.attach != nil {
+			s.attach(ctx)
+		}
+	}()
 	s.socket.run(ctx)
+	<-attached
 	<-syncDone
 }
 
@@ -63,9 +72,9 @@ func syncBackoffs() []time.Duration {
 
 func (s *slash) sync(ctx context.Context) { syncWithRetry(ctx, s.reg.Sync, s.log, syncBackoffs()) }
 
-func syncWithRetry(ctx context.Context, sync func(context.Context) error, log *slog.Logger, backoff []time.Duration) {
+func syncWithRetry(ctx context.Context, syncOnce func(context.Context) error, log *slog.Logger, backoff []time.Duration) {
 	for attempt := 0; ; attempt++ {
-		err := sync(ctx)
+		err := syncOnce(ctx)
 		if err == nil {
 			return
 		}

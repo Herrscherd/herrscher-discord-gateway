@@ -49,7 +49,7 @@ func (g *Gateway) SendFiles(ctx context.Context, conv contracts.Conversation, re
 }
 
 func (g *Gateway) sendOpened(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, ready []openFile) (contracts.MessageID, error) {
-	parts := chunkText(text, gatewayMaxLen)
+	parts := chunkText(text, g.voices.textLimit(conv.ID))
 	if len(ready) == 0 {
 		return g.sendParts(ctx, conv, replyTo, parts)
 	}
@@ -193,11 +193,18 @@ func displayName(name string) string {
 }
 
 func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
+	return g.sendEach(ctx, conv, replyTo, parts, false)
+}
+
+func (g *Gateway) sendEach(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string, stopOnFailure bool) (contracts.MessageID, error) {
 	var first contracts.MessageID
 	var failed error
 	for _, part := range parts {
 		sentID, err := g.sendText(ctx, conv, replyTo, part)
 		if err != nil {
+			if stopOnFailure {
+				return first, err
+			}
 			failed = errors.Join(failed, err)
 			continue
 		}
@@ -209,9 +216,25 @@ func (g *Gateway) sendParts(ctx context.Context, conv contracts.Conversation, re
 
 func (g *Gateway) sendText(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
 	if replyTo == "" {
-		return g.Post(ctx, conv, text)
+		return g.postOne(ctx, conv, text)
 	}
-	return g.Reply(ctx, conv, replyTo, text)
+	return g.replyOne(ctx, conv, replyTo, text)
+}
+
+func (g *Gateway) postOne(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
+	sent, err := g.c.Send(ctx, conv.ID, text)
+	if err != nil {
+		return msgID(sent), fmt.Errorf("discord post: %w", err)
+	}
+	return msgID(sent), nil
+}
+
+func (g *Gateway) replyOne(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
+	sent, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
+	if err != nil {
+		return msgID(sent), fmt.Errorf("discord reply: %w", err)
+	}
+	return msgID(sent), nil
 }
 
 func (g *Gateway) sendBatches(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string, files []openFile) (contracts.MessageID, error) {

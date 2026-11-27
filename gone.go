@@ -12,12 +12,19 @@ type channelDelete struct {
 
 func (r *router) onChannelGone(ctx context.Context, channelID string) {
 	for _, child := range r.binds.Children(channelID) {
-		r.endConversation(ctx, child)
+		r.endWithVoices(ctx, child)
 		if err := r.binds.Forget(child); err != nil {
 			r.log.Warn("bind store save failed", "err", err)
 		}
 	}
-	r.endConversation(ctx, channelID)
+	r.endWithVoices(ctx, channelID)
+}
+
+func (r *router) endWithVoices(ctx context.Context, channel string) {
+	for _, voiced := range r.binds.VoicedIn(channel) {
+		r.endConversation(ctx, voiced)
+	}
+	r.endConversation(ctx, channel)
 }
 
 func (r *router) endConversation(ctx context.Context, conversationID string) {

@@ -560,3 +560,5 @@ func submitAbandoned(t *testing.T, s *sink, n int, order *[]int) {
 		}
 	}
 }
+
+func (g *gatedRender) TextLimit(string) int { return gatewayMaxLen }

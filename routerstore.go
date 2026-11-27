@@ -231,3 +231,21 @@ func (s *bindStore) UnbindAll(conv string) error {
 		}
 	})
 }
+
+func (s *bindStore) VoicedIn(channel string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := make(map[string]bool)
+	var out []string
+	for slot := range s.Channels {
+		conv := convOfSlot(slot)
+		addr := addressOf(conv)
+		if addr.channel != channel || addr.agent == "" || seen[conv] {
+			continue
+		}
+		seen[conv] = true
+		out = append(out, conv)
+	}
+	sort.Strings(out)
+	return out
+}

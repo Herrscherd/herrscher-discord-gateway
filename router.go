@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -15,6 +16,7 @@ import (
 type routerConfig struct {
 	owner           string
 	appID           string
+	voices          *voiceBots
 	contextMessages int
 	playbook        string
 	agent           string
@@ -53,6 +55,9 @@ type router struct {
 	langs sessionLanguages
 	acl   *accessPolicy
 
+	houseContent atomic.Bool
+	routes       routeCache
+
 	mu      sync.Mutex
 	pending map[string]messageCreate
 	jobs    map[string]job
@@ -64,6 +69,7 @@ type job struct {
 	parent string
 	slot   string
 	shared bool
+	agent  string
 }
 
 func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStore, sinks *sinks, msgs messages, log *slog.Logger, cfg routerConfig) *router {
@@ -83,6 +89,7 @@ func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStor
 			log:      log,
 			owner:    cfg.owner,
 			selfID:   cfg.appID,
+			voices:   cfg.voices,
 			users:    cfg.access.users,
 			roles:    cfg.access.roles,
 			channels: cfg.access.channels,
@@ -99,7 +106,7 @@ func (r *router) chatType(conv string, direct bool) string {
 	switch {
 	case direct:
 		return chatDM
-	case r.binds.IsThread(conv):
+	case r.binds.IsThread(addressOf(conv).channel):
 		return chatThread
 	default:
 		return chatChannel
@@ -107,7 +114,7 @@ func (r *router) chatType(conv string, direct bool) string {
 }
 
 func (r *router) mode(conv, parent string) string {
-	if v := r.binds.Mode(conv); v != "" {
+	if v := r.binds.Mode(addressOf(conv).channel); v != "" {
 		return v
 	}
 	if parent != "" {
@@ -118,22 +125,30 @@ func (r *router) mode(conv, parent string) string {
 
 func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	ctrl := r.ctrl()
-	if ctrl == nil {
+	if ctrl == nil || !msg.conversational() {
+		return
+	}
+	if r.addressesAgentBot(msg) {
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)
-	mode := r.mode(msg.ChannelID, parent)
-	if mode == offMode {
+	if !r.admittedBeforeRouting(msg, parent) {
+		return
+	}
+	msg, ok := r.hydrated(ctx, ctrl, msg, parent, msg.ChannelID)
+	if !ok {
+		return
+	}
+	if r.voiceCaptured(ctx, ctrl, msg, parent) {
+		return
+	}
+	if r.pendingAgentHolds(ctrl, msg, parent) {
+		return
+	}
+	if !r.answersAsHouse(msg, parent) {
 		return
 	}
 	chatType := r.chatType(msg.ChannelID, msg.direct())
-	if mode != ambientMode && !r.cfg.address.addressed(msg, chatType, parent) {
-		return
-	}
-	if !r.acl.permits(msg, parent, r.cfg.address.mentioned(msg)) {
-		return
-	}
-	msg = r.hydrate(ctx, msg)
 	slot := r.cfg.scope.slot(chatType, msg.ChannelID, msg.Author.ID)
 	if session := r.binds.Session(slot); session != "" {
 		if r.fork(ctx, ctrl, session, msg) {
@@ -149,13 +164,38 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	r.ask(ctx, ctrl, msg)
 }
 
+func (r *router) admittedBeforeRouting(msg messageCreate, parent string) bool {
+	return r.mode(msg.ChannelID, parent) != offMode && r.acl.permits(msg, parent, true)
+}
+
+func (r *router) answersAsHouse(msg messageCreate, parent string) bool {
+	mode := r.mode(msg.ChannelID, parent)
+	chatType := r.chatType(msg.ChannelID, msg.direct())
+	if mode != ambientMode && !r.cfg.address.addressed(msg, chatType, parent) {
+		return false
+	}
+	return r.acl.permits(msg, parent, r.cfg.address.mentioned(msg))
+}
+
 const hydrateWindow = 5
 
-func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
-	if msg.Content != "" || len(msg.Attachments) > 0 {
-		return msg
+func (r *router) hydrated(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, parent, conv string) (messageCreate, bool) {
+	if !msg.blank() {
+		return msg, true
 	}
-	msgs, err := r.c.ReadMessages(ctx, msg.ChannelID, hydrateWindow, "")
+	if !r.blankMayMatter(ctrl, msg, parent) {
+		return msg, false
+	}
+	msg = r.hydrate(ctx, msg, conv)
+	if msg.blank() {
+		r.log.Debug("blanked message dropped, content unreadable", "channel", msg.ChannelID, "message", msg.ID)
+		return msg, false
+	}
+	return msg, true
+}
+
+func (r *router) hydrate(ctx context.Context, msg messageCreate, conv string) messageCreate {
+	msgs, err := r.c.ReadMessages(ctx, conv, hydrateWindow, "")
 	if err != nil {
 		r.log.Warn("read blanked message failed", "err", err)
 		return msg
@@ -171,6 +211,10 @@ func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
 }
 
 func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate) {
+	r.askPlaced(ctx, ctrl, msg, func() job { return r.place(ctx, msg) })
+}
+
+func (r *router) askPlaced(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, place func() job) {
 	repos, err := ctrl.Repos(ctx)
 	if err != nil {
 		r.log.Warn("list repos failed", "err", err)
@@ -179,75 +223,12 @@ func (r *router) ask(ctx context.Context, ctrl contracts.SessionControl, msg mes
 		r.post(ctx, msg.ChannelID, r.textsIn(msg.ChannelID).say("discord.repo.none", nil))
 		return
 	}
-	task := r.place(ctx, msg)
+	task := place()
 	r.sinks.at(task.conv).ack(ctx, msg.ChannelID, msg.ID, msg.Author.ID)
 	if r.bindKnownRepo(ctx, ctrl, task, msg, repos) {
 		return
 	}
 	r.askRepo(ctx, task, msg, repos)
-}
-
-func (r *router) bindKnownRepo(ctx context.Context, ctrl contracts.SessionControl, task job, msg messageCreate, repos []contracts.RepoRef) bool {
-	if value := r.binds.Repo(task.parent); value != "" {
-		r.bindOrFail(ctx, ctrl, task, value, msg)
-		return true
-	}
-	if repo, ok := matchRepo(msg.Content, repos); ok {
-		r.bindOrFail(ctx, ctrl, task, repoValue(repo), msg)
-		return true
-	}
-	last := r.binds.LastRepo()
-	if last == "" || !knownRepo(last, repos) {
-		return false
-	}
-	if failure := r.bind(ctx, ctrl, task, last, msg, true); failure != "" {
-		r.sinks.at(task.conv).fail(ctx, failure)
-		return true
-	}
-	r.post(ctx, task.conv, r.textsIn(task.conv).say("discord.repo.reused", map[string]any{"Repo": neutralise(repoLabel(last))}))
-	return true
-}
-
-func (r *router) bindOrFail(ctx context.Context, ctrl contracts.SessionControl, task job, value string, m messageCreate) {
-	if failure := r.bind(ctx, ctrl, task, value, m, true); failure != "" {
-		r.sinks.at(task.conv).fail(ctx, failure)
-	}
-}
-
-func (r *router) askRepo(ctx context.Context, task job, msg messageCreate, repos []contracts.RepoRef) {
-	conv := task.conv
-	r.mu.Lock()
-	r.pending[conv] = msg
-	r.jobs[conv] = task
-	r.mu.Unlock()
-
-	prompt := r.msgs.say("discord.repo.ask", nil)
-	if len(repos) > selectMenuMax {
-		prompt = r.msgs.say("discord.repo.ask_capped", map[string]any{"Question": prompt, countArg: len(repos), "Shown": selectMenuMax})
-	}
-	replyTo := msg.ID
-	if conv != msg.ChannelID {
-		replyTo = ""
-	}
-	if _, err := r.c.SendSelectMenu(ctx, conv, replyTo, prompt, BindCustomID(conv), repoOptions(repos)); err != nil {
-		r.log.Warn("repo menu failed", "err", err)
-		r.mu.Lock()
-		delete(r.pending, conv)
-		delete(r.jobs, conv)
-		r.mu.Unlock()
-		r.sinks.at(conv).fail(ctx, r.msgs.say("discord.repo.menu_failed", nil))
-	}
-}
-
-func repoOptions(repos []contracts.RepoRef) []dctl.SelectOption {
-	opts := make([]dctl.SelectOption, 0, min(len(repos), selectMenuMax))
-	for _, repo := range repos {
-		if len(opts) == selectMenuMax {
-			break
-		}
-		opts = append(opts, dctl.SelectOption{Label: repo.Name, Value: repoValue(repo), Description: repo.Description})
-	}
-	return opts
 }
 
 func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
@@ -260,30 +241,19 @@ func (r *router) noteSaveFailure(ctx context.Context, conv string, err error) {
 	r.sinks.at(conv).fail(ctx, reason)
 }
 
-func repoOf(ctrl contracts.SessionControl, session string) (string, bool) {
-	items := ctrl.Sessions()
-	for i := range items {
-		item := items[i]
-		if item.Name != session {
-			continue
-		}
-		if item.Project == "" {
-			return "", false
-		}
-		return "local:" + item.Project, true
-	}
-	return "", false
-}
-
 func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task job, value string, msg messageCreate, buffered bool) string {
 	if task.slot == "" {
 		task.slot = task.conv
+	}
+	agent := r.cfg.agent
+	if task.agent != "" {
+		agent = task.agent
 	}
 	spec := contracts.CreateSession{
 		Name:      sessionNameFor(task.slot),
 		ChannelID: task.conv,
 		Gateways:  []string{gatewayKind},
-		Agent:     r.cfg.agent,
+		Agent:     agent,
 	}
 	if target, ok := strings.CutPrefix(value, "local:"); ok {
 		spec.Project = target
@@ -315,29 +285,6 @@ func (r *router) bind(ctx context.Context, ctrl contracts.SessionControl, task j
 		r.sinks.at(task.conv).fail(ctx, r.textsIn(task.conv).say("discord.undelivered", nil))
 	}
 	return ""
-}
-
-func knownRepo(value string, repos []contracts.RepoRef) bool {
-	for _, repo := range repos {
-		if repoValue(repo) == value {
-			return true
-		}
-	}
-	return false
-}
-
-func repoLabel(value string) string {
-	if _, name, found := strings.Cut(value, ":"); found {
-		return name
-	}
-	return value
-}
-
-func repoValue(repo contracts.RepoRef) string {
-	if repo.Local {
-		return "local:" + repo.Name
-	}
-	return "remote:" + repo.Name
 }
 
 func (r *router) onBindPick(ctx context.Context, channel, user, value string) string {
@@ -375,10 +322,11 @@ func (r *router) onBindPick(ctx context.Context, channel, user, value string) st
 }
 
 func (r *router) replaceLostJob(channel, user string) job {
-	parent := r.binds.Parent(channel)
-	thread := r.binds.IsThread(channel)
+	addr := addressOf(channel)
+	parent := r.binds.Parent(addr.channel)
+	thread := addr.agent == "" && r.binds.IsThread(addr.channel)
 	if parent == "" {
-		parent = channel
+		parent = addr.channel
 	}
 	chatType := chatChannel
 	if thread {
@@ -390,6 +338,7 @@ func (r *router) replaceLostJob(channel, user string) job {
 		thread: thread,
 		slot:   r.cfg.scope.slot(chatType, channel, user),
 		shared: r.cfg.scope.multiUser(chatType),
+		agent:  addr.agent,
 	}
 }
 
@@ -494,7 +443,10 @@ func (r *router) textsIn(conv string) messages {
 }
 
 func (r *router) post(ctx context.Context, channel, text string) {
-	if _, err := r.c.Send(ctx, channel, text); err != nil {
-		r.log.Warn("post failed", "err", err)
+	for _, part := range splitText(text, r.cfg.voices.textLimit(channel)) {
+		if _, err := r.c.Send(ctx, channel, part); err != nil {
+			r.log.Warn("post failed", "err", err)
+			return
+		}
 	}
 }

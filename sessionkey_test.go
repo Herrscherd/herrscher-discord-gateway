@@ -52,16 +52,16 @@ func TestTheTwoFlagsFlipBothRules(t *testing.T) {
 }
 
 func TestASlotNamesASessionAndKeepsItsConversation(t *testing.T) {
-	if got := sessionNameFor("c1"); got != "ch-c1" {
-		t.Fatalf("sessionNameFor = %q, want ch-c1", got)
+	if got := sessionNameFor("123"); got != "ch-123" {
+		t.Fatalf("sessionNameFor = %q, want ch-123", got)
 	}
-	if got := sessionNameFor("c1:u1"); got != "ch-c1-u1" {
-		t.Fatalf("sessionNameFor = %q, want ch-c1-u1", got)
+	if got := sessionNameFor("123:456"); got != "ch-123-456" {
+		t.Fatalf("sessionNameFor = %q, want ch-123-456", got)
 	}
-	if got := convOfSlot("c1:u1"); got != "c1" {
-		t.Fatalf("convOfSlot = %q, want c1", got)
+	if got := convOfSlot("123:456"); got != "123" {
+		t.Fatalf("convOfSlot = %q, want 123", got)
 	}
-	if got := convOfSlot("c1"); got != "c1" {
-		t.Fatalf("convOfSlot = %q, want c1", got)
+	if got := convOfSlot("123"); got != "123" {
+		t.Fatalf("convOfSlot = %q, want 123", got)
 	}
 }

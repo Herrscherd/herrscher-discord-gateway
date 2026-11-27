@@ -1,6 +1,10 @@
 package discord
 
-import "strings"
+import (
+	"fmt"
+	"hash/fnv"
+	"strings"
+)
 
 const (
 	chatDM      = "dm"
@@ -49,5 +53,41 @@ func convOfSlot(slot string) string {
 }
 
 func sessionNameFor(slot string) string {
-	return "ch-" + strings.ReplaceAll(slot, ":", "-")
+	if !snowflakeSlot(slot) {
+		return hashedSessionName(slot)
+	}
+	name := "ch-" + sessionBody(slot)
+	if len(name) <= sessionNameMax {
+		return name
+	}
+	return hashedSessionName(slot)
+}
+
+func hashedSessionName(slot string) string {
+	sum := fnv.New64a()
+	_, _ = sum.Write([]byte(slot))
+	return fmt.Sprintf("%s%0*x", sessionHashPrefix, sessionHashDigits, sum.Sum64())
+}
+
+func snowflakeSlot(slot string) bool {
+	conv, user, hasUser := strings.Cut(slot, ":")
+	channel, _, _ := strings.Cut(conv, voiceSeparator)
+	return isSnowflake(channel) && (!hasUser || isSnowflake(user))
+}
+
+func isSnowflake(id string) bool {
+	return id != "" && strings.IndexFunc(id, func(r rune) bool { return r < '0' || r > '9' }) < 0
+}
+
+func sessionBody(slot string) string {
+	conv, user, hasUser := strings.Cut(slot, ":")
+	channel, agent, voiced := strings.Cut(conv, voiceSeparator)
+	body := channel
+	if hasUser {
+		body += "-" + user
+	}
+	if voiced {
+		body += sessionVoiceMarker + agent
+	}
+	return body
 }

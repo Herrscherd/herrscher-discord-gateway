@@ -6,6 +6,7 @@ type messageCreate struct {
 	ID          string            `json:"id"`
 	ChannelID   string            `json:"channel_id"`
 	GuildID     string            `json:"guild_id"`
+	Type        messageType       `json:"type"`
 	Content     string            `json:"content"`
 	Author      dctl.Author       `json:"author"`
 	Mentions    []dctl.Author     `json:"mentions"`
@@ -18,7 +19,20 @@ type guildMember struct {
 	Roles []string `json:"roles"`
 }
 
+type messageType int
+
+const (
+	messageTypeDefault messageType = 0
+	messageTypeReply   messageType = 19
+)
+
+func (m messageCreate) conversational() bool {
+	return m.Type == messageTypeDefault || m.Type == messageTypeReply
+}
+
 func (m messageCreate) direct() bool { return m.GuildID == "" }
+
+func (m messageCreate) blank() bool { return m.Content == "" && len(m.Attachments) == 0 }
 
 func (m messageCreate) roleIDs() []string {
 	if m.Member == nil {

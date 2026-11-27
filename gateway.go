@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/Herrscherd/dctl"
 	contracts "github.com/Herrscherd/herrscher-contracts"
@@ -60,7 +61,12 @@ type Gateway struct {
 	fileLimit  int64
 	batchLimit int64
 
+	voices *voiceBots
+	wsURL  string
+	newBot func(token string) *dctl.Client
+
 	slashMu      sync.Mutex
+	bound        bool
 	slashClosed  bool
 	slashRunning *slashRuntime
 }
@@ -72,22 +78,200 @@ func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gatewa
 	return &Gateway{c: c, run: run, msgs: msgs, log: log, fileLimit: maxFileBytes, batchLimit: maxBatchBytes}
 }
 
-// BindSessionControl receives the daemon's runtime session controller and starts
-// the slash command surface (sync + websocket loop). It satisfies
-// contracts.SessionControlReceiver. Gateways built without a slash runtime (e.g.
-// in tests) ignore the binding. Only the first binding starts the runtime and
-// keeps its controller: a later binding, or one after Close, is ignored.
+// BindSessionControl receives the daemon's session controller and starts the
+// gateway's runtime. Only the first binding takes effect: later bindings, and
+// bindings after Close, are ignored. A gateway built without a slash runtime
+// ignores every binding.
 func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slash == nil {
 		return
 	}
 	g.slashMu.Lock()
-	defer g.slashMu.Unlock()
-	if g.slashClosed || g.slashRunning != nil {
+	if g.slashClosed || g.bound {
+		g.slashMu.Unlock()
 		return
 	}
+	g.bound = true
+	g.slashMu.Unlock()
+
+	voices := directoryVoices(ctrl)
 	g.slash.ctrl = ctrl
+	g.slash.attach = func(ctx context.Context) { g.attachAgents(ctx, voices) }
+	contentHouse := houseNeedsContent(voices, tokenGiven)
+	if contentHouse {
+		g.slash.socket.intents |= intentMessageContent
+	}
+	if g.slash.router != nil {
+		g.slash.router.setHouseContent(contentHouse)
+	}
+
+	g.slashMu.Lock()
+	defer g.slashMu.Unlock()
+	if g.slashClosed {
+		return
+	}
+	g.expectAgents(voices)
 	g.slashRunning = startSlashRuntime(g.run(), g.slash)
+}
+
+func (g *Gateway) expectAgents(voices []contracts.AgentVoice) {
+	var agents []string
+	for _, voice := range agentBotVoices(voices) {
+		agents = append(agents, voice.Agent)
+	}
+	g.voices.expect(agents)
+}
+
+func agentBotVoices(voices []contracts.AgentVoice) []contracts.AgentVoice {
+	var bots []contracts.AgentVoice
+	for _, voice := range voices {
+		if tokenGiven(voice) && validAgent(voice.Agent) {
+			bots = append(bots, voice)
+		}
+	}
+	return bots
+}
+
+func tokenGiven(voice contracts.AgentVoice) bool {
+	return voice.Token.Valid()
+}
+
+func (g *Gateway) ownsBot(voice contracts.AgentVoice) bool {
+	_, ok := g.voices.ownOf(voice.Agent)
+	return ok
+}
+
+func houseNeedsContent(voices []contracts.AgentVoice, owned func(contracts.AgentVoice) bool) bool {
+	for _, voice := range voices {
+		if validAgent(voice.Agent) && voice.Reply == contracts.ReplyInChannels && !owned(voice) {
+			return true
+		}
+	}
+	return false
+}
+
+const appIDTimeout = 10 * time.Second
+
+type resolvedAgent struct {
+	voice contracts.AgentVoice
+	bot   *dctl.Client
+	appID string
+}
+
+func (g *Gateway) attachAgents(ctx context.Context, voices []contracts.AgentVoice) {
+	sockets := g.bindAgents(ctx, voices)
+	var running sync.WaitGroup
+	for _, socket := range sockets {
+		running.Add(1)
+		go func() {
+			defer running.Done()
+			socket.run(ctx)
+		}()
+	}
+	running.Wait()
+}
+
+func (g *Gateway) bindAgents(ctx context.Context, voices []contracts.AgentVoice) []*ws {
+	if g.voices == nil {
+		return nil
+	}
+	resolved := g.resolveAgents(ctx, voices)
+	g.settleHouseContent(voices)
+	sockets := make([]*ws, 0, len(resolved))
+	for _, agent := range resolved {
+		sockets = append(sockets, g.agentSocket(agent))
+	}
+	return sockets
+}
+
+func (g *Gateway) settleHouseContent(voices []contracts.AgentVoice) {
+	if g.slash == nil {
+		return
+	}
+	content := houseNeedsContent(voices, g.ownsBot)
+	if content && g.slash.socket != nil {
+		g.slash.socket.require(intentMessageContent)
+	}
+	if g.slash.router != nil {
+		g.slash.router.setHouseContent(content)
+	}
+}
+
+func (g *Gateway) agentSocket(agent resolvedAgent) *ws {
+	name := agent.voice.Agent
+	content := agent.voice.Reply == contracts.ReplyInChannels
+	onMessage := func(ctx context.Context, msg messageCreate) {
+		g.slash.router.onAgentMessage(ctx, name, msg, content)
+	}
+	socket := newWS(g.socketURL(), agent.voice.Token.Secret(), g.log, nil, onMessage, nil)
+	if content {
+		socket.intents |= intentMessageContent
+	}
+	return socket
+}
+
+func (g *Gateway) resolveAgents(ctx context.Context, voices []contracts.AgentVoice) []resolvedAgent {
+	g.warnInvalidAgentNames(voices)
+	candidates := agentBotVoices(voices)
+	results := make([]*resolvedAgent, len(candidates))
+	var pending sync.WaitGroup
+	for index, voice := range candidates {
+		pending.Add(1)
+		go func() {
+			defer pending.Done()
+			results[index] = g.resolveAgent(ctx, voice)
+		}()
+	}
+	pending.Wait()
+	var resolved []resolvedAgent
+	for _, result := range results {
+		if result != nil {
+			resolved = append(resolved, *result)
+		}
+	}
+	return resolved
+}
+
+func (g *Gateway) warnInvalidAgentNames(voices []contracts.AgentVoice) {
+	for _, voice := range voices {
+		if tokenGiven(voice) && !validAgent(voice.Agent) {
+			g.log.Warn("agent name is not a valid bot name, the agent gets no bot of its own", "agent", voice.Agent)
+		}
+	}
+}
+
+func (g *Gateway) resolveAgent(ctx context.Context, voice contracts.AgentVoice) *resolvedAgent {
+	defer g.voices.settle(voice.Agent)
+	bot := g.botFor(voice.Token.Secret())
+	appID, err := appIDOf(ctx, bot)
+	if err != nil {
+		if ctx.Err() == nil {
+			g.log.Warn("agent bot token rejected, the agent answers through the house bot", "agent", voice.Agent, "err", err)
+		}
+		return nil
+	}
+	g.voices.register(voice.Agent, bot, appID)
+	return &resolvedAgent{voice: voice, bot: bot, appID: appID}
+}
+
+func appIDOf(ctx context.Context, bot *dctl.Client) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, appIDTimeout)
+	defer cancel()
+	return bot.Interactions().AppID(ctx)
+}
+
+func (g *Gateway) botFor(token string) *dctl.Client {
+	if g.newBot != nil {
+		return g.newBot(token)
+	}
+	return dctl.New(token, "")
+}
+
+func (g *Gateway) socketURL() string {
+	if g.wsURL != "" {
+		return g.wsURL
+	}
+	return gatewayURL
 }
 
 // Close stops the slash runtime started by BindSessionControl and waits for its
@@ -131,24 +315,25 @@ func (g *Gateway) EmitTo(conv contracts.Conversation, event contracts.Event) {
 // a channel. It satisfies contracts.EventSink.
 func (g *Gateway) Emit(contracts.Event) {}
 
-// Post sends text as a new message in conv. It returns the id Discord gave the
-// message, and an error that wraps the Discord failure.
+// Post sends text as new messages in conv, split so that each part fits Discord's
+// limit with the agent header of a voiced conversation. It returns the id of the
+// first message sent, and an error that wraps the Discord failure.
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
-	sent, err := g.c.Send(ctx, conv.ID, text)
+	sent, err := g.sendParts(ctx, conv, "", splitText(text, g.voices.textLimit(conv.ID)))
 	if err != nil {
-		return msgID(sent), fmt.Errorf("discord post: %w", err)
+		return sent, fmt.Errorf("discord post: %w", err)
 	}
-	return msgID(sent), nil
+	return sent, nil
 }
 
-// Reply sends text as an answer to replyTo in conv. It returns the id Discord gave
-// the answer, and an error that wraps the Discord failure.
+// Reply sends text as answers to replyTo in conv, split like Post. It returns the
+// id of the first answer sent, and an error that wraps the Discord failure.
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
-	sent, err := g.c.Reply(ctx, conv.ID, string(replyTo), text)
+	sent, err := g.sendParts(ctx, conv, replyTo, splitText(text, g.voices.textLimit(conv.ID)))
 	if err != nil {
-		return msgID(sent), fmt.Errorf("discord reply: %w", err)
+		return sent, fmt.Errorf("discord reply: %w", err)
 	}
-	return msgID(sent), nil
+	return sent, nil
 }
 
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the
@@ -163,7 +348,7 @@ func (g *Gateway) Notify(ctx context.Context, conv contracts.Conversation, lang 
 	if renderErr == nil {
 		emoji = g.msgs.headIn(resolved, noticeHead(notice.Code))
 	}
-	sent, err := g.Post(ctx, conv, withEmoji(emoji, text))
+	sent, err := g.sendParts(ctx, conv, "", chunkText(withEmoji(emoji, text), g.voices.textLimit(conv.ID)))
 	if err != nil {
 		return sent, err
 	}
@@ -190,10 +375,23 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out); err != nil {
+	parts := splitText(prompt, g.voices.menuLimit(conv.ID))
+	lead, last := parts[:len(parts)-1], parts[len(parts)-1]
+	if err := g.sendLeadParts(ctx, conv, replyTo, lead); err != nil {
+		return fmt.Errorf("discord menu: %w", err)
+	}
+	if len(lead) > 0 {
+		replyTo = ""
+	}
+	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), last, ChoiceCustomID(conv.ID), out); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
 	return nil
+}
+
+func (g *Gateway) sendLeadParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) error {
+	_, err := g.sendEach(ctx, conv, replyTo, parts, true)
+	return err
 }
 
 // Edit rewrites a message already sent. It satisfies contracts.MessageEditor.

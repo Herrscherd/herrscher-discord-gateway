@@ -33,12 +33,12 @@ func clientOn(rt http.RoundTripper) *dctl.Client {
 func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 	f := &fakeRender{}
 	set := newSinks(testRun(), f, staticLevels("full"), "", false, testMessages(), testLog())
-	p := &Platform{sinks: set, c: clientOn(jsonReply(`[
+	p := &Platform{sinks: set, bots: newVoiceBots(clientOn(jsonReply(`[
 		{"id":"9","channel_id":"c2","content":"d","author":{"id":"u2"}},
 		{"id":"3","channel_id":"c1","content":"c","author":{"id":"u1"}},
 		{"id":"2","channel_id":"c1","content":"b","author":{"id":"bot","bot":true}},
 		{"id":"1","channel_id":"c1","content":"a","author":{"id":"u1"}}
-	]`))}
+	]`)))}
 
 	if _, err := p.Read(context.Background(), "c1", 100, ""); err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestPlatformReadNotesLastUserOnItsOwnChannelSink(t *testing.T) {
 func TestPlatformStillReadsAnUnboundChannel(t *testing.T) {
 	p := &Platform{
 		binds: newBindStore(filepath.Join(t.TempDir(), "router.json"), testLog()),
-		c:     clientOn(jsonReply(`[{"id":"1","channel_id":"c9","content":"x","author":{"id":"u1"}}]`)),
+		bots:  newVoiceBots(clientOn(jsonReply(`[{"id":"1","channel_id":"c9","content":"x","author":{"id":"u1"}}]`))),
 	}
 
 	msgs, err := p.Read(context.Background(), "c9", 100, "")

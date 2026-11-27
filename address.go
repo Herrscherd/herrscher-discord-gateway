@@ -16,20 +16,7 @@ func defaultAddress(appID string) addressPolicy {
 }
 
 func (p addressPolicy) mentioned(msg messageCreate) bool {
-	if p.appID == "" {
-		return false
-	}
-	for _, u := range msg.Mentions {
-		if u.ID == p.appID {
-			return true
-		}
-	}
-	for _, hit := range rawMention.FindAllStringSubmatch(msg.Content, -1) {
-		if hit[1] == p.appID {
-			return true
-		}
-	}
-	return false
+	return mentionsID(msg, p.appID)
 }
 
 func (p addressPolicy) repliesToSelf(m messageCreate) bool {

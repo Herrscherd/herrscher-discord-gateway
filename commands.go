@@ -81,19 +81,19 @@ func (g *Gateway) readChannel(ctx context.Context, input contracts.Input) (contr
 }
 
 func (g *Gateway) postChannel(ctx context.Context, in contracts.Input) (contracts.Result, error) {
-	sent, err := g.c.Send(ctx, in.Args["id"], in.Args["text"])
+	sent, err := g.Post(ctx, contracts.Conversation{ID: in.Args["id"]}, in.Args["text"])
 	if err != nil {
-		return contracts.Result{}, fmt.Errorf("discord channel post: %w", err)
+		return contracts.Result{}, err
 	}
-	return contracts.DataResult(g.msgs.say("discord.result.posted", map[string]any{idArg: string(msgID(sent))})), nil
+	return contracts.DataResult(g.msgs.say("discord.result.posted", map[string]any{idArg: string(sent)})), nil
 }
 
 func (g *Gateway) replyMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {
-	sent, err := g.c.Reply(ctx, in.Args["id"], in.Args["to"], in.Args["text"])
+	sent, err := g.Reply(ctx, contracts.Conversation{ID: in.Args["id"]}, contracts.MessageID(in.Args["to"]), in.Args["text"])
 	if err != nil {
-		return contracts.Result{}, fmt.Errorf("discord message reply: %w", err)
+		return contracts.Result{}, err
 	}
-	return contracts.DataResult(g.msgs.say("discord.result.replied", map[string]any{idArg: string(msgID(sent))})), nil
+	return contracts.DataResult(g.msgs.say("discord.result.replied", map[string]any{idArg: string(sent)})), nil
 }
 
 func (g *Gateway) reactMessage(ctx context.Context, in contracts.Input) (contracts.Result, error) {

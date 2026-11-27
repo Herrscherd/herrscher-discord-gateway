@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,15 +14,16 @@ const channelCategory = 4
 
 // ChannelAdmin adapts the dctl client to contracts.ChannelAdmin: session channel
 // creation/archival and posting.
-type ChannelAdmin struct{ c *dctl.Client }
+type ChannelAdmin struct{ bots *voiceBots }
 
-// NewChannelAdmin returns a ChannelAdmin that works through the dctl client c.
-func NewChannelAdmin(c *dctl.Client) *ChannelAdmin { return &ChannelAdmin{c: c} }
+// NewChannelAdmin returns a ChannelAdmin that works through the bots of the gateway.
+func NewChannelAdmin(bots *voiceBots) *ChannelAdmin { return &ChannelAdmin{bots: bots} }
 
 // Kind reports what the channel id names: "category" for a category, "forum" for a
 // forum, and an empty string for any other channel.
 func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
-	kind, err := a.c.Channels().Type(ctx, id)
+	target := a.bots.at(id)
+	kind, err := target.client.Channels().Type(ctx, target.channel)
 	if err != nil {
 		return "", fmt.Errorf("discord channel type: %w", err)
 	}
@@ -38,34 +40,37 @@ func (a *ChannelAdmin) Kind(ctx context.Context, id string) (string, error) {
 // CreateUnder creates a channel named name under parentID and returns its id. It
 // returns an empty id when Discord answers without a channel.
 func (a *ChannelAdmin) CreateUnder(ctx context.Context, parentID, name string) (string, error) {
-	channel, err := a.c.Channels().CreateUnder(ctx, parentID, name)
+	target := a.bots.at(parentID)
+	created, err := target.client.Channels().CreateUnder(ctx, target.channel, name)
 	if err != nil {
 		return "", fmt.Errorf("discord create channel: %w", err)
 	}
-	if channel == nil {
+	if created == nil {
 		return "", nil
 	}
-	return channel.ID, nil
+	return created.ID, nil
 }
 
 // ForumPost opens a post named name with content in the forum forumID and returns
 // the id of the post's thread. It returns an empty id when Discord answers without
 // a thread.
 func (a *ChannelAdmin) ForumPost(ctx context.Context, forumID, name, content string) (string, error) {
-	channel, err := a.c.Threads().ForumPost(ctx, forumID, name, content)
+	target := a.bots.at(forumID)
+	post, err := target.client.Threads().ForumPost(ctx, target.channel, name, content)
 	if err != nil {
 		return "", fmt.Errorf("discord forum post: %w", err)
 	}
-	if channel == nil {
+	if post == nil {
 		return "", nil
 	}
-	return channel.ID, nil
+	return post.ID, nil
 }
 
 // Archive archives the channel id. It returns an error that wraps the Discord
 // failure.
 func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
-	if err := a.c.Channels().Archive(ctx, id); err != nil {
+	target := a.bots.at(id)
+	if err := target.client.Channels().Archive(ctx, target.channel); err != nil {
 		return fmt.Errorf("discord archive channel: %w", err)
 	}
 	return nil
@@ -74,10 +79,14 @@ func (a *ChannelAdmin) Archive(ctx context.Context, id string) error {
 // Send posts content as a message in channelID. It returns an error that wraps
 // the Discord failure.
 func (a *ChannelAdmin) Send(ctx context.Context, channelID, content string) error {
-	if _, err := a.c.Messages().Send(ctx, channelID, content); err != nil {
-		return fmt.Errorf("discord send: %w", err)
+	target := a.bots.at(channelID)
+	var failed error
+	for _, part := range chunkText(content, target.limit()) {
+		if err := target.post(ctx, part); err != nil {
+			failed = errors.Join(failed, fmt.Errorf("discord send: %w", err))
+		}
 	}
-	return nil
+	return failed
 }
 
 // ChannelRef renders a Discord channel id as channel-mention markup so operator
@@ -88,7 +97,7 @@ func (a *ChannelAdmin) ChannelRef(id string) string { return "<#" + id + ">" }
 // contracts.ChannelReader and contracts.MenuRouter (the consumer's read/
 // channel-bootstrap/reaction/status/routed-menu surface).
 type Platform struct {
-	c     *dctl.Client
+	bots  *voiceBots
 	sinks *sinks
 	binds *bindStore
 }
@@ -99,16 +108,16 @@ type rawMsg struct {
 	msg contracts.Message
 }
 
-// NewPlatform returns a Platform that works through the dctl client c.
-func NewPlatform(c *dctl.Client) *Platform {
-	return &Platform{c: c}
+// NewPlatform returns a Platform that works through the bots of the gateway.
+func NewPlatform(bots *voiceBots) *Platform {
+	return &Platform{bots: bots}
 }
 
-// Enabled reports whether the underlying dctl client is enabled.
-func (p *Platform) Enabled() bool { return p.c.Enabled() }
+// Enabled reports whether the house dctl client is enabled.
+func (p *Platform) Enabled() bool { return p.bots.house.Enabled() }
 
-// DefaultChannel returns the default channel id of the underlying dctl client.
-func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
+// DefaultChannel returns the default channel id of the house dctl client.
+func (p *Platform) DefaultChannel() string { return p.bots.house.DefaultChannel() }
 
 // EnsureChannel returns the channel named name, created under parentID when parentID
 // is set and at the top level otherwise. It returns an error that wraps the Discord
@@ -116,9 +125,10 @@ func (p *Platform) DefaultChannel() string { return p.c.DefaultChannel() }
 func (p *Platform) EnsureChannel(ctx context.Context, parentID, name string) (contracts.Channel, error) {
 	ensure := func() (*dctl.Channel, error) {
 		if parentID != "" {
-			return p.c.Channels().EnsureUnder(ctx, parentID, name)
+			target := p.bots.at(parentID)
+			return target.client.Channels().EnsureUnder(ctx, target.channel, name)
 		}
-		return p.c.Channels().Ensure(ctx, "", name)
+		return p.bots.house.Channels().Ensure(ctx, "", name)
 	}
 	channel, err := ensure()
 	if err != nil {
@@ -168,11 +178,17 @@ func (p *Platform) Read(ctx context.Context, channelID string, limit int, after 
 	if p.binds != nil && p.binds.Session(channelID) != "" {
 		return nil, nil
 	}
-	msgs, err := p.c.Messages().Read(ctx, channelID, limit, after)
+	target := p.bots.at(channelID)
+	msgs, err := target.client.Messages().Read(ctx, target.channel, limit, after)
 	if err != nil {
 		return nil, fmt.Errorf("discord read: %w", err)
 	}
 	raws := rawMessages(msgs)
+	for idx := range raws {
+		if raws[idx].msg.ChannelID == target.channel {
+			raws[idx].msg.ChannelID = channelID
+		}
+	}
 	out := make([]contracts.Message, 0, len(raws))
 	for i := range raws {
 		out = append(out, raws[i].msg)
@@ -196,7 +212,8 @@ func (p *Platform) noteHumanReads(ctx context.Context, raws []rawMsg) {
 // Unreact removes the emoji from the message messageID in channelID. It returns an
 // error that wraps the Discord failure.
 func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji string) error {
-	if err := p.c.Reactions().Remove(ctx, channelID, messageID, emoji); err != nil {
+	target := p.bots.at(channelID)
+	if err := target.client.Reactions().Remove(ctx, target.channel, messageID, emoji); err != nil {
 		return fmt.Errorf("discord unreact: %w", err)
 	}
 	return nil
@@ -207,7 +224,12 @@ func (p *Platform) Unreact(ctx context.Context, channelID, messageID, emoji stri
 // new message. It returns the id of the message it edited or posted, and an error
 // that wraps the Discord failure.
 func (p *Platform) UpsertStatusMessage(ctx context.Context, channelID, messageID, content string) (string, error) {
-	statusID, err := p.c.Interactions().UpsertStatusMessage(ctx, channelID, messageID, content)
+	target := p.bots.at(channelID)
+	text, err := target.frame(content)
+	if err != nil {
+		return "", fmt.Errorf("discord status message: %w", err)
+	}
+	statusID, err := target.client.Interactions().UpsertStatusMessage(ctx, target.channel, messageID, text)
 	if err != nil {
 		return statusID, fmt.Errorf("discord status message: %w", err)
 	}
@@ -221,7 +243,12 @@ func (p *Platform) RouteMenu(ctx context.Context, channelID, replyTo, prompt, ro
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	sent, err := p.c.Components().SendSelectMenu(ctx, channelID, replyTo, prompt, ChoiceCustomID(route), out)
+	target := p.bots.menuAt(channelID)
+	text, err := target.frame(prompt)
+	if err != nil {
+		return "", fmt.Errorf("discord menu: %w", err)
+	}
+	sent, err := p.bots.house.Components().SendSelectMenu(ctx, target.channel, replyTo, text, ChoiceCustomID(route), out)
 	if err != nil {
 		return "", fmt.Errorf("discord menu: %w", err)
 	}
@@ -243,22 +270,28 @@ func (r renderAdapter) Unreact(ctx context.Context, ch, id, emoji string) error 
 	return r.p.Unreact(ctx, ch, id, emoji)
 }
 
+func (r renderAdapter) TextLimit(ch string) int {
+	return r.p.bots.textLimit(ch)
+}
+
 func (r renderAdapter) Post(ctx context.Context, ch, content string) error {
-	if _, err := r.p.c.Messages().Send(ctx, ch, content); err != nil {
+	if err := r.p.bots.at(ch).post(ctx, content); err != nil {
 		return fmt.Errorf("discord post: %w", err)
 	}
 	return nil
 }
 
-func (r renderAdapter) React(ctx context.Context, ch, id, emoji string) error {
-	if err := r.p.c.Reactions().Add(ctx, ch, id, emoji); err != nil {
+func (r renderAdapter) React(ctx context.Context, ch, messageID, emoji string) error {
+	target := r.p.bots.at(ch)
+	if err := target.client.Reactions().Add(ctx, target.channel, messageID, emoji); err != nil {
 		return fmt.Errorf("discord react: %w", err)
 	}
 	return nil
 }
 
-func (r renderAdapter) Delete(ctx context.Context, ch, id string) error {
-	if err := r.p.c.Messages().Delete(ctx, ch, id); err != nil {
+func (r renderAdapter) Delete(ctx context.Context, ch, messageID string) error {
+	target := r.p.bots.houseAt(ch)
+	if err := target.client.Messages().Delete(ctx, target.channel, messageID); err != nil {
 		return fmt.Errorf("discord delete: %w", err)
 	}
 	return nil

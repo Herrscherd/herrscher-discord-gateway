@@ -116,8 +116,10 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	token := cfg.Get(botSettingKey)
 	owner := cfg.Get("owner")
 	bot := dctl.New(token, "", dctl.WithGlobalCommands())
-	gateway := NewGateway(discordClient{bot}, run, msgs, log)
-	plat := NewPlatform(bot)
+	voices := newVoiceBots(bot)
+	gateway := NewGateway(voicedClient{voices}, run, msgs, log)
+	gateway.voices = voices
+	plat := NewPlatform(voices)
 	bindPath, err := bindStorePath()
 	if err != nil {
 		return contracts.GatewaySet{}, err
@@ -167,10 +169,11 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 
 	gateway.slash.router = newRouter(
 		func() contracts.SessionControl { return gateway.slash.ctrl },
-		discordClient{bot}, binds, sinks, msgs, log,
+		voicedClient{voices}, binds, sinks, msgs, log,
 		routerConfig{
 			owner:           owner,
 			appID:           appID,
+			voices:          voices,
 			contextMessages: intSetting(cfg.Get("context_messages"), defaultContextMessages),
 			playbook:        strSetting(cfg.Get("playbook"), "pr-job"),
 			agent:           agent,
@@ -189,7 +192,7 @@ func NewGatewaySet(ctx context.Context, cfg contracts.PluginConfig, log *slog.Lo
 	return contracts.GatewaySet{
 		Gateway: gateway,
 		Reader:  plat,
-		Admin:   NewChannelAdmin(bot),
+		Admin:   NewChannelAdmin(voices),
 		Prober:  NewProber(bot),
 	}, nil
 }

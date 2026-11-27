@@ -217,10 +217,10 @@ func TestReadIsSuppressedForPushDrivenChannels(t *testing.T) {
 	if err := binds.Bind("c1", "ch-c1"); err != nil {
 		t.Fatal(err)
 	}
-	p := &Platform{binds: binds, c: clientOn(roundTripFunc(func(*http.Request) (*http.Response, error) {
+	p := &Platform{binds: binds, bots: newVoiceBots(clientOn(roundTripFunc(func(*http.Request) (*http.Response, error) {
 		t.Error("Read hit the network for a push-driven channel")
 		return nil, errors.New("offline")
-	}))}
+	})))}
 	got, err := p.Read(context.Background(), "c1", 100, "")
 	if err != nil || len(got) != 0 {
 		t.Fatalf("Read = %v, %v; want empty and no error", got, err)

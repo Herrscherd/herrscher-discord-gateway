@@ -197,7 +197,13 @@ The channel keeps its own session for the pings that stay there.
 A message that does not @mention the bot arrives from the websocket with an empty
 body: `MESSAGE_CONTENT` is a privileged intent this gateway deliberately does not
 ask for. Those messages are read back over REST, which the intent does not gate,
-so a bare message in a thread costs one extra call and no privilege.
+so a bare message in a thread costs one extra call and no privilege. The call is
+spent only when the message can matter: it addresses the house or an agent, the
+channel is ambient, or a voice could match it by name or channel. A message whose
+content cannot be read back is ignored. That includes a blank message addressed to
+the house that is more than five messages back in its channel: the read only looks
+at the last five, so the message is dropped with a debug log and nothing else. This
+is a known limit.
 
 The bot role needs `Create Private Threads` and `Send Messages in Threads`.
 
@@ -240,6 +246,8 @@ Deleting a channel takes its threads with it, and Discord announces only the
 channel. So the gateway remembers which channel each thread it opened hangs off,
 and closes those sessions too. Without that, the rule would miss the case it
 exists for, since a job asked to run "dans un fil" lives in exactly such a thread.
+The sessions of the agents bound in those threads are closed as well, as are the
+agents' sessions in the channel itself.
 
 The close prefers the non-destructive form. If it is refused because the agent
 left uncommitted changes in its worktree, the forcing one is taken and said out
@@ -269,7 +277,9 @@ deliberately narrow.
 So in a support-mode channel, and for a forked job, nothing is ever deleted. It
 applies to an ordinary channel holding one conversation, where the ping and the
 answer live side by side. The bot role needs `Manage Messages`. Without it the
-delete is refused and the ⏳ is cleared the ordinary way instead.
+delete is refused and the ⏳ is cleared the ordinary way instead. The delete goes
+through the house bot, the one that holds that permission, even when an agent with
+its own bot answered the ping.
 
 ## What the plugin adds to the daemon
 
@@ -467,6 +477,10 @@ A non-recoverable close is treated as **fatal**. 4004 (bad token) and 4010 to 40
 (bad shard, API version, intents) stop the loop and log once, rather than
 respamming a doomed IDENTIFY. Fix the token or the intents, then restart.
 
+When the gateway itself closes the socket to identify again with the Message
+Content intent, it reconnects at once, without the backoff. Messages that arrive
+during that restart are not delivered.
+
 ## Sending files
 
 The gateway implements `contracts.FileSender`: `SendFiles` posts a text with files
@@ -491,6 +505,109 @@ badly formed name quoted. The rest of the message is still sent.
 An outbox under a symlinked directory (`/var` on macOS, for example) has every file
 refused: give the gateway the resolved path. These checks guard against mistakes, not
 against a process of the same user, which can read the files anyway.
+
+## One bot per agent
+
+An agent can speak on Discord under its own name, through a bot of its own, or
+through the house bot with a header that names it. The daemon reads the tokens
+from the environment at startup. For an agent `<name>`, the key is
+`DISCORD_BOT_TOKEN_<NAME>`, with the name upper-cased and `-` turned into `_`:
+the agent `ops-bot` reads `DISCORD_BOT_TOKEN_OPS_BOT`. An agent without that key
+has no bot of its own. A token change needs a daemon restart.
+
+An agent with its own bot is a separate websocket on the same runtime as the
+house bot, and it answers when its bot is @mentioned, when someone replies to one
+of its messages, when someone writes to it in a DM, and, under the `channels`
+rule, in the channels it lists. Its messages appear under its own name. It
+registers no slash commands and handles no interactions: `/mode`, `/session` and
+the rest stay with the house bot.
+
+An agent without a bot of its own answers through the house bot. Its replies
+start with a bold header line naming it, `**<name>**`, so people can tell who
+is speaking. It is addressed by writing `@<name>` as a word in a message the
+house bot can read. The house bot takes such a message as a turn for that agent,
+with the agent's persona, and the session it opens belongs to that agent.
+
+The reply rule of each agent decides when it answers:
+
+| Rule | What the agent answers |
+|------|------------------------|
+| `mention` (default) | a message that mentions it, or replies to one of its messages, or a DM to its own bot |
+| `channels` | every message of the channels it lists, plus what `mention` answers |
+| `never` | nothing |
+
+A voice never opens threads: no private thread, no support thread. It answers in
+the place it was addressed, and its session is bound to that place.
+
+Messages written by any of the gateway's own bots never trigger any of them,
+whatever `allow_bots` says, so two agents cannot answer each other in a loop.
+A message that mentions only an agent's bot is left to that bot: the house bot
+drops it. A message that mentions both the house bot and an agent's bot is
+answered by both, since the user addressed both. While the agent tokens are still
+being checked at startup (at most 10 seconds), the house bot drops a message that
+mentions any bot other than itself, unless it also mentions the house bot, because
+it cannot yet tell which of those bots belongs to an agent. A message that mentions
+a third-party bot can therefore be ignored for at most 10 seconds at startup.
+
+An agent whose rule is `channels` and that has a bot of its own identifies with
+the privileged Message Content intent, since without it Discord delivers only the
+mentions and DMs of a bot. Enable that intent for such a bot in the Discord
+developer portal. If Discord refuses it, the agent stays down, the refusal is
+logged, and the house bot keeps running.
+
+The house bot starts first and does not wait for the agents. The agent tokens are
+checked in parallel, each for at most 10 seconds, while the house bot already
+answers. A token that is refused, or that gets no answer in time, leaves its agent
+without a bot of its own. Closing the gateway cancels the checks still pending.
+
+A message that mentions a bot other than the house bot during that check,
+without mentioning the house bot itself, is dropped, not captured: the agent's
+socket starts only once its token is resolved, so nothing holds the message
+for it. The same goes for a text `@name` of such an agent, in a DM, a thread
+or a channel alike: it is dropped too, unless another voice answers that message.
+A token-less agent with the `mention` or `channels` rule that the message also
+names answers it, and so does a token-less `channels` agent that captures the
+channel, while the pending agent stays silent. An agent whose rule is `never`
+holds nothing back. A pending agent with the `channels` rule holds its channels too:
+the house stays silent there, even in ambient mode, until the agent resolves, whoever
+else answers, including a ready voice of its own. A token-less voice that captures the
+channel, or that the message names, still answers, because that check runs before the
+hold. A pending agent whose channels are `*` holds the house in every channel, for at
+most 10 seconds, until its token check settles. When the house bot and a pending agent
+are both mentioned, the house bot answers as itself, and the pending agent's part is
+neither held nor answered later. The house bot does not answer a text `@name` as if
+the agent had no bot of its own, because the agent may yet get one.
+
+An agent without a bot of its own that has the `channels` rule is answered through
+the house bot, so the house bot needs the Message Content intent as well. The house
+bot identifies with that intent from the start when such an agent is configured. An
+agent whose token is refused counts the same way once the check fails, so the house
+bot identifies again, once, with the intent. Enable the intent for the house bot in
+the developer portal before starting the daemon. If Discord refuses it there, the
+house bot stops and the refusal is logged.
+
+A channels agent with a bot of its own does not take a message that mentions
+another of the gateway's bots, the house bot, or a token-less agent by its `@name`:
+that message is left to the one it names. When the house bot is mentioned in a
+channel that a token-less `channels` agent captures, the house bot answers too, in
+addition to the agent, as it does when both are mentioned.
+
+Two agent names that map to the same key, such as `ops-bot` and `ops_bot`, both
+read `DISCORD_BOT_TOKEN_OPS_BOT`. The host then gives neither a token and logs the
+clash once, so both speak through the house bot.
+
+A rule changed to `channels` while the daemon runs takes full effect after a
+restart. Until then, a socket that was started without the intent answers only
+the mentions and DMs it receives, never a channel capture from empty messages.
+
+Each reply is split so that its agent header counts toward Discord's 2000
+character limit. An edit whose text, with the header, would pass that limit is
+refused, not sent truncated.
+
+Limits: an agent bot takes no slash commands and no interactions, and a voice
+opens no thread. When a channel is deleted, the gateway closes the sessions of
+the house bot there and of every agent bound in it, in the channel and in its
+threads.
 
 ## Health and limits
 

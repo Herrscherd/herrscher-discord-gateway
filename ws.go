@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,7 @@ const (
 	intentGuilds         = 1 << 0
 	intentGuildMessages  = 1 << 9
 	intentDirectMessages = 1 << 12
+	intentMessageContent = 1 << 15
 )
 
 const (
@@ -55,20 +57,25 @@ const (
 type ws struct {
 	url       string
 	token     string
+	intents   int
 	log       *slog.Logger
 	handle    func(context.Context, dctl.Interaction)
 	onMessage func(context.Context, messageCreate)
 	onGone    func(context.Context, string)
 
 	mu    sync.Mutex
+	link  sync.Mutex
+	conn  *websocket.Conn
 	acked atomic.Bool
 	seq   struct {
 		sync.Mutex
 
 		n int
 	}
-	sem     chan struct{}
-	workers sync.WaitGroup
+	sem              chan struct{}
+	workers          sync.WaitGroup
+	restart          atomic.Bool
+	reconnectBackoff time.Duration
 }
 
 type gwPayload struct {
@@ -79,31 +86,40 @@ type gwPayload struct {
 }
 
 func newWS(url, token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	return &ws{url: url, token: token, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+	return &ws{url: url, token: token, intents: wsIntents, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight), reconnectBackoff: time.Second}
 }
 
 func (w *ws) run(ctx context.Context) {
 	defer w.workers.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	backoff := time.Second
+	backoff := w.reconnectBackoff
 	for ctx.Err() == nil {
-		connected := func() { backoff = time.Second }
-		if err := w.session(ctx, connected); err != nil && ctx.Err() == nil {
-			if code, ok := permanentClose(err); ok {
-				w.log.Error("gateway closed permanently, not reconnecting, check the bot token and intents", "err", err, "close_code", int(code))
-				return
-			}
-			w.log.Warn("gateway connection lost, reconnecting", "err", err, "backoff", backoff.String())
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(backoff):
-			}
-			if backoff *= 2; backoff > maxReconnectBackoff {
-				backoff = maxReconnectBackoff
-			}
+		connected := func() { backoff = w.reconnectBackoff }
+		err := w.session(ctx, connected)
+		if ctx.Err() != nil || w.restart.Swap(false) {
+			continue
 		}
+		if !w.awaitReconnect(ctx, err, backoff) {
+			return
+		}
+		if backoff *= 2; backoff > maxReconnectBackoff {
+			backoff = maxReconnectBackoff
+		}
+	}
+}
+
+func (w *ws) awaitReconnect(ctx context.Context, err error, backoff time.Duration) bool {
+	if code, ok := permanentClose(err); ok {
+		w.log.Error("gateway closed permanently, not reconnecting, check the bot token and intents", "err", err, "close_code", int(code))
+		return false
+	}
+	w.log.Warn("gateway connection lost, reconnecting", "err", err, "backoff", backoff.String())
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(backoff):
+		return true
 	}
 }
 
@@ -129,6 +145,8 @@ func (w *ws) session(ctx context.Context, connected func()) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 	defer w.closeSocket(conn, websocket.StatusNormalClosure, "")
+	w.track(conn)
+	defer w.track(nil)
 	conn.SetReadLimit(readLimit)
 
 	hello, err := readPayload(ctx, conn)
@@ -253,12 +271,41 @@ type heartbeatMsg struct {
 	D  *int `json:"d"`
 }
 
+func (w *ws) track(conn *websocket.Conn) {
+	w.link.Lock()
+	defer w.link.Unlock()
+	w.conn = conn
+}
+
+func (w *ws) currentIntents() int {
+	w.link.Lock()
+	defer w.link.Unlock()
+	return w.intents
+}
+
+func (w *ws) require(intents int) {
+	w.link.Lock()
+	if w.intents&intents == intents {
+		w.link.Unlock()
+		return
+	}
+	w.intents |= intents
+	conn := w.conn
+	if conn == nil {
+		w.link.Unlock()
+		return
+	}
+	w.restart.Store(true)
+	w.link.Unlock()
+	w.closeSocket(conn, websocket.StatusNormalClosure, "intents changed, identifying again")
+}
+
 func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {
 	return w.write(ctx, c, identifyMsg{
 		Op: opIdentify,
 		D: identifyData{
 			Token:      w.token,
-			Intents:    wsIntents,
+			Intents:    w.currentIntents(),
 			Properties: identifyProps{OS: "linux", Browser: "herrscher", Device: "herrscher"},
 		},
 	})
@@ -350,7 +397,7 @@ func readPayload(ctx context.Context, c *websocket.Conn) (gwPayload, error) {
 }
 
 func (w *ws) closeSocket(c *websocket.Conn, code websocket.StatusCode, reason string) {
-	if err := c.Close(code, reason); err != nil {
+	if err := c.Close(code, reason); err != nil && !errors.Is(err, net.ErrClosed) {
 		w.log.Warn("close gateway socket failed", "err", err)
 	}
 }

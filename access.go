@@ -23,6 +23,7 @@ type accessPolicy struct {
 	log      *slog.Logger
 	owner    string
 	selfID   string
+	voices   *voiceBots
 	users    idSet
 	roles    idSet
 	channels idSet
@@ -38,7 +39,7 @@ func (p *accessPolicy) configured() bool {
 }
 
 func (p *accessPolicy) permits(msg messageCreate, parent string, mentioned bool) bool {
-	if p.selfID != "" && msg.Author.ID == p.selfID {
+	if p.owns(msg.Author.ID) {
 		return false
 	}
 	if msg.Author.Bot {
@@ -59,6 +60,13 @@ func (p *accessPolicy) permits(msg messageCreate, parent string, mentioned bool)
 		return false
 	}
 	return p.authorizes(msg)
+}
+
+func (p *accessPolicy) owns(userID string) bool {
+	if userID == "" {
+		return false
+	}
+	return userID == p.selfID || p.voices.owns(userID)
 }
 
 func (p *accessPolicy) authorizes(msg messageCreate) bool {
