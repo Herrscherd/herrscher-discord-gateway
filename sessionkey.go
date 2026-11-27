@@ -53,12 +53,25 @@ func convOfSlot(slot string) string {
 }
 
 func sessionNameFor(slot string) string {
-	name := "ch-" + strings.NewReplacer(":", "-", voiceSeparator, "-").Replace(slot)
+	name := "ch-" + sessionBody(slot)
 	if len(name) <= sessionNameMax {
 		return name
 	}
-	sum := fnv.New32a()
+	sum := fnv.New64a()
 	_, _ = sum.Write([]byte(slot))
-	suffix := fmt.Sprintf("-%0*x", sessionHashBytes, sum.Sum32())
+	suffix := fmt.Sprintf("-%0*x", sessionHashDigits, sum.Sum64())
 	return name[:sessionNameMax-len(suffix)] + suffix
+}
+
+func sessionBody(slot string) string {
+	conv, user, hasUser := strings.Cut(slot, ":")
+	channel, agent, voicedConv := strings.Cut(conv, voiceSeparator)
+	body := channel
+	if hasUser {
+		body += "-" + user
+	}
+	if voicedConv {
+		body += sessionVoiceMarker + agent
+	}
+	return body
 }

@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	voiceSeparator   = "@"
-	sessionNameMax   = 64
-	sessionHashBytes = 8
-	agentNamePattern = `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`
+	voiceSeparator     = "@"
+	sessionNameMax     = 64
+	sessionHashDigits  = 16
+	sessionVoiceMarker = "-a-"
+	agentNamePattern   = `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`
 )
 
 var (

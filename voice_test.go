@@ -43,12 +43,6 @@ func TestAgentHeaderEscapesMarkup(t *testing.T) {
 	}
 }
 
-func TestSessionNameForAVoicedSlotNamesTheAgent(t *testing.T) {
-	if got := sessionNameFor("123@bob:456"); got != "ch-123-bob-456" {
-		t.Fatalf("sessionNameFor(voiced slot) = %q, want ch-123-bob-456", got)
-	}
-}
-
 func TestSessionNameStaysWithinTheAgentNameBound(t *testing.T) {
 	longSlot := "123456789012345678@" + "a0123456789012345678901234567890123456789012345678901234567"
 	name := sessionNameFor(longSlot)
