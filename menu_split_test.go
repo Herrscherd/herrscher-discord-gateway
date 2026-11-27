@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ type menuCall struct {
 type menuRecorder struct {
 	calls     []menuCall
 	failFirst bool
+	sentID    string
 }
 
 func (rec *menuRecorder) client() *dctl.Client {
@@ -43,6 +45,9 @@ func (rec *menuRecorder) client() *dctl.Client {
 		rec.calls = append(rec.calls, call)
 		if rec.failFirst && len(rec.calls) == 1 {
 			return nil, errors.New("discord refused the part")
+		}
+		if rec.sentID != "" {
+			return jsonReply(fmt.Sprintf(`{"id":%q}`, rec.sentID))(req)
 		}
 		return jsonReply("{}")(req)
 	})}))
@@ -112,21 +117,32 @@ func TestAMenuForAnAgentWithItsOwnBotFitsWithTheHouseHeader(t *testing.T) {
 }
 
 func TestAMenuAfterLeadPartsDoesNotAnswerTheTrigger(t *testing.T) {
-	house := &menuRecorder{}
-	bots := newVoiceBots(house.client())
-	g := &Gateway{c: voicedClient{bots}, voices: bots, log: testLog()}
-	prompt := strings.Repeat("a", gatewayMaxLen*3)
-
-	if err := g.Menu(context.Background(), contracts.Conversation{ID: "c1@ops_bot"}, "m1", prompt, menuChoices()); err != nil {
-		t.Fatal(err)
+	cases := []struct {
+		name   string
+		sentID string
+	}{
+		{name: "lead part returns no id", sentID: ""},
+		{name: "lead part returns a real id", sentID: "42"},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			house := &menuRecorder{sentID: tc.sentID}
+			bots := newVoiceBots(house.client())
+			g := &Gateway{c: voicedClient{bots}, voices: bots, log: testLog()}
+			prompt := strings.Repeat("a", gatewayMaxLen*3)
 
-	if len(house.calls) < 2 || house.calls[0].reference != "m1" {
-		t.Fatalf("calls = %+v, want the first lead part answering m1", house.calls)
-	}
-	last := house.calls[len(house.calls)-1]
-	if !last.menu || last.reference != "" {
-		t.Fatalf("menu call = %+v, want the menu posted without a reply once lead parts went out", last)
+			if err := g.Menu(context.Background(), contracts.Conversation{ID: "c1@ops_bot"}, "m1", prompt, menuChoices()); err != nil {
+				t.Fatal(err)
+			}
+
+			if len(house.calls) < 2 || house.calls[0].reference != "m1" {
+				t.Fatalf("calls = %+v, want the first lead part answering m1", house.calls)
+			}
+			last := house.calls[len(house.calls)-1]
+			if !last.menu || last.reference != "" {
+				t.Fatalf("menu call = %+v, want the menu posted without a reply once lead parts went out", last)
+			}
+		})
 	}
 }
 
