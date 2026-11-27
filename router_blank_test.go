@@ -11,6 +11,7 @@ import (
 
 type readCounter struct {
 	*fakeClient
+
 	channels []string
 }
 
