@@ -15,6 +15,7 @@ import (
 type routerConfig struct {
 	owner           string
 	appID           string
+	voices          *voiceBots
 	contextMessages int
 	playbook        string
 	agent           string
@@ -83,6 +84,7 @@ func newRouter(ctrl func() contracts.SessionControl, api client, binds *bindStor
 			log:      log,
 			owner:    cfg.owner,
 			selfID:   cfg.appID,
+			voices:   cfg.voices,
 			users:    cfg.access.users,
 			roles:    cfg.access.roles,
 			channels: cfg.access.channels,

@@ -1,6 +1,10 @@
 package discord
 
-import "strings"
+import (
+	"fmt"
+	"hash/fnv"
+	"strings"
+)
 
 const (
 	chatDM      = "dm"
@@ -49,5 +53,12 @@ func convOfSlot(slot string) string {
 }
 
 func sessionNameFor(slot string) string {
-	return "ch-" + strings.ReplaceAll(slot, ":", "-")
+	name := "ch-" + strings.NewReplacer(":", "-", voiceSeparator, "-").Replace(slot)
+	if len(name) <= sessionNameMax {
+		return name
+	}
+	sum := fnv.New32a()
+	_, _ = sum.Write([]byte(slot))
+	suffix := fmt.Sprintf("-%0*x", sessionHashBytes, sum.Sum32())
+	return name[:sessionNameMax-len(suffix)] + suffix
 }
