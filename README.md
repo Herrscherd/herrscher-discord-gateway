@@ -568,8 +568,8 @@ channel, or that the message names, still answers, because that check runs befor
 hold. A pending agent whose channels are `*` holds the house in every channel, for at
 most 10 seconds, until its token check settles. When the house bot and a pending agent
 are both mentioned, the house bot answers as itself, and the pending agent's part is
-neither held nor answered later. The house bot does not answer a text `@name` as if the agent had
-no bot of its own, because the agent may yet get one.
+neither held nor answered later. The house bot does not answer a text `@name` as if
+the agent had no bot of its own, because the agent may yet get one.
 
 An agent without a bot of its own that has the `channels` rule is answered through
 the house bot, so the house bot needs the Message Content intent as well. The house
