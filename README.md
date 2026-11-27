@@ -492,6 +492,56 @@ An outbox under a symlinked directory (`/var` on macOS, for example) has every f
 refused: give the gateway the resolved path. These checks guard against mistakes, not
 against a process of the same user, which can read the files anyway.
 
+## One bot per agent
+
+An agent can speak on Discord under its own name, through a bot of its own, or
+through the house bot with a header that names it. The daemon reads the tokens
+from the environment at startup. For an agent `<name>`, the key is
+`DISCORD_BOT_TOKEN_<NAME>`, with the name upper-cased and `-` turned into `_`:
+the agent `ops-bot` reads `DISCORD_BOT_TOKEN_OPS_BOT`. An agent without that key
+has no bot of its own. A token change needs a daemon restart.
+
+An agent with its own bot is a separate websocket on the same runtime as the
+house bot, and it answers when its bot is @mentioned, when someone replies to one
+of its messages, when someone writes to it in a DM, and, under the `channels`
+rule, in the channels it lists. Its messages appear under its own name. It
+registers no slash commands and handles no interactions: `/mode`, `/session` and
+the rest stay with the house bot.
+
+An agent without a bot of its own answers through the house bot. Its replies
+start with a bold header line naming it, `**<name>**`, so people can tell who
+is speaking. It is addressed by writing `@<name>` as a word in a message the
+house bot can read. The house bot takes such a message as a turn for that agent,
+with the agent's persona, and the session it opens belongs to that agent.
+
+The reply rule of each agent decides when it answers:
+
+| Rule | What the agent answers |
+|------|------------------------|
+| `mention` (default) | a message that mentions it, or replies to one of its messages, or a DM to its own bot |
+| `channels` | every message of the channels it lists, plus what `mention` answers |
+| `never` | nothing |
+
+A voice never opens threads: no private thread, no support thread. It answers in
+the place it was addressed, and its session is bound to that place.
+
+Messages written by any of the gateway's own bots never trigger any of them,
+whatever `allow_bots` says, so two agents cannot answer each other in a loop.
+A message that mentions only an agent's bot is left to that bot: the house bot
+drops it.
+
+An agent whose rule is `channels` when the daemon starts identifies with the
+privileged Message Content intent, since without it Discord delivers only the
+mentions and DMs of a bot. Enable that intent for such a bot in the Discord
+developer portal. If Discord refuses it, the agent stays down, the refusal is
+logged, and the house bot keeps running. A rule changed to `channels` while the
+daemon runs takes effect after a restart.
+
+Limits: an agent bot takes no slash commands and no interactions, and a voice
+opens no thread. When a channel is deleted, the gateway closes the sessions of
+the house bot there but not those of an agent, which stay until they are closed
+by hand.
+
 ## Health and limits
 
 The plugin sets `Plugin.Probe`, so `herrscher health` can check the bot without
