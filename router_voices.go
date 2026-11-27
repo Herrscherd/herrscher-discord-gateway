@@ -114,12 +114,15 @@ func (r *router) routeOf(ctrl contracts.SessionControl, agent string) (voiceRout
 	return voiceRoute{}, false
 }
 
-func (r *router) namesPendingAgent(ctrl contracts.SessionControl, msg messageCreate) bool {
+func (r *router) pendingAgentHolds(ctrl contracts.SessionControl, msg messageCreate, parent string) bool {
 	if r.cfg.address.mentioned(msg) {
 		return false
 	}
 	for _, route := range r.voiceRoutes(ctrl) {
-		if route.pending && route.reply != contracts.ReplyNever && route.mention.matches(msg.Content) {
+		if !route.pending || route.reply == contracts.ReplyNever {
+			continue
+		}
+		if route.mention.matches(msg.Content) || route.reply == contracts.ReplyInChannels && route.channels.matches(msg.ChannelID, parent) {
 			return true
 		}
 	}

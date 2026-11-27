@@ -561,7 +561,9 @@ or a channel alike: it is dropped too, unless another voice answers that message
 A token-less agent with the `mention` or `channels` rule that the message also
 names answers it, and so does a token-less `channels` agent that captures the
 channel, while the pending agent stays silent. An agent whose rule is `never`
-holds nothing back. When the house bot and a pending agent are both mentioned, the
+holds nothing back. A pending agent with the `channels` rule holds its channels too:
+a message there that no ready voice answers is dropped, not answered by the house,
+even in ambient mode. When the house bot and a pending agent are both mentioned, the
 house bot answers as itself, and the pending agent's part is neither held nor
 answered later. The house bot does not answer a text `@name` as if the agent had
 no bot of its own, because the agent may yet get one.

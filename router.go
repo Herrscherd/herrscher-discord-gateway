@@ -148,7 +148,7 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	if r.voiceCaptured(ctx, ctrl, msg, parent) {
 		return
 	}
-	if r.namesPendingAgent(ctrl, msg) {
+	if r.pendingAgentHolds(ctrl, msg, parent) {
 		return
 	}
 	mode := r.mode(msg.ChannelID, parent)

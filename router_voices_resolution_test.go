@@ -181,13 +181,14 @@ func TestAPendingAgentDoesNotBlockACaptureOfAnotherVoice(t *testing.T) {
 	}{
 		{name: "pending on mention", reply: contracts.ReplyOnMention},
 		{name: "pending never", reply: contracts.ReplyNever},
+		{name: "pending on channels", reply: contracts.ReplyInChannels},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			bots := newVoiceBots(nil)
 			bots.expect([]string{"bob"})
 			voices := []contracts.AgentVoice{
-				{Agent: "bob", Reply: tc.reply},
+				{Agent: "bob", Reply: tc.reply, Channels: []string{"c1"}},
 				{Agent: "alice", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}},
 			}
 			r, ctrl := newVoiceRouter(t, voices, bots)
@@ -199,6 +200,21 @@ func TestAPendingAgentDoesNotBlockACaptureOfAnotherVoice(t *testing.T) {
 				t.Fatalf("created = %+v, want alice to capture c1 and answer c1@alice while bob resolves", ctrl.created)
 			}
 		})
+	}
+}
+
+func TestAPendingChannelsAgentHoldsItsChannelFromTheHouse(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	r.setHouseContent(true)
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+
+	r.onMessage(context.Background(), guildPing("u1", "what changed", false))
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want nothing: bob's channel c1 is held while he resolves, so the house must not answer it in ambient mode", ctrl.created)
 	}
 }
 
