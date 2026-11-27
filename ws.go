@@ -72,9 +72,10 @@ type ws struct {
 
 		n int
 	}
-	sem     chan struct{}
-	workers sync.WaitGroup
-	restart atomic.Bool
+	sem              chan struct{}
+	workers          sync.WaitGroup
+	restart          atomic.Bool
+	reconnectBackoff time.Duration
 }
 
 type gwPayload struct {
@@ -85,18 +86,18 @@ type gwPayload struct {
 }
 
 func newWS(url, token string, log *slog.Logger, handle func(context.Context, dctl.Interaction), onMessage func(context.Context, messageCreate), onGone func(context.Context, string)) *ws {
-	return &ws{url: url, token: token, intents: wsIntents, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight)}
+	return &ws{url: url, token: token, intents: wsIntents, log: log, handle: handle, onMessage: onMessage, onGone: onGone, sem: make(chan struct{}, maxInFlight), reconnectBackoff: time.Second}
 }
 
 func (w *ws) run(ctx context.Context) {
 	defer w.workers.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	backoff := time.Second
+	backoff := w.reconnectBackoff
 	for ctx.Err() == nil {
-		connected := func() { backoff = time.Second }
+		connected := func() { backoff = w.reconnectBackoff }
 		err := w.session(ctx, connected)
-		if err == nil || ctx.Err() != nil || w.restart.Swap(false) {
+		if ctx.Err() != nil || w.restart.Swap(false) {
 			continue
 		}
 		if !w.awaitReconnect(ctx, err, backoff) {
@@ -290,11 +291,13 @@ func (w *ws) require(intents int) {
 	}
 	w.intents |= intents
 	conn := w.conn
-	w.link.Unlock()
-	if conn != nil {
-		w.restart.Store(true)
-		w.closeSocket(conn, websocket.StatusNormalClosure, "intents changed, identifying again")
+	if conn == nil {
+		w.link.Unlock()
+		return
 	}
+	w.restart.Store(true)
+	w.link.Unlock()
+	w.closeSocket(conn, websocket.StatusNormalClosure, "intents changed, identifying again")
 }
 
 func (w *ws) identify(ctx context.Context, c *websocket.Conn) error {

@@ -48,6 +48,7 @@ func runUntilStopped(t *testing.T, w *ws) func() {
 func TestRequiringAnIntentReidentifiesWithoutTheReconnectBackoff(t *testing.T) {
 	identify := make(chan identified, 8)
 	w := newWS(identifyingGateway(t, identify), "t", testLog(), nil, nil, nil)
+	w.reconnectBackoff = time.Minute
 	stop := runUntilStopped(t, w)
 	defer stop()
 	waitForIdentify(t, identify, func(identified) bool { return true }, "the first connection")
@@ -59,7 +60,7 @@ func TestRequiringAnIntentReidentifiesWithoutTheReconnectBackoff(t *testing.T) {
 		if got.intents&intentMessageContent == 0 {
 			t.Fatalf("re-identified with intents %d, want the content intent added", got.intents)
 		}
-	case <-time.After(800 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		t.Fatal("the restart for the content intent waited for the reconnect backoff")
 	}
 }
