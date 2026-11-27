@@ -132,6 +132,10 @@ func (b *voiceBots) textLimit(conv string) int {
 	return gatewayMaxLen - utf8.RuneCountInString(b.headerOf(conv))
 }
 
+func (b *voiceBots) menuLimit(conv string) int {
+	return gatewayMaxLen - utf8.RuneCountInString(agentHeader(addressOf(conv).agent))
+}
+
 type speaker struct {
 	client  *dctl.Client
 	channel string

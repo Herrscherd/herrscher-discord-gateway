@@ -47,3 +47,20 @@ func TestRouterPostSplitsLongText(t *testing.T) {
 		t.Fatalf("sent = %d messages, want the long text split into two", len(fake.sent))
 	}
 }
+
+func TestRouterPostCountsTheHeaderOfAVoicedConversation(t *testing.T) {
+	house := &sendRecorder{}
+	bots := newVoiceBots(house.client())
+	r, _ := newVoiceRouter(t, nil, bots)
+	r.c = voicedClient{bots}
+	text := strings.Repeat("a", gatewayMaxLen-len(opsHeader)+1)
+
+	r.post(context.Background(), "c1@ops_bot", text)
+
+	if len(house.calls) != 2 {
+		t.Fatalf("calls = %d, want the text split in two so each part fits with the header", len(house.calls))
+	}
+	if got := bodiesWithoutHeader(t, house.calls); got != text {
+		t.Fatalf("the parts carry %d characters, want the whole %d back", len(got), len(text))
+	}
+}

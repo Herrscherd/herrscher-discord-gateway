@@ -2,6 +2,7 @@ package discord
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -120,12 +121,20 @@ func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 
 func (g *Gateway) expectAgents(voices []contracts.AgentVoice) {
 	var agents []string
-	for _, voice := range voices {
-		if tokenGiven(voice) && validAgent(voice.Agent) {
-			agents = append(agents, voice.Agent)
-		}
+	for _, voice := range agentBotVoices(voices) {
+		agents = append(agents, voice.Agent)
 	}
 	g.voices.expect(agents)
+}
+
+func agentBotVoices(voices []contracts.AgentVoice) []contracts.AgentVoice {
+	var bots []contracts.AgentVoice
+	for _, voice := range voices {
+		if tokenGiven(voice) && validAgent(voice.Agent) {
+			bots = append(bots, voice)
+		}
+	}
+	return bots
 }
 
 func tokenGiven(voice contracts.AgentVoice) bool {
@@ -207,16 +216,11 @@ func (g *Gateway) agentSocket(agent resolvedAgent) *ws {
 }
 
 func (g *Gateway) resolveAgents(ctx context.Context, voices []contracts.AgentVoice) []resolvedAgent {
-	results := make([]*resolvedAgent, len(voices))
+	g.warnInvalidAgentNames(voices)
+	candidates := agentBotVoices(voices)
+	results := make([]*resolvedAgent, len(candidates))
 	var pending sync.WaitGroup
-	for index, voice := range voices {
-		if !voice.Token.Valid() {
-			continue
-		}
-		if !validAgent(voice.Agent) {
-			g.log.Warn("agent name is not a valid bot name, the agent gets no bot of its own", "agent", voice.Agent)
-			continue
-		}
+	for index, voice := range candidates {
 		pending.Add(1)
 		go func() {
 			defer pending.Done()
@@ -231,6 +235,14 @@ func (g *Gateway) resolveAgents(ctx context.Context, voices []contracts.AgentVoi
 		}
 	}
 	return resolved
+}
+
+func (g *Gateway) warnInvalidAgentNames(voices []contracts.AgentVoice) {
+	for _, voice := range voices {
+		if tokenGiven(voice) && !validAgent(voice.Agent) {
+			g.log.Warn("agent name is not a valid bot name, the agent gets no bot of its own", "agent", voice.Agent)
+		}
+	}
 }
 
 func (g *Gateway) resolveAgent(ctx context.Context, voice contracts.AgentVoice) *resolvedAgent {
@@ -312,7 +324,7 @@ func (g *Gateway) Emit(contracts.Event) {}
 // limit with the agent header of a voiced conversation. It returns the id of the
 // first message sent, and an error that wraps the Discord failure.
 func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text string) (contracts.MessageID, error) {
-	sent, err := g.sendParts(ctx, conv, "", g.textParts(conv, text))
+	sent, err := g.sendParts(ctx, conv, "", splitText(text, g.voices.textLimit(conv.ID)))
 	if err != nil {
 		return sent, fmt.Errorf("discord post: %w", err)
 	}
@@ -322,15 +334,11 @@ func (g *Gateway) Post(ctx context.Context, conv contracts.Conversation, text st
 // Reply sends text as answers to replyTo in conv, split like Post. It returns the
 // id of the first answer sent, and an error that wraps the Discord failure.
 func (g *Gateway) Reply(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, text string) (contracts.MessageID, error) {
-	sent, err := g.sendParts(ctx, conv, replyTo, g.textParts(conv, text))
+	sent, err := g.sendParts(ctx, conv, replyTo, splitText(text, g.voices.textLimit(conv.ID)))
 	if err != nil {
 		return sent, fmt.Errorf("discord reply: %w", err)
 	}
 	return sent, nil
-}
-
-func (g *Gateway) textParts(conv contracts.Conversation, text string) []string {
-	return splitText(text, g.voices.textLimit(conv.ID))
 }
 
 // Notify renders notice in lang and posts it into conv. A zero lang renders in the
@@ -372,7 +380,14 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	for _, o := range opts {
 		out = append(out, dctl.SelectOption{Label: o.Label, Value: o.Value})
 	}
-	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), prompt, ChoiceCustomID(conv.ID), out); err != nil {
+	parts := splitText(prompt, g.voices.menuLimit(conv.ID))
+	lead, last := parts[:len(parts)-1], parts[len(parts)-1]
+	first, leadErr := g.sendParts(ctx, conv, replyTo, lead)
+	if first != "" {
+		replyTo = ""
+	}
+	_, menuErr := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), last, ChoiceCustomID(conv.ID), out)
+	if err := errors.Join(leadErr, menuErr); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
 	return nil
