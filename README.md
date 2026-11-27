@@ -556,8 +556,9 @@ without a bot of its own. Closing the gateway cancels the checks still pending.
 
 A message addressed to an agent's bot during that check is dropped, not captured:
 the agent's socket starts only once its token is resolved, so nothing holds the
-message for it. The same goes for a text `@name` of such an agent. The house bot
-does not answer it as if the agent had no bot of its own, because the agent may
+message for it. The same goes for a text `@name` of such an agent, in a DM, a thread
+or a channel alike: it is dropped too. The house bot does not answer it as if the
+agent had no bot of its own, because the agent may
 yet get one.
 
 An agent without a bot of its own that has the `channels` rule is answered through

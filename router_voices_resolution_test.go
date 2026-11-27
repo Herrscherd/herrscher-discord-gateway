@@ -113,3 +113,47 @@ func TestAPendingAgentWithItsOwnTokenIsNeverAnsweredAsTokenless(t *testing.T) {
 		t.Fatalf("created = %+v, want nothing: bob has a token still being checked, so the house must not answer for him as if he had none", ctrl.created)
 	}
 }
+
+func TestAPendingAgentsTextMentionIsDroppedInEveryChatKind(t *testing.T) {
+	cases := []struct {
+		name    string
+		msg     messageCreate
+		ambient bool
+		thread  bool
+	}{
+		{
+			name: "dm",
+			msg:  messageCreate{ID: "m1", ChannelID: "c1", Content: "@bob hello there", Author: dctl.Author{ID: "u1", Username: "u1"}},
+		},
+		{
+			name:    "ambient channel",
+			msg:     guildPing("u1", "@bob hello there", false),
+			ambient: true,
+		},
+		{
+			name:   "thread",
+			msg:    messageCreate{ID: "m1", ChannelID: "t1", GuildID: "g1", Content: "@bob hello there", Author: dctl.Author{ID: "u1", Username: "u1"}},
+			thread: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bots := newVoiceBots(nil)
+			bots.expect([]string{"bob"})
+			voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyOnMention}}
+			r, ctrl := newVoiceRouter(t, voices, bots)
+			if tc.ambient {
+				requireNoError(t, r.binds.SetMode("c1", ambientMode))
+			}
+			if tc.thread {
+				requireNoError(t, r.binds.BindThread("t1", "t1", "c1", "ch-t1"))
+			}
+
+			r.onMessage(context.Background(), tc.msg)
+
+			if len(ctrl.created) != 0 {
+				t.Fatalf("created = %+v, want nothing: bob is still resolving, so the house must not answer his text mention", ctrl.created)
+			}
+		})
+	}
+}

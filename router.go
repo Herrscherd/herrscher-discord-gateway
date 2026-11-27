@@ -141,7 +141,7 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	if ctrl == nil {
 		return
 	}
-	if r.addressesAgentBot(msg) {
+	if r.addressesAgentBot(msg) || r.namesPendingAgent(ctrl, msg) {
 		return
 	}
 	parent := r.binds.Parent(msg.ChannelID)

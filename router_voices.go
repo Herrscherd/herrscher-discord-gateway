@@ -114,6 +114,18 @@ func (r *router) routeOf(ctrl contracts.SessionControl, agent string) (voiceRout
 	return voiceRoute{}, false
 }
 
+func (r *router) namesPendingAgent(ctrl contracts.SessionControl, msg messageCreate) bool {
+	if r.cfg.address.mentioned(msg) {
+		return false
+	}
+	for _, route := range r.voiceRoutes(ctrl) {
+		if route.pending && route.mention.matches(msg.Content) {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *router) addressesAgentBot(msg messageCreate) bool {
 	if r.cfg.address.mentioned(msg) {
 		return false
