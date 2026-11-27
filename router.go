@@ -135,7 +135,10 @@ func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	if !r.admittedBeforeRouting(msg, parent) {
 		return
 	}
-	msg = r.hydrate(ctx, msg)
+	msg, ok := r.hydrated(ctx, ctrl, msg, parent, msg.ChannelID)
+	if !ok {
+		return
+	}
 	if r.voiceCaptured(ctx, ctrl, msg, parent) {
 		return
 	}
@@ -176,11 +179,23 @@ func (r *router) answersAsHouse(msg messageCreate, parent string) bool {
 
 const hydrateWindow = 5
 
-func (r *router) hydrate(ctx context.Context, msg messageCreate) messageCreate {
-	if msg.Content != "" || len(msg.Attachments) > 0 {
-		return msg
+func (r *router) hydrated(ctx context.Context, ctrl contracts.SessionControl, msg messageCreate, parent, conv string) (messageCreate, bool) {
+	if !msg.blank() {
+		return msg, true
 	}
-	msgs, err := r.c.ReadMessages(ctx, msg.ChannelID, hydrateWindow, "")
+	if !r.blankMayMatter(ctrl, msg, parent) {
+		return msg, false
+	}
+	msg = r.hydrate(ctx, msg, conv)
+	if msg.blank() {
+		r.log.Debug("blanked message dropped, content unreadable", "channel", msg.ChannelID, "message", msg.ID)
+		return msg, false
+	}
+	return msg, true
+}
+
+func (r *router) hydrate(ctx context.Context, msg messageCreate, conv string) messageCreate {
+	msgs, err := r.c.ReadMessages(ctx, conv, hydrateWindow, "")
 	if err != nil {
 		r.log.Warn("read blanked message failed", "err", err)
 		return msg

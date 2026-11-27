@@ -20,6 +20,8 @@ type guildMember struct {
 
 func (m messageCreate) direct() bool { return m.GuildID == "" }
 
+func (m messageCreate) blank() bool { return m.Content == "" && len(m.Attachments) == 0 }
+
 func (m messageCreate) roleIDs() []string {
 	if m.Member == nil {
 		return nil

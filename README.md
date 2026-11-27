@@ -197,7 +197,10 @@ The channel keeps its own session for the pings that stay there.
 A message that does not @mention the bot arrives from the websocket with an empty
 body: `MESSAGE_CONTENT` is a privileged intent this gateway deliberately does not
 ask for. Those messages are read back over REST, which the intent does not gate,
-so a bare message in a thread costs one extra call and no privilege.
+so a bare message in a thread costs one extra call and no privilege. The call is
+spent only when the message can matter: it addresses the house or an agent, the
+channel is ambient, or a voice could match it by name or channel. A message whose
+content cannot be read back is ignored.
 
 The bot role needs `Create Private Threads` and `Send Messages in Threads`.
 

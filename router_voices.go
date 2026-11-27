@@ -22,6 +22,29 @@ func (v voiceRoute) answersThroughHouse() bool {
 	return !v.own && !v.pending && v.reply != contracts.ReplyNever
 }
 
+func (v voiceRoute) mayMatterBlank(msg messageCreate, parent string) bool {
+	if v.reply == contracts.ReplyNever {
+		return false
+	}
+	if !v.own || v.pending {
+		return true
+	}
+	return mentionsID(msg, v.appID) || (addressPolicy{appID: v.appID}).repliesToSelf(msg) || v.reply == contracts.ReplyInChannels && v.channels.matches(msg.ChannelID, parent)
+}
+
+func (r *router) blankMayMatter(ctrl contracts.SessionControl, msg messageCreate, parent string) bool {
+	chatType := r.chatType(msg.ChannelID, msg.direct())
+	if r.mode(msg.ChannelID, parent) == ambientMode || r.cfg.address.addressed(msg, chatType, parent) {
+		return true
+	}
+	for _, route := range r.voiceRoutes(ctrl) {
+		if route.mayMatterBlank(msg, parent) {
+			return true
+		}
+	}
+	return false
+}
+
 func directoryVoices(ctrl contracts.SessionControl) []contracts.AgentVoice {
 	directory, ok := ctrl.(contracts.AgentDirectory)
 	if !ok {
@@ -184,8 +207,8 @@ func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCr
 	if r.mode(msg.ChannelID, parent) == offMode || !r.acl.permits(msg, parent, true) {
 		return
 	}
-	msg = r.hydrate(ctx, msg)
-	if !r.voiceAddressed(ctrl, route, msg, parent, content) {
+	msg, ok = r.hydrated(ctx, ctrl, msg, parent, voiced(msg.ChannelID, agent))
+	if !ok || !r.voiceAddressed(ctrl, route, msg, parent, content) {
 		return
 	}
 	r.answerAs(ctx, ctrl, route, msg)
