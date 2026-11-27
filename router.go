@@ -125,7 +125,7 @@ func (r *router) mode(conv, parent string) string {
 
 func (r *router) onMessage(ctx context.Context, msg messageCreate) {
 	ctrl := r.ctrl()
-	if ctrl == nil {
+	if ctrl == nil || !msg.conversational() {
 		return
 	}
 	if r.addressesAgentBot(msg) {

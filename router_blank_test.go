@@ -171,3 +171,33 @@ func TestBotAuthorWithoutMentionIsCapturedByNoOneInAChannel(t *testing.T) {
 		}
 	})
 }
+
+func TestBlankSystemMessageIsDroppedBeforeAnyRead(t *testing.T) {
+	routes := []struct {
+		name  string
+		route func(*router, messageCreate)
+	}{
+		{name: "house", route: func(r *router, msg messageCreate) { r.onMessage(context.Background(), msg) }},
+		{name: "agent", route: func(r *router, msg messageCreate) { r.onAgentMessage(context.Background(), "alice", msg, false) }},
+	}
+	for _, tc := range routes {
+		t.Run(tc.name, func(t *testing.T) {
+			voices := []contracts.AgentVoice{{Agent: "alice", Reply: contracts.ReplyOnMention}}
+			r, ctrl := newVoiceRouter(t, voices, newVoiceBots(nil))
+			requireNoError(t, r.binds.SetMode("c1", ambientMode))
+			counter := &readCounter{fakeClient: &fakeClient{}}
+			r.c = counter
+			msg := guildPing("u1", "", false)
+			msg.Type = 7
+
+			tc.route(r, msg)
+
+			if len(counter.channels) != 0 {
+				t.Fatalf("a blank system message was read back (channels %v)", counter.channels)
+			}
+			if len(ctrl.created) != 0 {
+				t.Fatalf("a blank system message created a session: %+v", ctrl.created)
+			}
+		})
+	}
+}

@@ -196,7 +196,7 @@ func (r *router) houseVoice(ctrl contracts.SessionControl, msg messageCreate, pa
 
 func (r *router) onAgentMessage(ctx context.Context, agent string, msg messageCreate, content bool) {
 	ctrl := r.ctrl()
-	if ctrl == nil {
+	if ctrl == nil || !msg.conversational() {
 		return
 	}
 	route, ok := r.routeOf(ctrl, agent)
