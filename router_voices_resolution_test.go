@@ -218,6 +218,34 @@ func TestAPendingChannelsAgentHoldsItsChannelFromTheHouse(t *testing.T) {
 	}
 }
 
+func TestAPendingChannelsAgentHoldsAThreadOfItsChannelFromTheHouse(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+	requireNoError(t, r.binds.SetMode("c1", ambientMode))
+	requireNoError(t, r.binds.BindThread("t1", "t1", "c1", "ch-t1"))
+
+	r.onMessage(context.Background(), messageCreate{ID: "m1", ChannelID: "t1", GuildID: "g1", Content: "what changed", Author: dctl.Author{ID: "u1", Username: "u1"}})
+
+	if len(ctrl.created) != 0 {
+		t.Fatalf("created = %+v, want nothing: the thread sits under bob's channel c1, which is held while he resolves", ctrl.created)
+	}
+}
+
+func TestAPendingChannelsAgentDoesNotHoldTheHouseFromAMentionInItsChannel(t *testing.T) {
+	bots := newVoiceBots(nil)
+	bots.expect([]string{"bob"})
+	voices := []contracts.AgentVoice{{Agent: "bob", Reply: contracts.ReplyInChannels, Channels: []string{"c1"}}}
+	r, ctrl := newVoiceRouter(t, voices, bots)
+
+	r.onMessage(context.Background(), guildPing("u1", "<@app1> what changed", true))
+
+	if len(ctrl.created) != 1 || ctrl.created[0].Agent != "" {
+		t.Fatalf("created = %+v, want the house to answer its own mention in c1 while bob resolves", ctrl.created)
+	}
+}
+
 func TestAPendingNeverAgentDoesNotHoldTheHouseBack(t *testing.T) {
 	bots := newVoiceBots(nil)
 	bots.expect([]string{"bob"})
