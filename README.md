@@ -560,8 +560,8 @@ checked in parallel, each for at most 10 seconds, while the house bot already
 answers. A token that is refused, or that gets no answer in time, leaves its agent
 without a bot of its own. Closing the gateway cancels the checks still pending.
 
-A message that mentions a bot other than the house bot during that check is dropped,
-not captured: the agent's socket starts only once its token is resolved, so nothing
+A message that mentions a bot other than the house bot during that check, without
+mentioning the house bot itself, is dropped, not captured: the agent's socket starts only once its token is resolved, so nothing
 holds the message for it. The same goes for a text `@name` of such an agent, in a DM, a thread
 or a channel alike: it is dropped too, unless another voice answers that message.
 A token-less agent with the `mention` or `channels` rule that the message also

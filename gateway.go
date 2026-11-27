@@ -80,7 +80,8 @@ func NewGateway(c client, run lifetime, msgs messages, log *slog.Logger) *Gatewa
 
 // BindSessionControl receives the daemon's session controller and starts the
 // gateway's runtime. Only the first binding takes effect: later bindings, and
-// bindings after Close, are ignored.
+// bindings after Close, are ignored. A gateway built without a slash runtime
+// ignores every binding.
 func (g *Gateway) BindSessionControl(ctrl contracts.SessionControl) {
 	if g.slash == nil {
 		return
