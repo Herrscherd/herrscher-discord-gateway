@@ -3,6 +3,7 @@ package discord
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -17,7 +18,10 @@ type menuCall struct {
 	menu    bool
 }
 
-type menuRecorder struct{ calls []menuCall }
+type menuRecorder struct {
+	calls     []menuCall
+	failFirst bool
+}
 
 func (rec *menuRecorder) client() *dctl.Client {
 	return dctl.New("t", "chan", dctl.WithHTTPClient(&http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -29,6 +33,9 @@ func (rec *menuRecorder) client() *dctl.Client {
 			return nil, err
 		}
 		rec.calls = append(rec.calls, menuCall{content: body.Content, menu: len(body.Components) > 0})
+		if rec.failFirst && len(rec.calls) == 1 {
+			return nil, errors.New("discord refused the part")
+		}
 		return jsonReply("{}")(req)
 	})}))
 }
@@ -106,5 +113,20 @@ func TestAShortMenuIsOneMessageWithTheMenu(t *testing.T) {
 	}
 	if len(house.calls) != 1 || !house.calls[0].menu || house.calls[0].content != opsHeader+"pick" {
 		t.Fatalf("calls = %+v, want one menu message carrying the header and the prompt", house.calls)
+	}
+}
+
+func TestAMenuIsNotPostedWhenALeadPartFails(t *testing.T) {
+	house := &menuRecorder{failFirst: true}
+	bots := newVoiceBots(house.client())
+	g := &Gateway{c: voicedClient{bots}, voices: bots, log: testLog()}
+	prompt := strings.Repeat("a", gatewayMaxLen*3)
+
+	if err := g.Menu(context.Background(), contracts.Conversation{ID: "c1@ops_bot"}, "m1", prompt, menuChoices()); err == nil {
+		t.Fatal("Menu() = nil, want the failed lead part returned")
+	}
+
+	if len(house.calls) != 1 || house.calls[0].menu {
+		t.Fatalf("calls = %+v, want only the failed first part: nothing is sent after it and no menu follows", house.calls)
 	}
 }

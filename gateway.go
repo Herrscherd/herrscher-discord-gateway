@@ -2,7 +2,6 @@ package discord
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -382,15 +381,24 @@ func (g *Gateway) Menu(ctx context.Context, conv contracts.Conversation, replyTo
 	}
 	parts := splitText(prompt, g.voices.menuLimit(conv.ID))
 	lead, last := parts[:len(parts)-1], parts[len(parts)-1]
-	first, leadErr := g.sendParts(ctx, conv, replyTo, lead)
-	if first != "" {
-		replyTo = ""
+	replyTo, err := g.sendLeadParts(ctx, conv, replyTo, lead)
+	if err != nil {
+		return fmt.Errorf("discord menu: %w", err)
 	}
-	_, menuErr := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), last, ChoiceCustomID(conv.ID), out)
-	if err := errors.Join(leadErr, menuErr); err != nil {
+	if _, err := g.c.SendSelectMenu(ctx, conv.ID, string(replyTo), last, ChoiceCustomID(conv.ID), out); err != nil {
 		return fmt.Errorf("discord menu: %w", err)
 	}
 	return nil
+}
+
+func (g *Gateway) sendLeadParts(ctx context.Context, conv contracts.Conversation, replyTo contracts.MessageID, parts []string) (contracts.MessageID, error) {
+	for _, part := range parts {
+		if _, err := g.sendText(ctx, conv, replyTo, part); err != nil {
+			return replyTo, err
+		}
+		replyTo = ""
+	}
+	return replyTo, nil
 }
 
 // Edit rewrites a message already sent. It satisfies contracts.MessageEditor.
